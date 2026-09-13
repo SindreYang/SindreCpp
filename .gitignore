@@ -1,0 +1,7 @@
+/build*/
+/out/
+/.history/
+CMakeUserPresets.json
+*.user
+*.suo
+*.vcxproj.user

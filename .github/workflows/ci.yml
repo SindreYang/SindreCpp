@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Configure
+        run: >-
+          cmake -S . -B build
+          -DSINDRECPP_BUILD_TESTS=ON
+          -DSINDRECPP_BUILD_EXAMPLES=ON
+          -DSINDRECPP_WITH_POINTER=ON
+          -DSINDRECPP_WITH_STRING=ON
+          -DSINDRECPP_WITH_LOG=ON
+          -DSINDRECPP_WITH_GUI=ON
+          -DSINDRECPP_WITH_PYTHON=ON
+          -DSINDRECPP_WITH_HTTP=ON
+          -DSINDRECPP_WITH_JSON=ON
+          -DSINDRECPP_WITH_CLI=ON
+          -DSINDRECPP_WITH_EIGEN=ON
+      - name: Build
+        run: cmake --build build --config Release --parallel 2
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
