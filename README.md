@@ -16,7 +16,7 @@ Reusable C++17 utilities and optional integrations for everyday projects. Sindre
 | `SINDRECPP_WITH_CLI` | `SindreCpp::Cli` | `<sindrecpp/cli.hpp>` | argparse |
 | `SINDRECPP_WITH_EIGEN` | `SindreCpp::Eigen` | `<sindrecpp/eigen.hpp>` | Eigen |
 
-The optional modules are disabled by default. Each integration exposes common SindreCpp names and a `native` namespace for advanced use of its underlying library. Dear ImGui's windowing and rendering backends remain the responsibility of the host application. Eigen does not require MKL or OpenMP.
+All modules are enabled by default and are available through the unified `SindreCpp::SindreCpp` target. Each integration exposes common SindreCpp names and a `native` namespace for advanced use of its underlying library. Dear ImGui's windowing and rendering backends remain the responsibility of the host application. Eigen does not require MKL or OpenMP. The Python module requires Python development files; NumPy conversion helpers also require NumPy at runtime.
 
 The dependency projects retain their own licenses; enabling an integration downloads the upstream project without copying or relicensing it.
 
@@ -25,7 +25,6 @@ The dependency projects retain their own licenses; enabling an integration downl
 ```cmake
 include(FetchContent)
 
-set(SINDRECPP_WITH_JSON ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
     SindreCpp
     GIT_REPOSITORY https://github.com/SindreYang/SindreCpp.git
@@ -34,10 +33,25 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(SindreCpp)
 
 add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE SindreCpp::Json)
+target_link_libraries(my_app PRIVATE SindreCpp::SindreCpp)
 ```
 
-SindreCpp fetches only dependencies for enabled modules and pins each dependency to a release tag. Set feature options before `FetchContent_MakeAvailable`.
+```cpp
+#include <sindrecpp/sindrecpp.hpp>
+
+#include <string>
+
+int main() {
+    auto label = sindrecpp::string::trim("  daily utility  ");
+    sindrecpp::log::info("Starting {}", std::string(label));
+    auto document = sindrecpp::json::parse(R"({"ready":true})");
+    return document.root()["ready"].get_bool().value() ? 0 : 1;
+}
+```
+
+All third-party dependencies are pinned to release tags and fetched by CMake. To reduce the dependency set, turn off individual `SINDRECPP_WITH_*` options before `FetchContent_MakeAvailable`; `SindreCpp::SindreCpp` then contains only the enabled modules. You can also continue linking an individual target such as `SindreCpp::Json`. The GUI module provides ImGui core/context support; the host application supplies rendering and window backends.
+
+When SindreCpp is included with FetchContent, its own tests and examples default to OFF. When building SindreCpp directly, they default to ON.
 
 ```cpp
 #include <sindrecpp/core.hpp>
@@ -59,7 +73,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-Enable modules with options such as `-DSINDRECPP_WITH_LOG=ON`. Python integration also requires Python development headers and libraries; NumPy must be installed to use the NumPy conversion helpers. See `examples/basic_usage.cpp` for the module APIs.
+See `examples/basic_usage.cpp` for the module APIs. Disable an integration at configure time with options such as `-DSINDRECPP_WITH_PYTHON=OFF`.
 
 ## License
 

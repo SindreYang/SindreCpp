@@ -1,6 +1,4 @@
-#include <sindrecpp/core.hpp>
-#include <sindrecpp/pointer.hpp>
-#include <sindrecpp/string.hpp>
+#include <sindrecpp/sindrecpp.hpp>
 
 #include <iostream>
 #include <string>
