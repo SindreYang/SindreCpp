@@ -1,6 +1,6 @@
 # SindreCpp
 
-Reusable C++17 utilities and optional integrations for everyday projects. SindreCpp provides a small dependency-free core and independent modules for common tasks; enable only the integrations your project uses.
+Reusable C++17 utilities and integrations for everyday projects. SindreCpp provides a small dependency-free core and a one-stop target for common tools.
 
 ## Modules
 
@@ -8,17 +8,17 @@ Reusable C++17 utilities and optional integrations for everyday projects. Sindre
 | --- | --- | --- | --- |
 | `SINDRECPP_WITH_POINTER` | `SindreCpp::Pointer` | `<sindrecpp/pointer.hpp>` | CsPointer 1.x and standard smart-pointer helpers |
 | `SINDRECPP_WITH_STRING` | `SindreCpp::String` | `<sindrecpp/string.hpp>` | CsString 1.x and common string operations |
-| `SINDRECPP_WITH_LOG` | `SindreCpp::Log` | `<sindrecpp/log.hpp>` | spdlog |
+| `SINDRECPP_WITH_LOG` | `SindreCpp::Log` | `<sindrecpp/log.hpp>` | spdlog with a ready-to-use rotating file logger |
 | `SINDRECPP_WITH_GUI` | `SindreCpp::Gui` | `<sindrecpp/gui.hpp>` | Dear ImGui context lifetime helper |
 | `SINDRECPP_WITH_PYTHON` | `SindreCpp::Python` | `<sindrecpp/python.hpp>` | pybind11 embedding and owned NumPy conversion helpers |
-| `SINDRECPP_WITH_HTTP` | `SindreCpp::Http` | `<sindrecpp/http.hpp>` | cpp-httplib |
+| `SINDRECPP_WITH_HTTP` | `SindreCpp::Http` | `<sindrecpp/http.hpp>` | cpp-httplib, with optional OpenSSL HTTPS detection |
 | `SINDRECPP_WITH_JSON` | `SindreCpp::Json` | `<sindrecpp/json.hpp>` | simdjson |
 | `SINDRECPP_WITH_CLI` | `SindreCpp::Cli` | `<sindrecpp/cli.hpp>` | argparse |
 | `SINDRECPP_WITH_EIGEN` | `SindreCpp::Eigen` | `<sindrecpp/eigen.hpp>` | Eigen |
 
-All modules are enabled by default and are available through the unified `SindreCpp::SindreCpp` target. Each integration exposes common SindreCpp names and a `native` namespace for advanced use of its underlying library. Dear ImGui's windowing and rendering backends remain the responsibility of the host application. Eigen does not require MKL or OpenMP. The Python module requires Python development files; NumPy conversion helpers also require NumPy at runtime.
+All modules are enabled by default and are available through the unified `SindreCpp::SindreCpp` target. Each integration exposes common SindreCpp names and a `native` namespace for advanced use of its underlying library. Dear ImGui's windowing and rendering backends remain the responsibility of the host application. Eigen enables its compiler-supported vectorization by default; use a Release build for optimized code. `SINDRECPP_EIGEN_NATIVE_ARCH=ON` opts into CPU-specific compiler flags and can make the resulting binary incompatible with other machines. The Python module requires Python development files; NumPy conversion helpers also require NumPy at runtime.
 
-The dependency projects retain their own licenses; enabling an integration downloads the upstream project without copying or relicensing it.
+When a supported dependency target is already present in the parent build or installed with CMake, SindreCpp reuses it. Otherwise CMake fetches the pinned upstream release. Upstream test/example options are set only in the dependency's scope, and existing parent settings take precedence. The dependency projects retain their own licenses; SindreCpp does not copy or relicense them.
 
 ## Add with FetchContent
 
@@ -49,7 +49,20 @@ int main() {
 }
 ```
 
-All third-party dependencies are pinned to release tags and fetched by CMake. To reduce the dependency set, turn off individual `SINDRECPP_WITH_*` options before `FetchContent_MakeAvailable`; `SindreCpp::SindreCpp` then contains only the enabled modules. You can also continue linking an individual target such as `SindreCpp::Json`. The GUI module provides ImGui core/context support; the host application supplies rendering and window backends.
+To reduce the dependency set, turn off individual `SINDRECPP_WITH_*` options before `FetchContent_MakeAvailable`; `SindreCpp::SindreCpp` then contains only the enabled modules. You can also continue linking an individual target such as `SindreCpp::Json`. The GUI module provides ImGui core/context support; the host application supplies rendering and window backends.
+
+HTTP enables `SINDRECPP_HTTP_OPENSSL` auto-detection by default. If OpenSSL is available, cpp-httplib adds HTTPS support; otherwise it remains HTTP-only. Eigen automatically uses the SIMD features enabled by the compiler target. Build in Release mode for optimized code. Eigen's native-CPU flags are opt-in with `SINDRECPP_EIGEN_NATIVE_ARCH=ON` because they reduce portability and propagate to code that uses Eigen; alignment macros are left at Eigen's defaults to avoid ABI mismatches with other libraries.
+
+### Rotating log file
+
+The log module includes a ready-to-use size-rotating logger. Defaults are 10 MiB per file and five retained files:
+
+```cpp
+auto file_log = sindrecpp::log::rotating_file("app", "logs/app.log");
+file_log->info("Started {}", "MyApp");
+```
+
+Pass `max_size_bytes` and `max_files` to change the rotation limits. The returned logger is named and does not replace spdlog's global default logger.
 
 When SindreCpp is included with FetchContent, its own tests and examples default to OFF. When building SindreCpp directly, they default to ON.
 

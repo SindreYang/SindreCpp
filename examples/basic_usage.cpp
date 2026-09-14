@@ -33,6 +33,9 @@ int main() {
 
 #if defined(SINDRECPP_WITH_LOG)
     sindrecpp::log::info("Hello from SindreCpp {}", sindrecpp::version);
+    auto file_logger = sindrecpp::log::rotating_file("sindrecpp-example", "sindrecpp-example.log");
+    file_logger->info("Rotating file logging is ready");
+    sindrecpp::log::native::drop("sindrecpp-example");
 #endif
 #if defined(SINDRECPP_WITH_GUI)
     sindrecpp::gui::Context context;

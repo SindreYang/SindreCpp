@@ -17,9 +17,11 @@ option(SINDRECPP_WITH_LOG "Enable the spdlog integration" ON)
 option(SINDRECPP_WITH_GUI "Enable the Dear ImGui integration" ON)
 option(SINDRECPP_WITH_PYTHON "Enable the pybind11 integration" ON)
 option(SINDRECPP_WITH_HTTP "Enable the cpp-httplib integration" ON)
+option(SINDRECPP_HTTP_OPENSSL "Enable HTTPS support in cpp-httplib when OpenSSL is available" ON)
 option(SINDRECPP_WITH_JSON "Enable the simdjson integration" ON)
 option(SINDRECPP_WITH_CLI "Enable the argparse integration" ON)
 option(SINDRECPP_WITH_EIGEN "Enable the Eigen integration" ON)
+option(SINDRECPP_EIGEN_NATIVE_ARCH "Optimize Eigen users for the build machine CPU (reduces binary portability)" OFF)
 
 # CsPointer and CsString have broken top-level CMake configure_file paths; only their sources are populated.
 if(POLICY CMP0169)
@@ -39,6 +41,24 @@ function(sindrecpp_add_module module)
         INTERFACE_LINK_LIBRARIES "SindreCpp::Core;${ARGN}"
         INTERFACE_COMPILE_DEFINITIONS SINDRECPP_WITH_${module_upper}=1
     )
+endfunction()
+
+# Apply upstream defaults only within the dependency's subdirectory scope.
+# Existing parent-project variables and cache options always take precedence.
+function(sindrecpp_make_available dependency)
+    foreach(default IN LISTS ARGN)
+        string(FIND "${default}" "=" separator)
+        if(separator LESS 1)
+            message(FATAL_ERROR "Invalid dependency default '${default}'; expected NAME=VALUE")
+        endif()
+        string(SUBSTRING "${default}" 0 ${separator} variable)
+        math(EXPR value_start "${separator} + 1")
+        string(SUBSTRING "${default}" ${value_start} -1 value)
+        if(NOT DEFINED ${variable})
+            set(${variable} "${value}")
+        endif()
+    endforeach()
+    FetchContent_MakeAvailable(${dependency})
 endfunction()
 
 if(SINDRECPP_WITH_POINTER)
@@ -74,94 +94,145 @@ if(SINDRECPP_WITH_STRING)
 endif()
 
 if(SINDRECPP_WITH_LOG)
-    set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(spdlog
-        GIT_REPOSITORY https://github.com/gabime/spdlog.git
-        GIT_TAG v1.17.0
-        GIT_SHALLOW TRUE
-    )
-    FetchContent_MakeAvailable(spdlog)
+    if(NOT TARGET spdlog::spdlog)
+        find_package(spdlog CONFIG QUIET)
+    endif()
+    if(NOT TARGET spdlog::spdlog)
+        FetchContent_Declare(spdlog
+            GIT_REPOSITORY https://github.com/gabime/spdlog.git
+            GIT_TAG v1.17.0
+            GIT_SHALLOW TRUE
+        )
+        sindrecpp_make_available(spdlog
+            SPDLOG_BUILD_TESTS=OFF
+            SPDLOG_BUILD_EXAMPLE=OFF
+        )
+    endif()
     sindrecpp_add_module(Log spdlog::spdlog)
 endif()
 
 if(SINDRECPP_WITH_GUI)
-    FetchContent_Declare(imgui
-        GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG v1.92.9b
-        GIT_SHALLOW TRUE
-    )
-    FetchContent_GetProperties(imgui)
-    if(NOT imgui_POPULATED)
-        FetchContent_Populate(imgui)
+    if(NOT TARGET imgui::imgui AND NOT TARGET imgui)
+        find_package(imgui CONFIG QUIET)
     endif()
-    add_library(sindrecpp_imgui STATIC
-        ${imgui_SOURCE_DIR}/imgui.cpp
-        ${imgui_SOURCE_DIR}/imgui_draw.cpp
-        ${imgui_SOURCE_DIR}/imgui_tables.cpp
-        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-    )
-    target_include_directories(sindrecpp_imgui SYSTEM PUBLIC ${imgui_SOURCE_DIR})
-    target_compile_features(sindrecpp_imgui PUBLIC cxx_std_17)
-    sindrecpp_add_module(Gui sindrecpp_imgui)
+    if(TARGET imgui::imgui)
+        sindrecpp_add_module(Gui imgui::imgui)
+    elseif(TARGET imgui)
+        sindrecpp_add_module(Gui imgui)
+    else()
+        FetchContent_Declare(imgui
+            GIT_REPOSITORY https://github.com/ocornut/imgui.git
+            GIT_TAG v1.92.9b
+            GIT_SHALLOW TRUE
+        )
+        FetchContent_GetProperties(imgui)
+        if(NOT imgui_POPULATED)
+            FetchContent_Populate(imgui)
+        endif()
+        add_library(sindrecpp_imgui STATIC
+            ${imgui_SOURCE_DIR}/imgui.cpp
+            ${imgui_SOURCE_DIR}/imgui_draw.cpp
+            ${imgui_SOURCE_DIR}/imgui_tables.cpp
+            ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        )
+        target_include_directories(sindrecpp_imgui SYSTEM PUBLIC ${imgui_SOURCE_DIR})
+        target_compile_features(sindrecpp_imgui PUBLIC cxx_std_17)
+        sindrecpp_add_module(Gui sindrecpp_imgui)
+    endif()
 endif()
 
 if(SINDRECPP_WITH_PYTHON)
     find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-    set(PYBIND11_TEST OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(pybind11
-        GIT_REPOSITORY https://github.com/pybind/pybind11.git
-        GIT_TAG v3.1.0
-        GIT_SHALLOW TRUE
-    )
-    FetchContent_MakeAvailable(pybind11)
+    if(NOT TARGET pybind11::embed)
+        find_package(pybind11 CONFIG QUIET)
+    endif()
+    if(NOT TARGET pybind11::embed)
+        FetchContent_Declare(pybind11
+            GIT_REPOSITORY https://github.com/pybind/pybind11.git
+            GIT_TAG v3.1.0
+            GIT_SHALLOW TRUE
+        )
+        sindrecpp_make_available(pybind11 PYBIND11_TEST=OFF)
+    endif()
     sindrecpp_add_module(Python pybind11::embed)
 endif()
 
 if(SINDRECPP_WITH_HTTP)
-    set(HTTPLIB_TEST OFF CACHE BOOL "" FORCE)
-    set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(cpp_httplib
-        GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG v0.56.0
-        GIT_SHALLOW TRUE
-    )
-    FetchContent_MakeAvailable(cpp_httplib)
+    if(NOT TARGET httplib::httplib)
+        find_package(httplib CONFIG QUIET)
+    endif()
+    if(NOT TARGET httplib::httplib)
+        FetchContent_Declare(cpp_httplib
+            GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+            GIT_TAG v0.56.0
+            GIT_SHALLOW TRUE
+        )
+        sindrecpp_make_available(cpp_httplib
+            HTTPLIB_TEST=OFF
+            HTTPLIB_USE_OPENSSL_IF_AVAILABLE=${SINDRECPP_HTTP_OPENSSL}
+        )
+    endif()
     sindrecpp_add_module(Http httplib::httplib)
 endif()
 
 if(SINDRECPP_WITH_JSON)
-    set(SIMDJSON_DEVELOPER_MODE OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(simdjson
-        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
-        GIT_TAG v4.6.11
-        GIT_SHALLOW TRUE
-    )
-    FetchContent_MakeAvailable(simdjson)
+    if(NOT TARGET simdjson::simdjson)
+        find_package(simdjson CONFIG QUIET)
+    endif()
+    if(NOT TARGET simdjson::simdjson)
+        FetchContent_Declare(simdjson
+            GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+            GIT_TAG v4.6.11
+            GIT_SHALLOW TRUE
+        )
+        sindrecpp_make_available(simdjson SIMDJSON_DEVELOPER_MODE=OFF)
+    endif()
     sindrecpp_add_module(Json simdjson::simdjson)
 endif()
 
 if(SINDRECPP_WITH_CLI)
-    set(ARGPARSE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(argparse
-        GIT_REPOSITORY https://github.com/p-ranav/argparse.git
-        GIT_TAG v3.2
-        GIT_SHALLOW TRUE
-    )
-    FetchContent_MakeAvailable(argparse)
+    if(NOT TARGET argparse::argparse)
+        find_package(argparse CONFIG QUIET)
+    endif()
+    if(NOT TARGET argparse::argparse)
+        FetchContent_Declare(argparse
+            GIT_REPOSITORY https://github.com/p-ranav/argparse.git
+            GIT_TAG v3.2
+            GIT_SHALLOW TRUE
+        )
+        sindrecpp_make_available(argparse ARGPARSE_BUILD_TESTS=OFF)
+    endif()
     sindrecpp_add_module(Cli argparse::argparse)
 endif()
 
 if(SINDRECPP_WITH_EIGEN)
-    set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
-    set(EIGEN_BUILD_PKGCONFIG OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(eigen
-        GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-        GIT_TAG 5.0.1
-        GIT_SHALLOW TRUE
-    )
-    FetchContent_MakeAvailable(eigen)
-    sindrecpp_add_module(Eigen Eigen3::Eigen)
+    if(NOT TARGET Eigen3::Eigen)
+        find_package(Eigen3 CONFIG QUIET NO_MODULE)
+    endif()
+    if(NOT TARGET Eigen3::Eigen)
+        FetchContent_Declare(eigen
+            GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+            GIT_TAG 5.0.1
+            GIT_SHALLOW TRUE
+        )
+        sindrecpp_make_available(eigen
+            EIGEN_BUILD_DOC=OFF
+            EIGEN_BUILD_PKGCONFIG=OFF
+        )
+    endif()
+    if(SINDRECPP_EIGEN_NATIVE_ARCH)
+        add_library(sindrecpp_eigen_native_arch INTERFACE)
+        if(MSVC)
+            target_compile_options(sindrecpp_eigen_native_arch INTERFACE /arch:AVX2)
+        elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+            target_compile_options(sindrecpp_eigen_native_arch INTERFACE -march=native)
+        else()
+            message(FATAL_ERROR "SINDRECPP_EIGEN_NATIVE_ARCH is unsupported by this compiler")
+        endif()
+        sindrecpp_add_module(Eigen Eigen3::Eigen sindrecpp_eigen_native_arch)
+    else()
+        sindrecpp_add_module(Eigen Eigen3::Eigen)
+    endif()
 endif()
 
 # One target carries every enabled module. Consumers can still link an individual
