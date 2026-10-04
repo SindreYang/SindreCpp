@@ -6,7 +6,7 @@
 
 #include <httplib.h>
 
-namespace sindrecpp::http {
+namespace sindrecpp::general::http {
 
 using Client = httplib::Client;
 using Server = httplib::Server;
@@ -15,4 +15,4 @@ using Response = httplib::Response;
 using Result = httplib::Result;
 namespace native = httplib;
 
-} // namespace sindrecpp::http
+} // namespace sindrecpp::general::http
