@@ -26,15 +26,15 @@ int main() {
     CHECK(!no_value_error);
     CHECK(no_value_error.error().message == "failed");
 
-    CHECK(sindrecpp::string::trim(" \t hello\r\n") == "hello");
-    CHECK(sindrecpp::string::trim(" \t\r\n").empty());
-    CHECK(sindrecpp::string::starts_with("SindreCpp", "Sindre"));
-    CHECK(sindrecpp::string::ends_with("SindreCpp", "Cpp"));
-    CHECK(sindrecpp::string::replace_all("a-b-a", "a", "x") == "x-b-x");
-    const auto parts = sindrecpp::string::split("one,two,", ',');
+    CHECK(sindrecpp::general::string::trim(" \t hello\r\n") == "hello");
+    CHECK(sindrecpp::general::string::trim(" \t\r\n").empty());
+    CHECK(sindrecpp::general::string::starts_with("SindreCpp", "Sindre"));
+    CHECK(sindrecpp::general::string::ends_with("SindreCpp", "Cpp"));
+    CHECK(sindrecpp::general::string::replace_all("a-b-a", "a", "x") == "x-b-x");
+    const auto parts = sindrecpp::general::string::split("one,two,", ',');
     CHECK(parts.size() == 3 && parts[0] == "one" && parts[2].empty());
 
-    auto pointer = sindrecpp::pointer::make_unique<std::string>("owned");
+    auto pointer = sindrecpp::general::pointer::make_unique<std::string>("owned");
     CHECK(*pointer == "owned");
     CHECK(std::string(sindrecpp::version) == "0.1.0");
 }
