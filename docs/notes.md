@@ -51,7 +51,20 @@ string.hpp
 
 这样可以避免项目长期积累重复 API。
 
-## 4. 模块开关必须清晰
+## 4. 通用能力统一放在 general
+
+通用功能统一通过 `sindrecpp::general` 领域入口组织，第三方库不直接成为顶层领域名称。
+
+常规使用：
+
+```cpp
+#include <sindrecpp/general.hpp>
+#include <sindrecpp/utils3d.hpp>
+```
+
+`string`、`log`、`json` 等聚焦命名空间属于 `general` 领域内部能力；`utils3d` 负责 3D 和数学能力。
+
+## 5. 模块开关必须清晰
 
 模块开关采用：
 
@@ -63,7 +76,7 @@ SINDRECPP_WITH_<MODULE>
 
 ```bash
 -DSINDRECPP_WITH_PYTHON=OFF
--DSINDRECPP_WITH_MATH=OFF
+-DSINDRECPP_WITH_UTILS3D=OFF
 ```
 
 关闭模块后：
@@ -73,14 +86,14 @@ SINDRECPP_WITH_<MODULE>
 - 对应头文件不应要求该依赖；
 - 核心模块仍应可以独立构建。
 
-## 5. 注意 Math 模块的可移植性\n\nMath 模块对外提供用户功能命名，底层实现使用 Eigen。用户代码应使用 `sindrecpp::math`，不要依赖 Eigen 的实现名称。
+## 6. 注意 utils3d 模块的可移植性\n\nMath 模块对外提供用户功能命名，底层实现使用 Eigen。用户代码应使用 `sindrecpp::math`，不要依赖 Eigen 的实现名称。
 
-`SINDRECPP_MATH_NATIVE_ARCH=ON` 会使用构建机器的 CPU 指令集，适合本机性能测试，不适合直接分发给不同 CPU 的用户。
+`SINDRECPP_UTILS3D_NATIVE_ARCH=ON` 会使用构建机器的 CPU 指令集，适合本机性能测试，不适合直接分发给不同 CPU 的用户。
 
 分发二进制时建议：
 
 ```bash
--DSINDRECPP_MATH_NATIVE_ARCH=OFF
+-DSINDRECPP_UTILS3D_NATIVE_ARCH=OFF
 ```
 
 `BLAS` 后端也应明确：
@@ -89,7 +102,7 @@ SINDRECPP_WITH_<MODULE>
 - `EIGEN`：使用 Eigen 内置实现；
 - `BLAS`：强制要求外部 BLAS。
 
-## 6. 注意 Python 模块的环境要求
+## 7. 注意 Python 模块的环境要求
 
 Python 模块需要：
 
@@ -106,7 +119,7 @@ Python 模块需要：
 
 不要让基础 C++ 项目因为默认开启 Python 而强制安装完整 Python 开发环境。
 
-## 7. 注意 GUI 模块的职责边界
+## 8. 注意 GUI 模块的职责边界
 
 GUI 模块只负责 Dear ImGui 核心和上下文生命周期。
 
@@ -121,7 +134,7 @@ GUI 模块只负责 Dear ImGui 核心和上下文生命周期。
 
 不要在 SindreCpp 中偷偷绑定某一个窗口系统。
 
-## 8. 对外 API 要少而明确
+## 9. 对外 API 要少而明确
 
 优先提供少量能够长期维护的函数。不要因为底层库存在某个函数，就直接全部转发。
 
@@ -133,7 +146,7 @@ GUI 模块只负责 Dear ImGui 核心和上下文生命周期。
 4. 是否能在不暴露底层细节的情况下使用；
 5. 是否值得长期维护。
 
-## 9. 文档与代码必须同步
+## 10. 文档与代码必须同步
 
 新增模块必须同步更新：
 
@@ -149,7 +162,7 @@ GUI 模块只负责 Dear ImGui 核心和上下文生命周期。
 - `sindrecpp::xxx`
 - `SINDRECPP_WITH_XXX`
 
-## 10. 版本与发布
+## 11. 版本与发布
 
 发布前至少确认：
 
