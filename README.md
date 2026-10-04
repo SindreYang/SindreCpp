@@ -13,7 +13,7 @@ SindreCpp follows the same capability domains as Sindre:
 | `SINDRECPP_WITH_GUI` | `SindreCpp::Gui` | `<sindrecpp/gui.hpp>` | Dear ImGui context lifetime helper |
 | `SINDRECPP_WITH_PYTHON` | `SindreCpp::Python` | `<sindrecpp/python.hpp>` | Python embedding and NumPy conversion |
 
-The domain targets are the normal public entry points. Focused headers such as `string.hpp`, `log.hpp`, and `json.hpp` remain available inside the enabled `general` domain when a consumer needs a smaller include surface.
+The domain targets are the normal public entry points. Focused headers such as `string.hpp`, `log.hpp`, and `json.hpp` remain available for a smaller include surface, while their namespaces stay under `sindrecpp::general`.
 
 All modules are enabled by default and are available through the unified `SindreCpp::SindreCpp` target. Each integration exposes common SindreCpp names and a `native` namespace for advanced use of its underlying library. Dear ImGui's windowing and rendering backends remain the responsibility of the host application. Eigen enables its compiler-supported vectorization by default; use a Release build for optimized code. `SINDRECPP_UTILS3D_NATIVE_ARCH=ON` opts into CPU-specific compiler flags and can make the resulting binary incompatible with other machines. The Python module requires Python development files; NumPy conversion helpers also require NumPy at runtime.
 
@@ -41,9 +41,9 @@ target_link_libraries(my_app PRIVATE SindreCpp::SindreCpp)
 #include <string>
 
 int main() {
-    auto label = sindrecpp::string::trim("  daily utility  ");
-    sindrecpp::log::info("Starting {}", std::string(label));
-    auto document = sindrecpp::json::parse(R"({"ready":true})");
+    auto label = sindrecpp::general::string::trim("  daily utility  ");
+    sindrecpp::general::log::info("Starting {}", std::string(label));
+    auto document = sindrecpp::general::json::parse(R"({"ready":true})");
     return document.root()["ready"].get_bool().value() ? 0 : 1;
 }
 ```
@@ -76,7 +76,7 @@ cmake --build build-bench --config Release
 The log module includes a ready-to-use size-rotating logger. Defaults are 10 MiB per file and five retained files:
 
 ```cpp
-auto file_log = sindrecpp::log::rotating_file("app", "logs/app.log");
+auto file_log = sindrecpp::general::log::rotating_file("app", "logs/app.log");
 file_log->info("Started {}", "MyApp");
 ```
 
@@ -88,11 +88,11 @@ When SindreCpp is included with FetchContent, its own tests and examples default
 #include <sindrecpp/core.hpp>
 #include <sindrecpp/string.hpp>
 
-auto label = sindrecpp::string::trim("  daily utility  ");
+auto label = sindrecpp::general::string::trim("  daily utility  ");
 auto config = sindrecpp::Result<std::string>::success(std::string(label));
 ```
 
-`Result<T>` represents success or an `Error`; `value()` reads the result and `error()` reads its failure details. String helpers operate on UTF-8 byte sequences for ASCII-compatible operations. Use `sindrecpp::string::Utf8String` for CsString's Unicode-aware API when the String module is enabled.
+`Result<T>` represents success or an `Error`; `value()` reads the result and `error()` reads its failure details. String helpers operate on UTF-8 byte sequences for ASCII-compatible operations. Use `sindrecpp::general::string::Utf8String` for CsString's Unicode-aware API when the String module is enabled.
 
 ## Project conventions
 
