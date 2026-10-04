@@ -22,6 +22,7 @@ SindreCpp/
 新增功能时，优先按用户看到的功能放置：
 
 - 字符串处理放在 `sindrecpp/string.hpp`
+- 数学处理放在 `sindrecpp/math.hpp`（底层使用 Eigen）
 - 日志能力放在 `sindrecpp/log.hpp`
 - 媒体能力应放在 `sindrecpp/media.hpp`
 - 图像能力应放在 `sindrecpp/image.hpp`
@@ -35,14 +36,15 @@ SindreCpp/
 
 ```text
 项目名：SindreCpp
-目标名：SindreCpp::String
-选项名：SINDRECPP_WITH_STRING
+目标名：SindreCpp::String 或 SindreCpp::Math
+选项名：SINDRECPP_WITH_STRING 或 SINDRECPP_WITH_MATH
 ```
 
 ### C++
 
 ```cpp
 namespace sindrecpp::string {}
+namespace sindrecpp::math {}
 
 class Result {};
 struct Error {};
