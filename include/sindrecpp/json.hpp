@@ -8,7 +8,7 @@
 
 #include <string_view>
 
-namespace sindrecpp::json {
+namespace sindrecpp::general::json {
 
 using Parser = simdjson::dom::parser;
 using Element = simdjson::dom::element;
@@ -37,4 +37,4 @@ private:
 
 inline Document parse(std::string_view json) { return Document(json); }
 
-} // namespace sindrecpp::json
+} // namespace sindrecpp::general::json
