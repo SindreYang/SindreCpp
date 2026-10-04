@@ -6,9 +6,9 @@
 
 #include <argparse/argparse.hpp>
 
-namespace sindrecpp::cli {
+namespace sindrecpp::general::cli {
 
 using ArgumentParser = argparse::ArgumentParser;
 namespace native = argparse;
 
-} // namespace sindrecpp::cli
+} // namespace sindrecpp::general::cli
