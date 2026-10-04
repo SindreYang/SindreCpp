@@ -22,7 +22,7 @@ SindreCpp/
 新增功能时，优先按用户看到的功能放置：
 
 - 字符串处理放在 `sindrecpp/string.hpp`
-- 数学处理放在 `sindrecpp/math.hpp`（底层使用 Eigen）
+- 数学处理放在 `sindrecpp/utils3d.hpp`（底层使用 Eigen）
 - 日志能力放在 `sindrecpp/log.hpp`
 - 媒体能力应放在 `sindrecpp/media.hpp`
 - 图像能力应放在 `sindrecpp/image.hpp`
@@ -30,21 +30,36 @@ SindreCpp/
 
 不要为每一个函数单独创建头文件。
 
+## 功能域
+
+SindreCpp 的顶层组织跟随 Sindre：
+
+- `general`：通用工具、字符串、日志、HTTP、JSON、CLI；
+- `utils2d`：2D 图像能力，预留；
+- `utils3d`：3D 和数学能力；
+- `utilsav`：音视频能力，预留；
+- `ai`：AI 能力，预留；
+- `deploy`：部署能力，预留；
+- `platform`：平台相关能力，预留；
+- `apps`：应用级能力，预留。
+
+第三方库只能作为域内实现，不直接决定 SindreCpp 的顶层模块名称。
+
 ## 命名规则
 
 ### CMake
 
 ```text
 项目名：SindreCpp
-目标名：SindreCpp::String 或 SindreCpp::Math
-选项名：SINDRECPP_WITH_STRING 或 SINDRECPP_WITH_MATH
+目标名：SindreCpp::General 或 SindreCpp::Utils3d
+选项名：SINDRECPP_WITH_STRING 或 SINDRECPP_WITH_UTILS3D
 ```
 
 ### C++
 
 ```cpp
 namespace sindrecpp::string {}
-namespace sindrecpp::math {}
+namespace sindrecpp::utils3d {}
 
 class Result {};
 struct Error {};
