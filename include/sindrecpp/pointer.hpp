@@ -9,7 +9,7 @@
 #include <cs_weak_pointer.h>
 #endif
 
-namespace sindrecpp::pointer {
+namespace sindrecpp::general::pointer {
 
 template <class T> using unique_ptr = std::unique_ptr<T>;
 template <class T> using shared_ptr = std::shared_ptr<T>;
@@ -21,4 +21,4 @@ using std::make_unique;
 namespace native = CsPointer;
 #endif
 
-} // namespace sindrecpp::pointer
+} // namespace sindrecpp::general::pointer
