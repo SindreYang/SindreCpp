@@ -22,6 +22,6 @@
 #if defined(SINDRECPP_WITH_CLI)
 #include <sindrecpp/cli.hpp>
 #endif
-#if defined(SINDRECPP_WITH_EIGEN)
-#include <sindrecpp/eigen.hpp>
+#if defined(SINDRECPP_WITH_MATH)
+#include <sindrecpp/math.hpp>
 #endif
