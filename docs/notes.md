@@ -7,8 +7,8 @@ SindreCpp 的目标是提供稳定的使用体验，而不是简单地把 spdlog
 对外 API 应该表达功能：
 
 ```cpp
-sindrecpp::log::info(...);
-sindrecpp::string::trim(...);
+sindrecpp::general::log::info(...);
+sindrecpp::general::string::trim(...);
 ```
 
 不要让使用者必须先理解底层依赖：
@@ -86,7 +86,9 @@ SINDRECPP_WITH_<MODULE>
 - 对应头文件不应要求该依赖；
 - 核心模块仍应可以独立构建。
 
-## 6. 注意 utils3d 模块的可移植性\n\nMath 模块对外提供用户功能命名，底层实现使用 Eigen。用户代码应使用 `sindrecpp::utils3d`，不要依赖 Eigen 的实现名称。
+## 6. 注意 utils3d 模块的可移植性
+
+Utils3d 模块对外提供用户功能命名，底层实现使用 Eigen。用户代码应使用 `sindrecpp::utils3d`，不要依赖 Eigen 的实现名称。
 
 `SINDRECPP_UTILS3D_NATIVE_ARCH=ON` 会使用构建机器的 CPU 指令集，适合本机性能测试，不适合直接分发给不同 CPU 的用户。
 
