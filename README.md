@@ -95,6 +95,21 @@ auto config = sindrecpp::Result<std::string>::success(std::string(label));
 
 `Result<T>` represents success or an `Error`; `value()` reads the result and `error()` reads its failure details. String helpers operate on UTF-8 byte sequences for ASCII-compatible operations. Use `sindrecpp::string::Utf8String` for CsString's Unicode-aware API when the String module is enabled.
 
+## Project conventions
+
+SindreCpp follows the Sindre naming and organization style while respecting normal C++ conventions:
+
+- namespaces, functions, and variables use lower snake case;
+- public types use PascalCase;
+- CMake targets use `SindreCpp::Name`;
+- feature options use `SINDRECPP_WITH_NAME`;
+- modules are named by user-facing capability, not by the underlying dependency;
+- advanced access to a wrapped dependency is exposed through a module's `native` namespace;
+- workflow states use `start` and `done`, not `complete`;
+- functionality stays concentrated in capability-level headers instead of one header per function.
+
+See [docs/development.md](docs/development.md) for the complete development guide and [docs/notes.md](docs/notes.md) for dependency, portability, and API design notes.
+
 ## Local build
 
 Requirements: CMake 3.20+, a C++17 compiler, and Git when enabling third-party modules.
