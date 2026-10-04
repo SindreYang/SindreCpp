@@ -22,7 +22,7 @@ namespace native = spdlog;
 template <class... Args>
 inline void info(Args&&... args) { spdlog::info(std::forward<Args>(args)...); }
 template <class... Args>
-inline void warn(Args&&... args) { spdlog::warn(std::forward<Args>(args)...); }
+inline void warning(Args&&... args) { spdlog::warn(std::forward<Args>(args)...); }
 template <class... Args>
 inline void error(Args&&... args) { spdlog::error(std::forward<Args>(args)...); }
 inline void set_level(Level level) { spdlog::set_level(level); }
