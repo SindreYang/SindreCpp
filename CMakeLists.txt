@@ -324,7 +324,7 @@ if(SINDRECPP_BUILD_TESTS)
     if(SINDRECPP_WITH_UTILS3D)
         add_executable(sindrecpp_utils3d_tests tests/utils3d_tests.cpp)
         target_link_libraries(sindrecpp_utils3d_tests PRIVATE SindreCpp::Utils3d)
-        add_test(NAME sindrecpp.math COMMAND sindrecpp_utils3d_tests)
+        add_test(NAME sindrecpp.utils3d COMMAND sindrecpp_utils3d_tests)
     endif()
 endif()
 
