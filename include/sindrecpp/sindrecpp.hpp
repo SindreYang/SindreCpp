@@ -1,27 +1,13 @@
 #pragma once
 
-#include <sindrecpp/core.hpp>
-#include <sindrecpp/pointer.hpp>
-#include <sindrecpp/string.hpp>
+#include <sindrecpp/general.hpp>
 
-#if defined(SINDRECPP_WITH_LOG)
-#include <sindrecpp/log.hpp>
+#if defined(SINDRECPP_WITH_UTILS3D)
+#include <sindrecpp/utils3d.hpp>
 #endif
 #if defined(SINDRECPP_WITH_GUI)
 #include <sindrecpp/gui.hpp>
 #endif
 #if defined(SINDRECPP_WITH_PYTHON)
 #include <sindrecpp/python.hpp>
-#endif
-#if defined(SINDRECPP_WITH_HTTP)
-#include <sindrecpp/http.hpp>
-#endif
-#if defined(SINDRECPP_WITH_JSON)
-#include <sindrecpp/json.hpp>
-#endif
-#if defined(SINDRECPP_WITH_CLI)
-#include <sindrecpp/cli.hpp>
-#endif
-#if defined(SINDRECPP_WITH_MATH)
-#include <sindrecpp/math.hpp>
 #endif
