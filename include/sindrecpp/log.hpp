@@ -12,7 +12,7 @@
 #include <string>
 #include <utility>
 
-namespace sindrecpp::log {
+namespace sindrecpp::general::log {
 
 using Logger = spdlog::logger;
 using LoggerPtr = std::shared_ptr<Logger>;
@@ -37,4 +37,4 @@ inline LoggerPtr rotating_file(std::string name, std::string filename,
     return logger;
 }
 
-} // namespace sindrecpp::log
+} // namespace sindrecpp::general::log
