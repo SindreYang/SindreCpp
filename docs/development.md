@@ -21,9 +21,9 @@ SindreCpp/
 
 新增功能时，优先按用户看到的功能放置：
 
-- 字符串处理放在 `sindrecpp/string.hpp`
+- 字符串处理放在 `sindrecpp/general.hpp` 的 `general::string` 能力中
 - 数学处理放在 `sindrecpp/utils3d.hpp`（底层使用 Eigen）
-- 日志能力放在 `sindrecpp/log.hpp`
+- 日志能力放在 `sindrecpp/general.hpp` 的 `general::log` 能力中
 - 媒体能力应放在 `sindrecpp/media.hpp`
 - 图像能力应放在 `sindrecpp/image.hpp`
 - 底层库别名放入对应模块的 `native` 命名空间
@@ -58,7 +58,7 @@ SindreCpp 的顶层组织跟随 Sindre：
 ### C++
 
 ```cpp
-namespace sindrecpp::string {}
+namespace sindrecpp::general::string {}
 namespace sindrecpp::utils3d {}
 
 class Result {};
@@ -90,13 +90,13 @@ bool starts_with(...);
 示例：
 
 ```cpp
-namespace sindrecpp::log {
+namespace sindrecpp::general::log {
 using Logger = spdlog::logger;
 namespace native = spdlog;
 }
 ```
 
-调用者默认使用 `sindrecpp::log`，只有需要底层高级能力时才使用 `sindrecpp::log::native`。
+调用者默认使用 `sindrecpp::general::log`，只有需要底层高级能力时才使用 `sindrecpp::general::log::native`。
 
 ## 错误处理
 
