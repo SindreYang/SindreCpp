@@ -14,9 +14,9 @@ Reusable C++17 utilities and integrations for everyday projects. SindreCpp provi
 | `SINDRECPP_WITH_HTTP` | `SindreCpp::Http` | `<sindrecpp/http.hpp>` | cpp-httplib, with optional OpenSSL HTTPS detection |
 | `SINDRECPP_WITH_JSON` | `SindreCpp::Json` | `<sindrecpp/json.hpp>` | simdjson |
 | `SINDRECPP_WITH_CLI` | `SindreCpp::Cli` | `<sindrecpp/cli.hpp>` | argparse |
-| `SINDRECPP_WITH_EIGEN` | `SindreCpp::Eigen` | `<sindrecpp/eigen.hpp>` | Eigen |
+| `SINDRECPP_WITH_MATH` | `SindreCpp::Math` | `<sindrecpp/math.hpp>` | Eigen-backed math and BLAS |
 
-All modules are enabled by default and are available through the unified `SindreCpp::SindreCpp` target. Each integration exposes common SindreCpp names and a `native` namespace for advanced use of its underlying library. Dear ImGui's windowing and rendering backends remain the responsibility of the host application. Eigen enables its compiler-supported vectorization by default; use a Release build for optimized code. `SINDRECPP_EIGEN_NATIVE_ARCH=ON` opts into CPU-specific compiler flags and can make the resulting binary incompatible with other machines. The Python module requires Python development files; NumPy conversion helpers also require NumPy at runtime.
+All modules are enabled by default and are available through the unified `SindreCpp::SindreCpp` target. Each integration exposes common SindreCpp names and a `native` namespace for advanced use of its underlying library. Dear ImGui's windowing and rendering backends remain the responsibility of the host application. Eigen enables its compiler-supported vectorization by default; use a Release build for optimized code. `SINDRECPP_MATH_NATIVE_ARCH=ON` opts into CPU-specific compiler flags and can make the resulting binary incompatible with other machines. The Python module requires Python development files; NumPy conversion helpers also require NumPy at runtime.
 
 When a supported dependency target is already present in the parent build or installed with CMake, SindreCpp reuses it. Otherwise CMake fetches the pinned upstream release. Upstream test/example options are set only in the dependency's scope, and existing parent settings take precedence. The dependency projects retain their own licenses; SindreCpp does not copy or relicense them.
 
@@ -51,26 +51,26 @@ int main() {
 
 To reduce the dependency set, turn off individual `SINDRECPP_WITH_*` options before `FetchContent_MakeAvailable`; `SindreCpp::SindreCpp` then contains only the enabled modules. You can also continue linking an individual target such as `SindreCpp::Json`. The GUI module provides ImGui core/context support; the host application supplies rendering and window backends.
 
-HTTP enables `SINDRECPP_HTTP_OPENSSL` auto-detection by default. If OpenSSL is available, cpp-httplib adds HTTPS support; otherwise it remains HTTP-only. Eigen automatically uses the SIMD features enabled by the compiler target. Build in Release mode for optimized code. `SINDRECPP_EIGEN_NATIVE_ARCH=ON` is the default and enables CPU-specific compiler flags for maximum build-machine performance; set it to `OFF` when distributing binaries to other CPU models. The setting propagates to code that uses Eigen. Alignment macros remain at Eigen's defaults to avoid ABI mismatches with other libraries.
+HTTP enables `SINDRECPP_HTTP_OPENSSL` auto-detection by default. If OpenSSL is available, cpp-httplib adds HTTPS support; otherwise it remains HTTP-only. Eigen automatically uses the SIMD features enabled by the compiler target. Build in Release mode for optimized code. `SINDRECPP_MATH_NATIVE_ARCH=ON` is the default and enables CPU-specific compiler flags for maximum build-machine performance; set it to `OFF` when distributing binaries to other CPU models. The setting propagates to code that uses Eigen. Alignment macros remain at Eigen's defaults to avoid ABI mismatches with other libraries.
 
-Eigen's dense operations use `SINDRECPP_EIGEN_BLAS_BACKEND=AUTO` by default: if CMake finds a host BLAS, SindreCpp links it and enables Eigen's BLAS integration; otherwise Eigen uses its built-in kernels. Set the option to `EIGEN` to force built-in kernels or `BLAS` to require an external BLAS. To select an installed vendor, pass CMake's `BLA_VENDOR`, for example `-DBLA_VENDOR=OpenBLAS` or `-DBLA_VENDOR=Intel10_64lp`. SindreCpp does not download or build a second BLAS implementation. Eigen routes eligible dynamic/large dense products through BLAS; most other Eigen operations still use Eigen's own algorithms.
+Eigen's dense operations use `SINDRECPP_MATH_BLAS_BACKEND=AUTO` by default: if CMake finds a host BLAS, SindreCpp links it and enables Eigen's BLAS integration; otherwise Eigen uses its built-in kernels. Set the option to `EIGEN` to force built-in kernels or `BLAS` to require an external BLAS. To select an installed vendor, pass CMake's `BLA_VENDOR`, for example `-DBLA_VENDOR=OpenBLAS` or `-DBLA_VENDOR=Intel10_64lp`. SindreCpp does not download or build a second BLAS implementation. Eigen routes eligible dynamic/large dense products through BLAS; most other Eigen operations still use Eigen's own algorithms.
 
-### Eigen/BLAS benchmark
+### Math/BLAS benchmark
 
 The optional benchmark compares Eigen's built-in double-precision matrix multiplication against the selected BLAS `dgemm`, using the same seeded matrices and single-thread settings. It reports average time, GFLOP/s, speedup, maximum absolute error, and relative L2 error. Build it in Release mode with a BLAS installed:
 
 ```powershell
 $env:OPENBLAS_NUM_THREADS = "1"
 cmake -S . -B build-bench -DCMAKE_BUILD_TYPE=Release `
-  -DSINDRECPP_BUILD_BENCHMARKS=ON `
-  -DSINDRECPP_EIGEN_BLAS_BACKEND=EIGEN `
-  -DSINDRECPP_EIGEN_NATIVE_ARCH=ON `
+  -DSINDRECPP_BUILD_MATH_BENCHMARKS=ON `
+  -DSINDRECPP_MATH_BLAS_BACKEND=EIGEN `
+  -DSINDRECPP_MATH_NATIVE_ARCH=ON `
   -DBLA_VENDOR=OpenBLAS
 cmake --build build-bench --config Release
-.\build-bench\sindrecpp_eigen_benchmark.exe 1024 5
+.\build-bench\sindrecpp_math_benchmark.exe 1024 5
 ```
 
-`SINDRECPP_EIGEN_BLAS_BACKEND=EIGEN` keeps Eigen's built-in path active in the library for this comparison; the benchmark still links the detected BLAS directly. Set `OPENBLAS_NUM_THREADS=1` (or the equivalent vendor thread control) for a single-thread comparison. Results depend on CPU, compiler, BLAS build, and threading configuration.
+`SINDRECPP_MATH_BLAS_BACKEND=EIGEN` keeps Eigen's built-in path active in the library for this comparison; the benchmark still links the detected BLAS directly. Set `OPENBLAS_NUM_THREADS=1` (or the equivalent vendor thread control) for a single-thread comparison. Results depend on CPU, compiler, BLAS build, and threading configuration.
 
 ### Rotating log file
 
