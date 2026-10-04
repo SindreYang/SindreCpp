@@ -1,0 +1,139 @@
+# 开发指南
+
+## 项目定位
+
+SindreCpp 是 Sindre 生态的 C++17 基础库，提供稳定、直接、面向使用者的通用能力。
+
+项目按“功能域”组织，不按第三方依赖组织。第三方库只是实现方式，不应成为对外 API 的核心概念。
+
+## 目录结构
+
+```text
+SindreCpp/
+├── include/sindrecpp/   # 对外头文件
+├── examples/            # 最小可运行示例
+├── tests/               # 单元测试
+├── docs/                # 开发规范和注意事项
+├── CMakeLists.txt       # CMake 配置
+├── README.md            # 项目入口文档
+└── LICENSE
+```
+
+新增功能时，优先按用户看到的功能放置：
+
+- 字符串处理放在 `sindrecpp/string.hpp`
+- 日志能力放在 `sindrecpp/log.hpp`
+- 媒体能力应放在 `sindrecpp/media.hpp`
+- 图像能力应放在 `sindrecpp/image.hpp`
+- 底层库别名放入对应模块的 `native` 命名空间
+
+不要为每一个函数单独创建头文件。
+
+## 命名规则
+
+### CMake
+
+```text
+项目名：SindreCpp
+目标名：SindreCpp::String
+选项名：SINDRECPP_WITH_STRING
+```
+
+### C++
+
+```cpp
+namespace sindrecpp::string {}
+
+class Result {};
+struct Error {};
+
+std::string replace_all(...);
+bool starts_with(...);
+```
+
+规则：
+
+- 命名空间、函数、变量使用小写下划线；
+- 类型使用 PascalCase；
+- 常量使用 `UPPER_SNAKE_CASE`；
+- 公开动作优先使用 `get_`、`set_`、`change_`、`show_`、`load_`、`save_`；
+- 状态流程使用 `start`、`done`，不使用 `complete`；
+- 不使用 `do_`、`handle_`、`process_` 这类无法表达具体动作的名称。
+
+## 模块设计
+
+每个模块应同时提供：
+
+1. 简单的 SindreCpp API；
+2. 必要时提供 `native` 命名空间访问底层库；
+3. 独立的 CMake 目标；
+4. 最小测试或示例；
+5. 文档中的使用方式。
+
+示例：
+
+```cpp
+namespace sindrecpp::log {
+using Logger = spdlog::logger;
+namespace native = spdlog;
+}
+```
+
+调用者默认使用 `sindrecpp::log`，只有需要底层高级能力时才使用 `sindrecpp::log::native`。
+
+## 错误处理
+
+可预期的失败使用 `Result<T>` 和 `Error`：
+
+```cpp
+auto result = load_config(path);
+if (!result) {
+    // result.error()
+}
+```
+
+约定：
+
+- 成功使用 `Result::success(...)`；
+- 失败使用 `Result::failure(...)`；
+- 不混用 `ok`、`fail`、`complete` 等替代命名；
+- 错误信息应能说明操作、对象和原因；
+- 不要用静默返回空值掩盖失败。
+
+## 依赖管理
+
+- 优先复用父项目中已经存在的 CMake target；
+- 没有现成 target 时才使用 FetchContent；
+- 第三方库的测试、示例和文档默认关闭；
+- 每个依赖必须固定版本；
+- 不把第三方头文件复制进 SindreCpp；
+- 不通过全局宏污染宿主项目。
+
+## 测试
+
+本地构建：
+
+```bash
+cmake -S . -B build -DSINDRECPP_BUILD_TESTS=ON
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+```
+
+新增模块至少应覆盖：
+
+- 正常输入；
+- 空输入；
+- 边界输入；
+- 失败路径；
+- 关闭模块选项后的构建行为。
+
+## 提交前检查
+
+提交前确认：
+
+- 公开名称符合本规范；
+- 示例可以独立理解；
+- 关闭无关模块后仍能构建；
+- 没有引入不必要的兼容别名；
+- 没有把内部实现名称暴露给用户；
+- README 或对应文档已经更新。
