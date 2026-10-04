@@ -296,7 +296,7 @@ if(SINDRECPP_BUILD_TESTS)
     if(SINDRECPP_WITH_MATH)
         add_executable(sindrecpp_math_tests tests/math_tests.cpp)
         target_link_libraries(sindrecpp_math_tests PRIVATE SindreCpp::Math)
-        add_test(NAME sindrecpp.eigen COMMAND sindrecpp_math_tests)
+        add_test(NAME sindrecpp.math COMMAND sindrecpp_math_tests)
     endif()
 endif()
 
