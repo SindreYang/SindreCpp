@@ -9,7 +9,7 @@
 #include <cs_string.h>
 #endif
 
-namespace sindrecpp::string {
+namespace sindrecpp::general::string {
 
 inline std::string_view trim(std::string_view text) noexcept {
     constexpr std::string_view whitespace = " \t\n\r\f\v";
@@ -63,4 +63,4 @@ using Utf8String = CsString::CsString;
 using Utf16String = CsString::CsString_utf16;
 #endif
 
-} // namespace sindrecpp::string
+} // namespace sindrecpp::general::string
