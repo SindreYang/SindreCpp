@@ -22,8 +22,8 @@
 #if defined(SINDRECPP_WITH_CLI)
 #include <sindrecpp/cli.hpp>
 #endif
-#if defined(SINDRECPP_WITH_EIGEN)
-#include <sindrecpp/eigen.hpp>
+#if defined(SINDRECPP_WITH_MATH)
+#include <sindrecpp/math.hpp>
 #endif
 
 int main() {
@@ -58,8 +58,8 @@ int main() {
     sindrecpp::cli::ArgumentParser cli_parser("SindreCpp example");
     (void)cli_parser;
 #endif
-#if defined(SINDRECPP_WITH_EIGEN)
-    auto point = sindrecpp::eigen::Vector3::Zero();
+#if defined(SINDRECPP_WITH_MATH)
+    auto point = sindrecpp::math::Vector3::Zero();
     (void)point;
 #endif
 }
