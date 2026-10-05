@@ -140,7 +140,7 @@ if(SINDRECPP_WITH_UTILS_GUI)
     if(TARGET imgui::imgui)
         sindrecpp_add_module(Utils_gui imgui::imgui)
     elseif(TARGET imgui)
-        sindrecpp_add_module(Gui imgui)
+        sindrecpp_add_module(Utils_gui imgui)
     else()
         FetchContent_Declare(imgui
             GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -159,7 +159,7 @@ if(SINDRECPP_WITH_UTILS_GUI)
         )
         target_include_directories(sindrecpp_imgui SYSTEM PUBLIC ${imgui_SOURCE_DIR})
         target_compile_features(sindrecpp_imgui PUBLIC cxx_std_17)
-        sindrecpp_add_module(Gui sindrecpp_imgui)
+        sindrecpp_add_module(Utils_gui sindrecpp_imgui)
     endif()
 endif()
 
