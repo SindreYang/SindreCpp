@@ -33,6 +33,13 @@ class ShowPlot {
         view_->GetRenderWindow()->SetOffScreenRendering(offscreen_);
         view_->GetScene()->AddItem(chart_);
         chart_->SetShowLegend(true);
+        const auto &bg = options.background;
+        const double foreground = .2126 * bg[0] + .7152 * bg[1] + .0722 * bg[2] > .5 ? .08 : .95;
+        chart_->GetTitleProperties()->SetColor(foreground, foreground, foreground);
+        for (int i = 0; i < 4; ++i) {
+            chart_->GetAxis(i)->GetLabelProperties()->SetColor(foreground, foreground, foreground);
+            chart_->GetAxis(i)->GetTitleProperties()->SetColor(foreground, foreground, foreground);
+        }
     }
     ShowPlot(const ShowPlot &) = delete;
     ShowPlot &operator=(const ShowPlot &) = delete;
