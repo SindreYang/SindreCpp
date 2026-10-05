@@ -6,6 +6,8 @@
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include "utils3d/sindremesh.hpp"
+#include "utils3d/algorithm.hpp"
 
 namespace sindrecpp::utils3d {
 

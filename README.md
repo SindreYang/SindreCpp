@@ -10,7 +10,7 @@ C++17 capability toolkit following Sindre naming. All third-party dependencies a
 | SINDRECPP_WITH_UTILS_GUI | SindreCpp::Utils_gui | utils_gui.hpp / utils_gui | ImGui context lifetime |
 | SINDRECPP_WITH_UTILS_PY | SindreCpp::Utils_py | utils_py.hpp / utils_py | Python embedding and NumPy conversion |
 | SINDRECPP_WITH_UTILS2D | SindreCpp::Utils2d | utils2d.hpp / utils2d | OpenCV images and preprocessing |
-| SINDRECPP_WITH_UTILS3D | SindreCpp::Utils3d | utils3d.hpp / utils3d | Eigen vectors/matrices; optional BLAS |
+| SINDRECPP_WITH_UTILS3D | SindreCpp::Utils3d | utils3d.hpp / utils3d | VTK SindreMesh, Eigen, optional geometry backends |
 | SINDRECPP_WITH_AI | SindreCpp::Ai | ai.hpp / ai | Tensor types, async execution, pipeline and selected backends |
 | SINDRECPP_AI_ONNXRUNTIME | SindreCpp::OnnxRuntime | ai/onnxruntime.hpp / ai::onnxruntime | Independent ONNX Runtime CPU/CUDA inference |
 | SINDRECPP_AI_TRT | SindreCpp::Trt | ai/trt.hpp / ai::trt | Independent TensorRT conversion and engine inference |
@@ -109,6 +109,9 @@ utils_py needs Python development files; NumPy helpers need NumPy at runtime.
 Header inclusion alone does not create an interpreter/context/model.
 
 utils3d supports SINDRECPP_UTILS3D_BLAS_BACKEND=AUTO/EIGEN/BLAS.
+It requires VTK 9 when enabled. MeshLib/CGAL/Open3D/libigl/VCG are independently opt-in via
+SINDRECPP_UTILS3D_MESHLIB/CGAL/OPEN3D/IGL/VCG. MeshLib requires C++20; the base API remains C++17.
+See [Mesh guide](docs/mesh.md) for algorithms, backend priority, attributes and NumPy/Eigen interchange.
 Use SINDRECPP_UTILS3D_NATIVE_ARCH=OFF for portable/cross-compiled binaries.
 SINDRECPP_BUILD_UTILS3D_BENCHMARKS enables the optional GEMM benchmark.
 
