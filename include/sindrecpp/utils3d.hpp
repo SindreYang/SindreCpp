@@ -8,6 +8,13 @@
 #include <Eigen/Geometry>
 #include "utils3d/sindremesh.hpp"
 #include "utils3d/algorithm.hpp"
+#if defined(SINDRECPP_UTILS3D_VTK_DATA)
+#include "utils3d/sindredata.hpp"
+#include "utils3d/sindreimage.hpp"
+#if defined(SINDRECPP_UTILS3D_SHOW)
+#include "utils3d/show_plot.hpp"
+#endif
+#endif
 
 namespace sindrecpp::utils3d {
 

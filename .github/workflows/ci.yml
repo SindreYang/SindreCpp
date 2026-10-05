@@ -148,7 +148,7 @@ jobs:
           BACKEND: ${{ matrix.backend }}
         run: |
           OPTIONS=()
-          if [ "$BACKEND" = VTK ] || [ "$BACKEND" = ALL ]; then OPTIONS+=("-DSINDRECPP_UTILS3D_SHOW=ON"); fi
+          if [ "$BACKEND" = VTK ] || [ "$BACKEND" = ALL ]; then OPTIONS+=("-DSINDRECPP_UTILS3D_SHOW=ON" "-DSINDRECPP_UTILS3D_VTK_DATA=ON"); fi
           if [ "$BACKEND" = ALL ]; then
             for SDK in CGAL OPEN3D IGL VCG MESHLIB; do OPTIONS+=("-DSINDRECPP_UTILS3D_${SDK}=ON"); done
           elif [ "$BACKEND" != VTK ]; then

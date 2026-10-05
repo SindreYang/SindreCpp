@@ -53,6 +53,17 @@
 #include <vtkUnsignedCharArray.h>
 #include <vtkVertexGlyphFilter.h>
 #include <vtkWindowToImageFilter.h>
+#if defined(SINDRECPP_UTILS3D_VTK_DATA)
+#include <vtkDataSet.h>
+#include <vtkDataSetSurfaceFilter.h>
+#include <vtkImageActor.h>
+#include <vtkImageMapper3D.h>
+#include <vtkPiecewiseFunction.h>
+#include <vtkSmartVolumeMapper.h>
+#include <vtkVolume.h>
+#include <vtkVolumeProperty.h>
+VTK_MODULE_INIT(vtkRenderingVolumeOpenGL2);
+#endif
 
 // Factory registration also works for downstream header-only consumers.
 VTK_MODULE_INIT(vtkRenderingOpenGL2);
@@ -98,6 +109,13 @@ struct MeshPick {
     vtkIdType face = -1, vertex = -1;
     Position3 position{0, 0, 0};
 };
+#if defined(SINDRECPP_UTILS3D_VTK_DATA)
+struct VolumeStop {
+    double value;
+    Color color;
+    double opacity;
+};
+#endif
 
 class ShowMesh {
     struct Entry {
@@ -418,6 +436,86 @@ class ShowMesh {
     template <class Mesh> std::size_t add(const Mesh &mesh, const MeshStyle &style = {}) {
         return add(mesh.get_native(), style);
     }
+#if defined(SINDRECPP_UTILS3D_VTK_DATA)
+    std::size_t add(vtkDataObject *data, const MeshStyle &style = {}) {
+        auto *dataset = vtkDataSet::SafeDownCast(data);
+        if (!dataset)
+            throw std::invalid_argument("Display composites block-by-block");
+        vtkNew<vtkDataSetSurfaceFilter> surface;
+        surface->SetInputData(dataset);
+        surface->Update();
+        return add(surface->GetOutput(), style);
+    }
+    ShowMesh &volume(vtkImageData *image, const std::vector<VolumeStop> &stops = {}) {
+        if (!image || !image->GetNumberOfPoints() || !image->GetPointData()->GetScalars() ||
+            image->GetPointData()->GetScalars()->GetNumberOfComponents() != 1)
+            throw std::invalid_argument("Volume rendering requires a nonempty scalar image");
+        auto snapshot = vtkSmartPointer<vtkImageData>::New();
+        snapshot->DeepCopy(image);
+        vtkNew<vtkColorTransferFunction> color;
+        vtkNew<vtkPiecewiseFunction> opacity;
+        std::vector<VolumeStop> values = stops;
+        if (values.empty()) {
+            double range[2];
+            snapshot->GetScalarRange(range);
+            if (!std::isfinite(range[0]) || !std::isfinite(range[1]))
+                throw std::invalid_argument("Nonfinite volume range");
+            if (range[0] == range[1]) {
+                range[0] -= .5;
+                range[1] += .5;
+            }
+            values = {{range[0], {.05, .1, .3}, 0}, {range[1], {1, .85, .55}, .7}};
+        }
+        if (values.size() < 2)
+            throw std::invalid_argument("Volume transfer function needs at least two stops");
+        double previous = -std::numeric_limits<double>::infinity();
+        for (auto &stop : values) {
+            color_valid(stop.color);
+            unit(stop.opacity, "Invalid volume opacity");
+            if (!std::isfinite(stop.value) || stop.value <= previous)
+                throw std::invalid_argument("Volume stops must increase");
+            previous = stop.value;
+            color->AddRGBPoint(stop.value, stop.color[0], stop.color[1], stop.color[2]);
+            opacity->AddPoint(stop.value, stop.opacity);
+        }
+        vtkNew<vtkSmartVolumeMapper> mapper;
+        mapper->SetInputData(snapshot);
+        vtkNew<vtkVolumeProperty> property;
+        property->SetColor(color);
+        property->SetScalarOpacity(opacity);
+        property->SetInterpolationTypeToLinear();
+        property->ShadeOn();
+        vtkNew<vtkVolume> actor;
+        actor->SetMapper(mapper);
+        actor->SetProperty(property);
+        state_->renderer->AddVolume(actor);
+        return *this;
+    }
+    template <class Image>
+    ShowMesh &volume(const Image &image, const std::vector<VolumeStop> &stops = {}) {
+        return volume(vtkImageData::SafeDownCast(image.get_native()), stops);
+    }
+    ShowMesh &image_slice(vtkImageData *image, int axis, int index) {
+        if (!image || axis < 0 || axis > 2 || !image->GetPointData()->GetScalars())
+            throw std::invalid_argument("Invalid image slice");
+        int extent[6];
+        image->GetExtent(extent);
+        if (index < extent[2 * axis] || index > extent[2 * axis + 1])
+            throw std::out_of_range("Image slice index");
+        extent[2 * axis] = extent[2 * axis + 1] = index;
+        auto snapshot = vtkSmartPointer<vtkImageData>::New();
+        snapshot->DeepCopy(image);
+        vtkNew<vtkImageActor> actor;
+        actor->GetMapper()->SetInputData(snapshot);
+        actor->SetDisplayExtent(extent);
+        actor->InterpolateOn();
+        state_->renderer->AddActor(actor);
+        return *this;
+    }
+    template <class Image> ShowMesh &image_slice(const Image &image, int axis, int index) {
+        return image_slice(vtkImageData::SafeDownCast(image.get_native()), axis, index);
+    }
+#endif
     ShowMesh &style(std::size_t id, const MeshStyle &value) {
         apply_style(entry(id), value);
         return *this;

@@ -112,6 +112,9 @@ utils3d supports SINDRECPP_UTILS3D_BLAS_BACKEND=AUTO/EIGEN/BLAS.
 It requires VTK 9 when enabled. MeshLib/CGAL/Open3D/libigl/VCG are independently opt-in via
 SINDRECPP_UTILS3D_MESHLIB/CGAL/OPEN3D/IGL/VCG. MeshLib requires C++20; the base API remains C++17.
 See [Mesh guide](docs/mesh.md) for algorithms, backend priority, attributes and NumPy/Eigen interchange.
+Opt-in `SINDRECPP_UTILS3D_SHOW` adds the standalone `show_mesh` viewer called by `mesh.show()`.
+Opt-in `SINDRECPP_UTILS3D_VTK_DATA` adds datasets, images and scientific filters; with SHOW it also
+supports volumes, image slices and charts. See [VTK guide and coverage checklist](docs/vtk.md).
 Use SINDRECPP_UTILS3D_NATIVE_ARCH=OFF for portable/cross-compiled binaries.
 SINDRECPP_BUILD_UTILS3D_BENCHMARKS enables the optional GEMM benchmark.
 
