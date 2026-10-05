@@ -192,6 +192,110 @@ class SindreMesh {
         mesh_->GetCellData()->SetNormals(nullptr);
         mesh_->Modified();
     }
+    // Selection is index based; attributes follow their original elements, not interpolation.
+    void update_faces(const std::vector<bool> &keep) {
+        if (keep.size() != std::size_t(nfaces()))
+            throw std::invalid_argument("Face mask size mismatch");
+        auto next = vtkSmartPointer<vtkPolyData>::New();
+        next->DeepCopy(mesh_);
+        vtkNew<vtkCellArray> cells;
+        auto f = faces();
+        next->GetCellData()->Initialize();
+        next->GetCellData()->CopyAllocate(mesh_->GetCellData());
+        vtkIdType target = 0;
+        for (Eigen::Index i = 0; i < f.rows(); ++i) {
+            if (!keep[i])
+                continue;
+            vtkIdType ids[3] = {vtkIdType(f(i, 0)), vtkIdType(f(i, 1)), vtkIdType(f(i, 2))};
+            cells->InsertNextCell(3, ids);
+            next->GetCellData()->CopyData(mesh_->GetCellData(), i, target++);
+        }
+        next->SetPolys(cells);
+        next->GetPointData()->SetNormals(nullptr);
+        next->GetCellData()->SetNormals(nullptr);
+        mesh_ = next;
+    }
+    void update_vertex(const std::vector<bool> &keep) {
+        if (keep.size() != std::size_t(npoints()))
+            throw std::invalid_argument("Vertex mask size mismatch");
+        auto next = vtkSmartPointer<vtkPolyData>::New();
+        vtkNew<vtkPoints> points;
+        points->SetDataTypeToDouble();
+        vtkNew<vtkCellArray> cells;
+        std::vector<vtkIdType> mapping(keep.size(), -1);
+        next->GetPointData()->CopyAllocate(mesh_->GetPointData());
+        next->GetCellData()->CopyAllocate(mesh_->GetCellData());
+        double point[3];
+        for (Eigen::Index i = 0; i < npoints(); ++i) {
+            if (!keep[i])
+                continue;
+            mesh_->GetPoint(i, point);
+            const auto id = points->InsertNextPoint(point);
+            mapping[i] = id;
+            next->GetPointData()->CopyData(mesh_->GetPointData(), i, id);
+        }
+        auto f = faces();
+        vtkIdType target = 0;
+        for (Eigen::Index i = 0; i < f.rows(); ++i) {
+            vtkIdType ids[3] = {mapping[f(i, 0)], mapping[f(i, 1)], mapping[f(i, 2)]};
+            if (ids[0] < 0 || ids[1] < 0 || ids[2] < 0)
+                continue;
+            cells->InsertNextCell(3, ids);
+            next->GetCellData()->CopyData(mesh_->GetCellData(), i, target++);
+        }
+        next->SetPoints(points);
+        next->SetPolys(cells);
+        next->GetPointData()->SetNormals(nullptr);
+        next->GetCellData()->SetNormals(nullptr);
+        mesh_ = next;
+    }
+    double area() const { return faces_area().sum(); }
+    double signed_volume() const {
+        if (!is_watertight())
+            throw std::invalid_argument("Volume requires a closed surface");
+        auto v = vertices();
+        auto f = faces();
+        double volume = 0;
+        // Shift reference to reduce cancellation for models far from the origin.
+        auto c = center();
+        for (Eigen::Index i = 0; i < f.rows(); ++i) {
+            Eigen::Vector3d a = v.row(f(i, 0)).transpose() - c;
+            Eigen::Vector3d b = v.row(f(i, 1)).transpose() - c;
+            Eigen::Vector3d d = v.row(f(i, 2)).transpose() - c;
+            volume += a.dot(b.cross(d)) / 6.;
+        }
+        return volume; // Valid solid volume also requires consistent orientation / no
+                       // self-intersections.
+    }
+    struct CheckReport {
+        std::size_t duplicate_vertices = 0, degenerate_faces = 0, unused_vertices = 0;
+        std::size_t boundary_edges = 0, non_manifold_edges = 0;
+        bool edge_closed = false;
+    };
+    CheckReport check(double area_tolerance = 0) const {
+        if (!std::isfinite(area_tolerance) || area_tolerance < 0)
+            throw std::invalid_argument("Invalid degeneracy area tolerance");
+        auto v = vertices();
+        auto f = faces();
+        CheckReport r;
+        std::set<std::array<double, 3>> unique;
+        for (Eigen::Index i = 0; i < v.rows(); ++i)
+            if (!unique.insert({v(i, 0), v(i, 1), v(i, 2)}).second)
+                ++r.duplicate_vertices;
+        std::vector<bool> used(v.rows(), false);
+        auto areas = faces_area();
+        for (Eigen::Index i = 0; i < f.rows(); ++i) {
+            for (int k = 0; k < 3; ++k)
+                used[f(i, k)] = true;
+            if (areas[i] <= area_tolerance)
+                ++r.degenerate_faces;
+        }
+        r.unused_vertices = std::count(used.begin(), used.end(), false);
+        r.boundary_edges = get_boundary().size();
+        r.non_manifold_edges = get_non_manifold_edges().size();
+        r.edge_closed = is_watertight();
+        return r;
+    }
     void load(const std::filesystem::path &p) {
         if (!std::filesystem::is_regular_file(p))
             throw std::runtime_error("Mesh file not found: " + p.string());

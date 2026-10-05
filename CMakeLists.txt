@@ -317,7 +317,10 @@ if(SINDRECPP_WITH_UTILS3D)
         endif()
         set_property(TARGET SindreCpp::Utils3d APPEND PROPERTY INTERFACE_LINK_LIBRARIES ${sindrecpp_meshlib_target})
         set_property(TARGET SindreCpp::Utils3d APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
-            "${MESHLIB_INCLUDE_DIR};${MESHLIB_THIRDPARTY_INCLUDE_DIR}")
+            "${MESHLIB_INCLUDE_DIR}")
+        # MRMesh exports its own dependency include paths. Do not expose the
+        # entire SDK thirdparty root: it also contains MeshLib's patched
+        # pybind11, which shadows Utils_py's independent pybind11 installation.
         # MeshLib 3.x public headers use C++20.
         set_property(TARGET SindreCpp::Utils3d APPEND PROPERTY INTERFACE_COMPILE_FEATURES cxx_std_20)
     endif()

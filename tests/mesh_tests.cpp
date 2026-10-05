@@ -38,7 +38,20 @@ int main() {
         Labels labels(4);
         labels << 1, 2, 3, (std::int64_t{1} << 54) + 3;
         mesh.set_vertex_labels(labels);
+        mesh.set_faces_labels(labels);
         check(mesh.get_vertex_labels() == labels, "Integer labels preserve 64 bits");
+        auto selection = mesh.clone();
+        selection.update_faces({true, false, true, false});
+        check(selection.nfaces() == 2 && selection.get_faces_labels()[1] == labels[2],
+              "Face selection preserves original labels");
+        selection = mesh.clone();
+        selection.update_vertex({true, true, true, false});
+        check(selection.npoints() == 3 && selection.nfaces() == 1 &&
+                  selection.get_vertex_labels()[2] == labels[2] &&
+                  selection.get_faces_labels()[0] == labels[0],
+              "Vertex selection remaps labels");
+        check(mesh.check().edge_closed && mesh.check().unused_vertices == 0, "Geometry report");
+        check(std::abs(mesh.signed_volume() - 1. / 6) < 1e-12, "Signed volume");
         auto copy = mesh.clone();
         copy.shift_xyz(Eigen::Vector3d(2, 3, 4));
         check(mesh.vertices().isApprox(v), "Clone must not mutate source");

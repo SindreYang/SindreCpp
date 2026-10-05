@@ -54,17 +54,20 @@ copy.save("scan.vtp");
 | 能力 | 接口 |
 | --- | --- |
 | 构造与复制 | 数组、VTK polydata、文件路径；`clone`；复制构造/赋值为深拷贝 |
-| 几何读写 | `vertices`, `faces`, `update_geometry`, `npoints`, `nfaces`, `empty` |
+| 几何读写 | `vertices`, `faces`, `update_geometry`, `update_vertex`, `update_faces`, `npoints`, `nfaces`, `empty` |
 | 文件 | `load`, `save`：STL / PLY / OBJ / VTP |
 | 变换 | `apply_transform`, `apply_inv_transform`, `shift_xyz`, `scale_xyz`, `rotate_xyz` |
 | 属性 | `set_data`, `get_pointdata`, `get_celldata`；顶点/面片 int64 标签 |
-| 几何 | 顶点/面法线、重心、面积、中心、半径、曲率 |
+| 几何 | 顶点/面法线、重心、面积、有向体积、中心、半径、曲率；`check` 缺陷计数 |
 | 拓扑 | 唯一边、边对应面、边界边、非流形边、顶点/面邻接列表 |
 | 组件 | `largest_component`, `split_component_by_faces` |
 | 查询 | `get_near_idx`、`project_points`、`signed_distance` |
 
 `rotate_xyz` 使用角度制，绕原点，次序为 X→Y→Z；`apply_transform` 为列向量约定的仿射矩阵。
 `center` 是顶点平均值；`radius` 是到该中心的最大距离。空网格没有中心，零半径不能归一化。
+`update_faces` 保留顶点，按掩码过滤面片与面属性；`update_vertex` 过滤顶点及涉及删除顶点的面，
+重编号并保留相应顶点/面属性。两者移除旧法线，需按需要重新计算。
+`signed_volume` 的实体含义要求方向一致且无自交；`check` 不包含自相交检测，需单独调用算法。
 `get_boundary` 返回原网格顶点索引的无向边，不是已经排序的边界环。
 `is_watertight` 仅检查每条边有两个相邻面，不能证明没有自相交或顶点非流形。
 

@@ -118,7 +118,7 @@ jobs:
       - name: Install geometry SDKs
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvtk9-dev libeigen3-dev pybind11-dev clang
+          sudo apt-get install -y libvtk9-dev libeigen3-dev pybind11-dev clang ripgrep
           python -m pip install numpy
       - name: Install selected optional backend
         env:
