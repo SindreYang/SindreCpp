@@ -10,7 +10,7 @@ C++17 capability toolkit following Sindre naming. All third-party dependencies a
 | SINDRECPP_WITH_UTILS_GUI | SindreCpp::Utils_gui | utils_gui.hpp / utils_gui | ImGui context lifetime |
 | SINDRECPP_WITH_UTILS_PY | SindreCpp::Utils_py | utils_py.hpp / utils_py | Python embedding and NumPy conversion |
 | SINDRECPP_WITH_UTILS2D | SindreCpp::Utils2d | utils2d.hpp / utils2d | OpenCV images and preprocessing |
-| SINDRECPP_WITH_UTILS3D | SindreCpp::Utils3d | utils3d.hpp / utils3d | VTK SindreMesh, Eigen, optional geometry backends |
+| SINDRECPP_WITH_UTILS3D | SindreCpp::Utils3d | utils3d.hpp / utils3d | VTK core, fast SindreMesh entry point, Eigen, optional geometry backends |
 | SINDRECPP_WITH_AI | SindreCpp::Ai | ai.hpp / ai | Tensor types, async execution, pipeline and selected backends |
 | SINDRECPP_AI_ONNXRUNTIME | SindreCpp::OnnxRuntime | ai/onnxruntime.hpp / ai::onnxruntime | Independent ONNX Runtime CPU/CUDA inference |
 | SINDRECPP_AI_TRT | SindreCpp::Trt | ai/trt.hpp / ai::trt | Independent TensorRT conversion and engine inference |

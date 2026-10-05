@@ -1,7 +1,7 @@
 # VTK 数据、图像、显示与功能清单
 
 VTK 封装分为网格、通用数据、图像、场分析、三维显示和二维绘图。
-`sindremesh.hpp` 调用独立 `show_mesh.hpp`，不承担图像和其他数据类型的职责。
+`sindremesh.hpp` 是面向用户的快速入口。VTK 的核心对象集中在 `core/`，由 `core/vtk.hpp` 统一导出；算法和第三方库集中在 `algorithms.hpp`。
 
 ```cmake
 set(SINDRECPP_WITH_UTILS3D ON CACHE BOOL "")
@@ -10,19 +10,28 @@ set(SINDRECPP_UTILS3D_SHOW ON CACHE BOOL "")     # 显示、交互、体渲染�
 target_link_libraries(my_app PRIVATE SindreCpp::Utils3d)
 ```
 
+常用网格程序可以直接包含 `utils3d/sindremesh.hpp`。需要完整 VTK 数据和显示对象时，统一包含：
+
+```cpp
+#include <sindrecpp/utils3d/core/vtk.hpp>
+```
+
+这个入口按编译开关导出数据、图像、显示和绘图类型；关闭对应开关时不会引入相应接口。
+
 | 文件 | 用途 |
 | --- | --- |
-| `utils3d/sindremesh.hpp` | 三角网格、属性、拓扑、VTK 过滤器入口，`mesh.show()` |
-| `utils3d/algorithm.hpp` | 网格算法、曲线截面、裁剪和拼接 |
-| `utils3d/show_mesh.hpp` | 可独立使用的多对象窗口、相机、拾取、截图；数据开关开启后支持体渲染与图像切片 |
-| `utils3d/sindredata.hpp` | 点、线、结构/非结构网格、组合数据、场分析、XML 读写 |
-| `utils3d/sindreimage.hpp` | 二/三维规则图像、图像滤波和重采样 |
-| `utils3d/show_plot.hpp` | 折线、散点、柱状图和 PNG 输出 |
+| `utils3d/sindremesh.hpp` | 用户快速使用入口，三角网格和 `mesh.show()` |
+| `utils3d/core/vtk.hpp` | VTK 核心对象统一导出 |
+| `utils3d/algorithms.hpp` | 网格算法、曲线截面、裁剪、拼接和第三方后端 |
+| `utils3d/core/show_mesh.hpp` | 多对象窗口、相机、拾取、截图；数据开关开启后支持体渲染与图像切片 |
+| `utils3d/core/sindredata.hpp` | 点、线、结构/非结构网格、组合数据、场分析、XML 读写 |
+| `utils3d/core/sindreimage.hpp` | 二/三维规则图像、图像滤波和重采样 |
+| `utils3d/core/show_plot.hpp` | 折线、散点、柱状图和 PNG 输出 |
 
 ## 图像与体数据
 
 ```cpp
-#include <sindrecpp/utils3d/sindreimage.hpp>
+#include <sindrecpp/utils3d/core/sindreimage.hpp>
 namespace u3 = sindrecpp::utils3d;
 u3::Matrix voxels = u3::Matrix::Zero(64*64*64, 1); // 换为实际体数据
 // x 最快：x + nx*(y + ny*z)，列是通道；spacing/origin 为物理坐标。
@@ -49,7 +58,7 @@ normalize 对全部通道共同求范围；常数输入映射到 lower。cast �
 ## 通用数据与场分析
 
 ```cpp
-#include <sindrecpp/utils3d/sindredata.hpp>
+#include <sindrecpp/utils3d/core/sindredata.hpp>
 auto data = u3::SindreData::structured_grid(points, {nx,ny,nz});
 data.set_data("temperature", temperatures); // 点标量
 data.set_data("velocity", velocities);     // 点三维向量
@@ -76,7 +85,7 @@ XML 扩展名必须与数据类型一致；VTM 会生成相邻子文件，需整
 ## 显示与绘图
 
 ```cpp
-#include <sindrecpp/utils3d/show_plot.hpp>
+#include <sindrecpp/utils3d/core/show_plot.hpp>
 u3::ShowPlot plot;
 plot.add(x,y,"curve").add(x,y,"samples",u3::PlotKind::points);
 plot.title("Result").axis_titles("x","y").show();

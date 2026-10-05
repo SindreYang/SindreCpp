@@ -1,5 +1,5 @@
 #pragma once
-#include "sindremesh.hpp"
+#include "core/sindremesh.hpp"
 #include <functional>
 #include <initializer_list>
 #include <queue>
