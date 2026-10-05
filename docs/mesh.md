@@ -2,6 +2,7 @@
 
 `utils3d` 开启后以 VTK 9 为网格基础，Eigen 为数组交换基础。不开启时不查找任何 3D SDK。
 计算接口不创建渲染窗口。当前算法路径为 CPU；AI 的 CUDA 默认不影响此模块。
+`SindreMesh` 是面向用户的聚合平台；`core` 只提供独立底层包装，由 `SindreMesh` 统一调用。
 显示独立放在 `core/show.hpp`，由 `SindreMesh::show()` 调用，按需开启。
 
 ## 网格、算法与显示文件
@@ -10,11 +11,11 @@
 | --- | --- |
 | `utils3d/sindremesh.hpp` | 用户快速使用入口，导出 `SindreMesh` |
 | `utils3d/core/vtk.hpp` | VTK 核心对象统一入口 |
-| `utils3d/core/mesh.hpp` | VTK 网格对象和网格级操作 |
-| `utils3d/core/data.hpp` | VTK 通用数据集和场数据 |
-| `utils3d/core/image.hpp` | VTK 规则图像和体数据 |
-| `utils3d/core/plot.hpp` | VTK 二维绘图 |
-| `utils3d/core/show.hpp` | VTK 三维显示和交互 |
+| `utils3d/core/mesh.hpp` | `core::Mesh`：VTK 三角网格对象和网格级操作 |
+| `utils3d/core/data.hpp` | `core::Data`：VTK 通用数据集和场数据 |
+| `utils3d/core/image.hpp` | `core::Image`：VTK 规则图像和体数据 |
+| `utils3d/core/plot.hpp` | `core::ShowPlot`：VTK 二维绘图 |
+| `utils3d/core/show.hpp` | `core::ShowMesh`：VTK 三维显示和交互 |
 | `utils3d/algorithms.hpp` | 算法、后端选择及后端网格转换 |
 
 命名参考 Python sindre 的 `SindreMesh`，设计参考 vedo 的简洁调用方式，但不复制 vedo 实现。
@@ -54,6 +55,8 @@ MeshLib 与 Utils_py 同时开启时，CMake 将独立 pybind11 的头文件放�
 #include <sindrecpp/utils3d.hpp>
 namespace u3 = sindrecpp::utils3d;
 u3::SindreMesh mesh("scan.ply");
+// 所有常用操作返回 SindreMesh&，可以连续调用。
+mesh.clean().compute_normals().smooth();
 auto copy = mesh.clone();
 copy.shift_xyz(Eigen::Vector3d(1, 2, 3)).scale_xyz(2.0);
 auto v = copy.vertices(); // N×3 float64 独立副本
@@ -61,6 +64,8 @@ auto f = copy.faces();    // M×3 int64 独立副本
 auto centers = copy.faces_barycentre();
 copy.compute_normals();
 copy.save("scan.vtp");
+copy.save("scan.ply");
+copy.save("scan.json");
 ```
 
 ## 显示：show_mesh
@@ -107,7 +112,7 @@ VTK 功能扩展；原生可访问性不计为高层功能已封装。截图为 
 | --- | --- |
 | 构造与复制 | 数组、VTK polydata、文件路径；`clone`；复制构造/赋值为深拷贝 |
 | 几何读写 | `vertices`, `faces`, `update_geometry`, `update_vertex`, `update_faces`, `npoints`, `nfaces`, `empty` |
-| 文件 | `load`, `save`：STL / PLY / OBJ / VTP |
+| 文件 | `load`, `save`：STL / PLY / OBJ / VTP / VTK；`save` 额外支持 JSON 网格交换 |
 | 变换 | `apply_transform`, `apply_inv_transform`, `shift_xyz`, `scale_xyz`, `rotate_xyz` |
 | 属性 | `set_data`, `get_pointdata`, `get_celldata`；顶点/面片 int64 标签 |
 | 几何 | 顶点/面法线、重心、面积、有向体积、中心、半径、曲率；`check` 缺陷计数 |

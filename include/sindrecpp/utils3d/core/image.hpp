@@ -19,7 +19,9 @@
 #include <vtkImageThreshold.h>
 #include <vtkMatrix4x4.h>
 
-namespace sindrecpp::utils3d {
+#define SindreData Data
+#define SindreImage Image
+namespace sindrecpp::utils3d::core {
 enum class ImageInterpolation { nearest, linear, cubic };
 class SindreImage : public SindreData {
     template <class Filter, class Configure> SindreImage image_filter(Configure configure) const {
@@ -256,4 +258,6 @@ class SindreImage : public SindreData {
         });
     }
 };
-} // namespace sindrecpp::utils3d
+#undef SindreImage
+#undef SindreData
+} // namespace sindrecpp::utils3d::core

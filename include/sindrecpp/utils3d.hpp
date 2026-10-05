@@ -6,8 +6,7 @@
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
-#include "utils3d/core/vtk.hpp"
-#include "utils3d/algorithms.hpp"
+#include "utils3d/sindremesh.hpp"
 
 namespace sindrecpp::utils3d {
 

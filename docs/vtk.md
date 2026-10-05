@@ -1,7 +1,8 @@
 # VTK 数据、图像、显示与功能清单
 
 VTK 封装分为网格、通用数据、图像、场分析、三维显示和二维绘图。
-`sindremesh.hpp` 是面向用户的快速入口。VTK 的核心对象按 vedo 风格分为 `mesh`、`data`、`image`、`plot` 和 `show`，集中在 `core/` 并由 `core/vtk.hpp` 统一导出；算法和第三方库集中在 `algorithms.hpp`。
+`sindremesh.hpp` 是面向用户的聚合入口。VTK 的核心对象按 vedo 风格分为 `mesh`、`data`、`image`、`plot` 和 `show`，集中在 `core/` 并由 `core/vtk.hpp` 统一导出；算法和第三方库集中在 `algorithms.hpp`。
+直接使用 `core/vtk.hpp` 时类型位于 `sindrecpp::utils3d::core`；普通用户优先使用 `sindrecpp::utils3d::SindreMesh`、`Data`、`Image` 和 `Plot`。
 
 ```cmake
 set(SINDRECPP_WITH_UTILS3D ON CACHE BOOL "")
@@ -20,7 +21,7 @@ target_link_libraries(my_app PRIVATE SindreCpp::Utils3d)
 
 | 文件 | 用途 |
 | --- | --- |
-| `utils3d/sindremesh.hpp` | 用户快速使用入口，三角网格和 `mesh.show()` |
+| `utils3d/sindremesh.hpp` | 用户聚合入口，构造、链式网格操作、导出和 `mesh.show()` |
 | `utils3d/core/vtk.hpp` | VTK 核心对象统一导出 |
 | `utils3d/core/mesh.hpp` | 三角网格、属性、拓扑和网格过滤器 |
 | `utils3d/core/data.hpp` | 通用数据集、场分析和数据集 I/O |
@@ -32,16 +33,16 @@ target_link_libraries(my_app PRIVATE SindreCpp::Utils3d)
 ## 图像与体数据
 
 ```cpp
-#include <sindrecpp/utils3d/core/image.hpp>
+#include <sindrecpp/utils3d.hpp>
 namespace u3 = sindrecpp::utils3d;
 u3::Matrix voxels = u3::Matrix::Zero(64*64*64, 1); // 换为实际体数据
 // x 最快：x + nx*(y + ny*z)，列是通道；spacing/origin 为物理坐标。
-u3::SindreImage image(voxels, {64,64,64}, Eigen::Vector3d(.5,.5,1));
+u3::Image image(voxels, {64,64,64}, Eigen::Vector3d(.5,.5,1));
 auto filtered = image.gaussian().normalize();
 auto mask = filtered.threshold(.3,1).morphology();
 auto section = image.reslice(Eigen::Matrix4d::Identity(), {64,64,1});
 image.save("volume.vti");
-auto loaded = u3::SindreImage(u3::SindreData::load("volume.vti"));
+auto loaded = u3::Image(u3::Data::load("volume.vti"));
 
 u3::ShowOptions options;
 options.offscreen = true; options.interactive = false;
@@ -59,8 +60,8 @@ normalize 对全部通道共同求范围；常数输入映射到 lower。cast �
 ## 通用数据与场分析
 
 ```cpp
-#include <sindrecpp/utils3d/core/data.hpp>
-auto data = u3::SindreData::structured_grid(points, {nx,ny,nz});
+#include <sindrecpp/utils3d.hpp>
+auto data = u3::Data::structured_grid(points, {nx,ny,nz});
 data.set_data("temperature", temperatures); // 点标量
 data.set_data("velocity", velocities);     // 点三维向量
 auto gradients = data.gradient("temperature");
@@ -68,8 +69,8 @@ auto derivatives = data.gradient("velocity", true, true, true); // curl/divergen
 auto iso = data.contour("temperature", {300,500});
 auto flow = data.streamlines("velocity", seeds, 10);
 auto arrows = data.glyph_vectors("velocity", .1);
-auto sample = u3::SindreData::point_cloud(query).probe(data);
-auto grouped = u3::SindreData::blocks({data,iso,flow});
+auto sample = u3::Data::point_cloud(query).probe(data);
+auto grouped = u3::Data::blocks({data,iso,flow});
 grouped.save("scene.vtm");
 ```
 
@@ -86,8 +87,8 @@ XML 扩展名必须与数据类型一致；VTM 会生成相邻子文件，需整
 ## 显示与绘图
 
 ```cpp
-#include <sindrecpp/utils3d/core/plot.hpp>
-u3::ShowPlot plot;
+#include <sindrecpp/utils3d.hpp>
+u3::Plot plot;
 plot.add(x,y,"curve").add(x,y,"samples",u3::PlotKind::points);
 plot.title("Result").axis_titles("x","y").show();
 ```
@@ -113,7 +114,7 @@ plot.title("Result").axis_titles("x","y").show();
 | --- | --- | --- |
 | 01–08 | 三角表面、点云、折线、规则图像、结构网格、直角网格、四面体网格、组合数据 | SindreMesh / SindreData / SindreImage |
 | 09–15 | 点属性、面/单元属性、属性增删改名、独立复制、纹理坐标、通用过滤器、流水线快照 | set/get_data、data_names/remove/rename、clone、set_uv、filtered、pipeline_source |
-| 16–25 | STL、PLY、OBJ、VTP、VTI、VTS、VTR、VTU、VTM 读写，PNG 截图 | load/save、screenshot |
+| 16–25 | STL、PLY、OBJ、VTP、VTK、VTI、VTS、VTR、VTU、VTM 读写，JSON 网格导出，PNG 截图 | load/save、screenshot |
 | 26–35 | 包围盒、坐标变换、面积、体积、法线控制、曲率、边界环、特征边、邻接、连通表面 | SindreMesh |
 | 36–45 | 最近点、表面距离、清理、标量区域、VTK 简化、VTK 平滑、VTK 补洞、细分、平面裁剪、盒/球裁剪 | SindreMesh / algorithm |
 | 46–61 | 数据表面、等值线/面、阈值、数据裁剪、梯度、散度/旋度、向量形变、标量形变、点到单元、单元到点、场采样、表达式、Delaunay、流线、管线、箭头 | SindreData |

@@ -33,7 +33,9 @@
 #include <vtkXMLGenericDataObjectReader.h>
 #include <vtkXMLMultiBlockDataWriter.h>
 
-namespace sindrecpp::utils3d {
+#define SindreMesh Mesh
+#define SindreData Data
+namespace sindrecpp::utils3d::core {
 // Value wrapper for VTK datasets/composites. Filters return independent objects.
 class SindreData {
   protected:
@@ -457,4 +459,6 @@ class SindreData {
             throw std::runtime_error("VTK data write failed");
     }
 };
-} // namespace sindrecpp::utils3d
+#undef SindreData
+#undef SindreMesh
+} // namespace sindrecpp::utils3d::core

@@ -12,7 +12,7 @@
 #include <vtkTable.h>
 VTK_MODULE_INIT(vtkRenderingContextOpenGL2);
 
-namespace sindrecpp::utils3d {
+namespace sindrecpp::utils3d::core {
 enum class PlotKind { line, points, bars };
 class ShowPlot {
     vtkSmartPointer<vtkContextView> view_ = vtkSmartPointer<vtkContextView>::New();
@@ -114,4 +114,4 @@ class ShowPlot {
     }
     vtkChartXY *get_chart() const { return chart_; }
 };
-} // namespace sindrecpp::utils3d
+} // namespace sindrecpp::utils3d::core

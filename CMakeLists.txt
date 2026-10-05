@@ -252,7 +252,7 @@ endif()
 
 if(SINDRECPP_WITH_UTILS3D)
     set(sindrecpp_vtk_components CommonCore CommonDataModel CommonTransforms
-        FiltersCore FiltersGeneral FiltersGeometry FiltersModeling IOGeometry IOPLY IOXML)
+        FiltersCore FiltersGeneral FiltersGeometry FiltersModeling IOGeometry IOLegacy IOPLY IOXML)
     if(SINDRECPP_UTILS3D_SHOW OR SINDRECPP_UTILS3D_VTK_DATA)
         enable_language(C) # Some installed VTK targets export MPI::MPI_C.
     endif()

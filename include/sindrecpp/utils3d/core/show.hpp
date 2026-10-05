@@ -70,7 +70,7 @@ VTK_MODULE_INIT(vtkRenderingOpenGL2);
 VTK_MODULE_INIT(vtkRenderingFreeType);
 VTK_MODULE_INIT(vtkInteractionStyle);
 
-namespace sindrecpp::utils3d {
+namespace sindrecpp::utils3d::core {
 using Color = std::array<double, 3>;
 using Position3 = std::array<double, 3>;
 enum class Representation { surface, wireframe, points };
@@ -805,4 +805,4 @@ auto show_mesh(const Mesh &mesh, const ShowOptions &options = {})
     -> decltype(mesh.get_native(), ShowMesh(options)) {
     return show_mesh(mesh.get_native(), options);
 }
-} // namespace sindrecpp::utils3d
+} // namespace sindrecpp::utils3d::core

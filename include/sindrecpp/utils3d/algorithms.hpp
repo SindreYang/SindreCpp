@@ -64,6 +64,8 @@
 #endif
 
 namespace sindrecpp::utils3d {
+using CoreMesh = core::Mesh;
+#define SindreMesh CoreMesh
 // Curves retain vtkPolyData lines rather than being converted to triangle meshes.
 inline vtkSmartPointer<vtkPolyData>
 slice_plane(const SindreMesh &mesh, const Eigen::Vector3d &origin, const Eigen::Vector3d &normal) {
@@ -914,4 +916,5 @@ inline SindreMesh reconstruct_poisson(const Vertices &points, const Vertices &no
     throw std::runtime_error("Enable Open3D for Poisson reconstruction");
 #endif
 }
+#undef SindreMesh
 } // namespace sindrecpp::utils3d

@@ -26,6 +26,13 @@ int main() {
         Faces f(4, 3);
         f << 0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3;
         SindreMesh mesh(v, f);
+        auto fluent = mesh.clone();
+        fluent.clean().compute_normals();
+        SmoothOptions fluent_smoothing;
+        fluent_smoothing.backend = Backend::vtk;
+        fluent.smooth(fluent_smoothing);
+        check(fluent.nfaces() == 4 && fluent.vertex_normals().rows() == 4,
+              "SindreMesh fluent workflow");
         SindreMesh empty_mesh;
         empty_mesh.shift_xyz(Eigen::Vector3d::Ones());
         check(empty_mesh.empty() && empty_mesh.vertex_normals().rows() == 0,
@@ -138,6 +145,11 @@ int main() {
         check(loaded.vertices().isApprox(v) && loaded.faces() == f, "VTP round trip");
         check(loaded.get_vertex_labels() == labels, "VTP integer attributes");
         std::filesystem::remove(path);
+        auto json_path = path;
+        json_path.replace_extension(".json");
+        mesh.save(json_path);
+        check(std::filesystem::is_regular_file(json_path), "JSON mesh export");
+        std::filesystem::remove(json_path);
         for (const char *extension : {".stl", ".ply", ".obj"}) {
             auto interchange = path;
             interchange.replace_extension(extension);

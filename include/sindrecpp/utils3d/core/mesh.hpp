@@ -37,6 +37,8 @@
 #include <vtkPolyDataAlgorithm.h>
 #include <vtkPolyDataConnectivityFilter.h>
 #include <vtkPolyDataNormals.h>
+#include <vtkPolyDataReader.h>
+#include <vtkPolyDataWriter.h>
 #include <vtkSTLReader.h>
 #include <vtkSTLWriter.h>
 #include <vtkSmartPointer.h>
@@ -50,7 +52,7 @@
 #include "show.hpp"
 #endif
 
-namespace sindrecpp::utils3d {
+namespace sindrecpp::utils3d::core {
 using Vertices = Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>;
 using Faces = Eigen::Matrix<std::int64_t, Eigen::Dynamic, 3, Eigen::RowMajor>;
 using Matrix = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
@@ -62,6 +64,7 @@ struct MeshNormals {
 };
 
 // Value semantics: copies and filter results never share mutable VTK storage.
+#define SindreMesh Mesh
 class SindreMesh {
     vtkSmartPointer<vtkPolyData> mesh_ = vtkSmartPointer<vtkPolyData>::New();
     static std::string extension(const std::filesystem::path &path) {
@@ -364,8 +367,10 @@ class SindreMesh {
             d = read<vtkOBJReader>(p);
         else if (e == ".vtp")
             d = read<vtkXMLPolyDataReader>(p);
+        else if (e == ".vtk")
+            d = read<vtkPolyDataReader>(p);
         else
-            throw std::invalid_argument("Supported mesh formats: stl, ply, obj, vtp");
+            throw std::invalid_argument("Supported mesh formats: stl, ply, obj, vtp, vtk");
         SindreMesh next(d);
         mesh_ = next.mesh_;
     }
@@ -379,8 +384,10 @@ class SindreMesh {
             write<vtkOBJWriter>(p);
         else if (e == ".vtp")
             write<vtkXMLPolyDataWriter>(p);
+        else if (e == ".vtk")
+            write<vtkPolyDataWriter>(p);
         else
-            throw std::invalid_argument("Supported mesh formats: stl, ply, obj, vtp");
+            throw std::invalid_argument("Supported mesh formats: stl, ply, obj, vtp, vtk");
     }
     void compute_normals(const MeshNormals &options = {}) {
         if (!std::isfinite(options.feature_angle) || options.feature_angle < 0 ||
@@ -804,4 +811,5 @@ class SindreMesh {
         return x;
     }
 };
-} // namespace sindrecpp::utils3d
+#undef SindreMesh
+} // namespace sindrecpp::utils3d::core
