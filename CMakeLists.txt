@@ -182,6 +182,22 @@ if(SINDRECPP_WITH_UTILS_PY)
         sindrecpp_make_available(pybind11 PYBIND11_TEST=OFF)
     endif()
     sindrecpp_add_module(Utils_py pybind11::embed)
+    if(SINDRECPP_WITH_UTILS3D AND SINDRECPP_UTILS3D_MESHLIB)
+        # MeshLib's dependency include root contains a patched pybind11. An
+        # ordinary /usr/include entry cannot outrank that root, so stage ONLY
+        # the independently selected pybind11 headers in a dedicated path.
+        get_target_property(sindrecpp_pybind_paths pybind11::headers INTERFACE_INCLUDE_DIRECTORIES)
+        find_path(sindrecpp_pybind_include pybind11/embed.h
+            HINTS ${pybind11_INCLUDE_DIRS} ${sindrecpp_pybind_paths} ${pybind11_SOURCE_DIR}/include
+            REQUIRED)
+        set(sindrecpp_pybind_stage "${CMAKE_CURRENT_BINARY_DIR}/sindrecpp-python-headers")
+        file(COPY "${sindrecpp_pybind_include}/pybind11" DESTINATION "${sindrecpp_pybind_stage}")
+        # Imported target include directories become system paths. Use a
+        # normal compiler include path here so the isolated headers win.
+        set_property(TARGET SindreCpp::Utils_py APPEND PROPERTY INTERFACE_COMPILE_OPTIONS
+            "$<$<CXX_COMPILER_ID:MSVC>:/I${sindrecpp_pybind_stage}>"
+            "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-I${sindrecpp_pybind_stage}>")
+    endif()
 endif()
 
 if(SINDRECPP_WITH_HTTP)

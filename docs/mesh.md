@@ -35,6 +35,9 @@ VTK/CGAL/Open3D/MeshLib 使用已安装 SDK，不自动从源码构建大型依�
 MeshLib 使用 `find_package(meshlib CONFIG)`，链接 `MeshLib::MRMesh` 或 `MRMesh`，开启后要求 C++20。
 其他接口要求 C++17。CI 使用 MeshLib v3.1.4.297、libigl v2.5.0、固定 VCGlib 提交，
 以及 Ubuntu 24.04 的 VTK/CGAL SDK、Open3D 0.19.0 官方 C++11-ABI SDK。升级 SDK 后应重新运行后端测试。
+Open3D 的 Linux 预编译 SDK 还需要 libc++/libc++abi 运行库；与 MeshLib 共用时需检查 TBB 版本。
+MeshLib 与 Utils_py 同时开启时，CMake 将独立 pybind11 的头文件放到隔离的构建目录，
+避免 MeshLib SDK 内修改版 pybind11 抢占 NumPy 转换的头文件。
 
 ## 网格使用
 
