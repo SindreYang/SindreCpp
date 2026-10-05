@@ -38,6 +38,7 @@ MeshLib 使用 `find_package(meshlib CONFIG)`，链接 `MeshLib::MRMesh` 或 `MR
 Open3D 的 Linux 预编译 SDK 还需要 libc++/libc++abi 运行库；与 MeshLib 共用时需检查 TBB 版本。
 MeshLib 与 Utils_py 同时开启时，CMake 将独立 pybind11 的头文件放到隔离的构建目录，
 避免 MeshLib SDK 内修改版 pybind11 抢占 NumPy 转换的头文件。
+算法头文件也隔离 MeshLib 的 `_` 翻译宏，避免与 CGAL/Boost 的标识符冲突。
 
 ## 网格使用
 
