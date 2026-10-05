@@ -235,6 +235,11 @@ class SindreMesh {
         if (v.rows() != npoints())
             throw std::invalid_argument("Vertex-only update must retain vertex count");
         validate_geometry(v, faces());
+        if (!mesh_->GetPoints()) {
+            vtkNew<vtkPoints> points;
+            points->SetDataTypeToDouble();
+            mesh_->SetPoints(points);
+        }
         for (Eigen::Index i = 0; i < v.rows(); ++i)
             mesh_->GetPoints()->SetPoint(i, v.row(i).data());
         mesh_->GetPoints()->Modified();

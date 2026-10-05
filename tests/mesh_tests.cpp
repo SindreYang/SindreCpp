@@ -26,6 +26,10 @@ int main() {
         Faces f(4, 3);
         f << 0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3;
         SindreMesh mesh(v, f);
+        SindreMesh empty_mesh;
+        empty_mesh.shift_xyz(Eigen::Vector3d::Ones());
+        check(empty_mesh.empty() && empty_mesh.vertex_normals().rows() == 0,
+              "Empty mesh transformations must be safe");
         check(mesh.dimensions().isApprox(Eigen::Vector3d::Ones()), "Mesh bounds");
         auto movable = mesh.clone();
         auto moved = std::move(movable);

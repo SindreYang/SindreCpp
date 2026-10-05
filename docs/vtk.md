@@ -66,6 +66,7 @@ grouped.save("scene.vtm");
 SindreData 复制/构造深拷贝，移动后源只能重新赋值；`get_native()` 在移动源上报错。
 数据过滤器返回独立结果，不修改输入。组合数据须 `block()` 取叶节点后分析或显示。
 `surface()` 只返回三角表面；线数据保持 SindreData 或原生 vtkPolyData，不强转为 SindreMesh。
+SindreData 的 Matrix 属性接口使用 double，大整数属性需使用原生类型数组，不能经 double 无损交换。
 point/cell 数组转换是数值插值/平均，不适用于离散标签；probe 的有效性查看
 `vtkValidPointMask`，无效点不能当作实际采样值。场分析需要正确网格和物理单位，
 不保证病态单元、退化网格或未知流场的数值精度。Delaunay 不等同于约束四面体网格生成。
