@@ -265,7 +265,7 @@ class ShowMesh {
         e.bar = nullptr;
         e.style = o;
         auto *p = e.actor->GetProperty();
-        p->SetColor(o.color.data());
+        p->SetColor(o.color[0], o.color[1], o.color[2]);
         p->SetOpacity(o.opacity);
         p->SetEdgeColor(o.edge_color.data());
         p->SetEdgeVisibility(o.edges);
@@ -433,7 +433,9 @@ class ShowMesh {
         state_->entries.push_back(std::move(e));
         return state_->entries.size() - 1;
     }
-    template <class Mesh> std::size_t add(const Mesh &mesh, const MeshStyle &style = {}) {
+    template <class Mesh>
+    auto add(const Mesh &mesh, const MeshStyle &style = {})
+        -> decltype(mesh.get_native(), std::size_t{}) {
         return add(mesh.get_native(), style);
     }
 #if defined(SINDRECPP_UTILS3D_VTK_DATA)
@@ -554,7 +556,7 @@ class ShowMesh {
         mapper->SetInputData(outline->GetOutput());
         vtkNew<vtkActor> actor;
         actor->SetMapper(mapper);
-        actor->GetProperty()->SetColor(color.data());
+        actor->GetProperty()->SetColor(color[0], color[1], color[2]);
         actor->PickableOff();
         state_->renderer->AddActor(actor);
         return *this;
@@ -798,7 +800,9 @@ inline ShowMesh show_mesh(vtkPolyData *mesh, const ShowOptions &options = {}) {
     viewer.reset_camera().show(options.interactive);
     return viewer;
 }
-template <class Mesh> ShowMesh show_mesh(const Mesh &mesh, const ShowOptions &options = {}) {
+template <class Mesh>
+auto show_mesh(const Mesh &mesh, const ShowOptions &options = {})
+    -> decltype(mesh.get_native(), ShowMesh(options)) {
     return show_mesh(mesh.get_native(), options);
 }
 } // namespace sindrecpp::utils3d

@@ -60,12 +60,20 @@ int main() {
         check(mesh.npoints() == 4 && mesh.nfaces() == 4, "Mesh size");
         check(mesh.is_watertight() && mesh.get_boundary().empty(), "Closed tetrahedron");
         check(mesh.get_edges().size() == 6, "Unique edges");
+        check(mesh.get_curvature().allFinite() && mesh.get_curvature(false).allFinite(),
+              "Mean/Gaussian curvature");
         check(mesh.get_face_adj_list()[0].size() == 3, "Face adjacency");
         check((mesh.faces_barycentre().row(0) - Eigen::RowVector3d(1. / 3, 1. / 3, 0)).norm() <
                   1e-12,
               "Face center");
         check(std::abs(mesh.faces_area()[0] - .5) < 1e-12, "Area");
         mesh.compute_normals();
+        auto flipped_normals = mesh.clone();
+        MeshNormals normal_options;
+        normal_options.flip = true;
+        flipped_normals.compute_normals(normal_options);
+        check(flipped_normals.get_celldata("Normals").isApprox(-mesh.get_celldata("Normals")),
+              "Normal flip option");
         check(mesh.vertex_normals().rows() == 4, "Normals");
         Labels labels(4);
         labels << 1, 2, 3, (std::int64_t{1} << 54) + 3;
@@ -125,6 +133,16 @@ int main() {
         check(loaded.vertices().isApprox(v) && loaded.faces() == f, "VTP round trip");
         check(loaded.get_vertex_labels() == labels, "VTP integer attributes");
         std::filesystem::remove(path);
+        for (const char *extension : {".stl", ".ply", ".obj"}) {
+            auto interchange = path;
+            interchange.replace_extension(extension);
+            mesh.save(interchange);
+            SindreMesh roundtrip(interchange);
+            check(roundtrip.nfaces() == 4 &&
+                      roundtrip.dimensions().isApprox(Eigen::Vector3d::Ones()),
+                  "Mesh interchange geometry");
+            std::filesystem::remove(interchange);
+        }
         Faces bad = f;
         bad(0, 0) = -1;
         rejects([&] { SindreMesh x(v, bad); });

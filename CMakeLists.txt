@@ -253,8 +253,10 @@ endif()
 if(SINDRECPP_WITH_UTILS3D)
     set(sindrecpp_vtk_components CommonCore CommonDataModel CommonTransforms
         FiltersCore FiltersGeneral FiltersGeometry FiltersModeling IOGeometry IOPLY IOXML)
+    if(SINDRECPP_UTILS3D_SHOW OR SINDRECPP_UTILS3D_VTK_DATA)
+        enable_language(C) # Some installed VTK targets export MPI::MPI_C.
+    endif()
     if(SINDRECPP_UTILS3D_SHOW)
-        enable_language(C) # Ubuntu VTK rendering exports MPI::MPI_C.
         list(APPEND sindrecpp_vtk_components RenderingCore RenderingOpenGL2 RenderingFreeType
             RenderingAnnotation InteractionStyle IOImage)
     endif()

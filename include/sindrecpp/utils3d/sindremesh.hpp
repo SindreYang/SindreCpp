@@ -153,7 +153,9 @@ class SindreMesh {
     Eigen::Index nfaces() const { return mesh_->GetNumberOfPolys(); }
     bool empty() const { return npoints() == 0; }
 #if defined(SINDRECPP_UTILS3D_SHOW)
-    ShowMesh show(const ShowOptions &options = {}) const { return show_mesh(mesh_, options); }
+    ShowMesh show(const ShowOptions &options = {}) const {
+        return show_mesh(mesh_.GetPointer(), options);
+    }
 #endif
     Eigen::Matrix<double, 2, 3, Eigen::RowMajor> bounds() const {
         if (empty())

@@ -109,7 +109,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        backend: [VTK, CGAL, OPEN3D, IGL, VCG, MESHLIB, ALL]
+        backend: [VTK, SHOW, VTK_DATA, CGAL, OPEN3D, IGL, VCG, MESHLIB, ALL]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -171,4 +171,4 @@ jobs:
         if: matrix.backend == 'VTK'
         with:
           name: show-mesh-preview
-          path: build-geometry/show_mesh_preview.png
+          path: build-geometry/show_*_preview.png

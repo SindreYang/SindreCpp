@@ -65,6 +65,16 @@ int main() {
         viewer.texture(0, path);
         check(viewer.get_actor(0)->GetTexture() != nullptr, "Texture attached");
         viewer.get_actor(0)->SetTexture(nullptr);
+        for (auto mode :
+             {Representation::wireframe, Representation::points, Representation::surface}) {
+            MeshStyle appearance;
+            appearance.representation = mode;
+            appearance.opacity = .6;
+            appearance.edges = true;
+            appearance.smooth_shading = false;
+            appearance.backface_culling = true;
+            viewer.style(0, appearance).render();
+        }
         MeshStyle labels;
         labels.color_mode = MeshColorMode::labels;
         labels.array_name = "Labels";
@@ -85,6 +95,15 @@ int main() {
         auto second = mesh.clone();
         second.set_data("rgb", rgb);
         const auto id = viewer.add(second, direct);
+        viewer.render();
+        Matrix rgba(4, 4);
+        rgba.leftCols(3) = rgb;
+        rgba.col(3).setConstant(.5);
+        second.set_data("rgba", rgba);
+        MeshStyle alpha = direct;
+        alpha.array_name = "rgba";
+        const auto rgba_id = viewer.add(second, alpha);
+        viewer.render().remove(rgba_id);
         viewer.visible(id, false).visible(id, true).remove(id);
         rejects([&] { viewer.get_actor(id); });
         viewer.clip_plane(0, {.2, 0, 0}, {1, 0, 0}).render().clear_clipping(0);
