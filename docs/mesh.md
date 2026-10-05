@@ -1,7 +1,8 @@
 # SindreMesh 与几何算法
 
 `utils3d` 开启后以 VTK 9 为网格基础，Eigen 为数组交换基础。不开启时不查找任何 3D SDK。
-计算不创建渲染窗口，不需要 GUI 或 GPU。当前算法路径为 CPU；AI 的 CUDA 默认不影响此模块。
+计算接口不创建渲染窗口。当前算法路径为 CPU；AI 的 CUDA 默认不影响此模块。
+显示独立放在 `show_mesh.hpp`，由 `SindreMesh::show()` 调用，按需开启。
 
 ## 两个文件
 
@@ -9,6 +10,7 @@
 | --- | --- |
 | `utils3d/sindremesh.hpp` | 单文件 VTK 网格封装，`sindrecpp::utils3d::SindreMesh` |
 | `utils3d/algorithm.hpp` | 算法、后端选择及后端网格转换 |
+| `utils3d/show_mesh.hpp` | 独立 VTK 显示窗口，不依赖网格算法后端 |
 
 命名参考 Python sindre 的 `SindreMesh`，设计参考 vedo 的简洁调用方式，但不复制 vedo 实现。
 这不是完整 VTK/vedo/Python sindre API 的逐项兼容移植，也不是五个第三方库所有函数的重导出。
@@ -18,6 +20,7 @@
 
 ```cmake
 set(SINDRECPP_WITH_UTILS3D ON CACHE BOOL "")
+set(SINDRECPP_UTILS3D_SHOW ON CACHE BOOL "") # 可选：显示、交互和截图；默认 OFF
 # 默认仅 VTK + Eigen；以下均默认 OFF，按需求开启。
 set(SINDRECPP_UTILS3D_MESHLIB ON CACHE BOOL "")
 set(SINDRECPP_UTILS3D_CGAL ON CACHE BOOL "")
@@ -55,6 +58,46 @@ copy.compute_normals();
 copy.save("scan.vtp");
 ```
 
+## 显示：show_mesh
+
+```cpp
+u3::ShowOptions options;
+options.style.edges = true;
+options.style.opacity = .8;
+auto viewer = mesh.show(options); // 默认交互窗口；关闭窗口后返回可继续使用的 viewer
+
+// 多网格窗口；构造/添加不启动事件循环。
+u3::ShowMesh scene;
+auto id = scene.add(mesh);
+u3::MeshStyle colors;
+colors.color_mode = u3::MeshColorMode::labels;
+colors.array_name = "Labels"; // 保留 int64 标签精度，不通过 double 分类
+scene.style(id, colors).bounds(id).normals(id, true, .1, 10);
+scene.on_pick([](const u3::MeshPick &p) { /* p.mesh / p.face / p.vertex / p.position */ });
+scene.reset_camera().show();
+
+// 离屏 PNG 截图；旧 VTK/X11 环境仍需要 DISPLAY 或 xvfb。
+options.offscreen = true;
+options.interactive = false;
+auto preview = mesh.show(options);
+preview.screenshot("preview.png", 2);
+```
+
+`show_mesh(mesh, options)` 可以独立调用；`ShowMesh::add` 也接受原生 `vtkPolyData*`。
+窗口保存输入的深拷贝快照，不借用原网格内存；输入修改不会自动刷新窗口。
+窗口可移动，不可复制；回调状态在移动后仍有效。所有显示调用应在同一 GUI/渲染线程进行。
+离屏模式不创建交互器；`show(false)` 只渲染一次，事件循环由外部调用者管理。
+
+`MeshStyle` 支持颜色、透明度、边线、表面/线框/点、Phong/平面着色、光照参数和背面剔除。
+点/面标量支持灰度、冷暖、Viridis 近似三控制点色图、指定范围和色标；RGB/RGBA 支持 uint8
+或 [0,1] 浮点数组。离散 Labels 用整数哈希配色，无分类图例，不能保证每个标签颜色唯一。
+纹理支持 PNG/JPEG，需 `set_uv(Nx2)`；相机、灯光、法线、边框、文字和显示裁剪平面独立控制。
+拾取只返回窗口快照的元素索引，不能据此假定后续编辑后原网格索引仍相同。
+鼠标/键盘回调异常会结束事件循环并从 `show()` 重新抛出，不穿过 VTK 的事件回调栈。
+
+`get_renderer/get_window/get_interactor/get_actor/get_data` 返回借用的原生对象，供尚未封装的
+VTK 功能扩展；原生可访问性不计为高层功能已封装。截图为 RGB PNG，不承诺透明背景。
+
 | 能力 | 接口 |
 | --- | --- |
 | 构造与复制 | 数组、VTK polydata、文件路径；`clone`；复制构造/赋值为深拷贝 |
@@ -66,6 +109,8 @@ copy.save("scan.vtp");
 | 拓扑 | 唯一边、边对应面、边界边、非流形边、顶点/面邻接列表 |
 | 组件 | `largest_component`, `split_component_by_faces` |
 | 查询 | `get_near_idx`、`project_points`、`signed_distance` |
+| 扩展 | 属性增删/改名/列举、纹理坐标、bounds/dimensions、区域提取、有序边界、特征边 |
+| VTK 流程 | `filtered` 立即执行并复制结果；`pipeline_source` 提供独立快照供用户连接懒执行流水线 |
 
 `rotate_xyz` 使用角度制，绕原点，次序为 X→Y→Z；`apply_transform` 为列向量约定的仿射矩阵。
 `center` 是顶点平均值；`radius` 是到该中心的最大距离。空网格没有中心，零半径不能归一化。
@@ -77,6 +122,12 @@ copy.save("scan.vtp");
 
 `get_native` 是借用的 VTK 指针，需在所属网格存活期间使用；直接修改后需遵循 VTK Modified 规则。
 同一网格不保证并发修改安全，独立 clone 可独立处理。没有自动后台线程或解释器初始化。
+复制保持深拷贝；移动转移几何，源变为空网格，不再复制大数组。
+`compute_normals(MeshNormals)` 可控制点/面、方向、翻转、特征角和分裂；分裂会改变顶点编号。
+`boundary_loops` 返回不重复闭合端点的无向循环，分叉边界报错；不保证顺/逆时针方向。
+`extract_region` 按标量闭区间选面，点属性可选择三个顶点全部满足或任一满足；返回紧凑网格。
+`filtered` 仅用于单输入 vtkPolyDataAlgorithm 且输出应为三角表面，线/顶点单元会被三角化构造器去掉。
+截面曲线使用 `slice_plane` 返回原生线 vtkPolyData，不能转成 SindreMesh 而保留线单元。
 
 ## 算法与选择顺序
 
@@ -101,6 +152,7 @@ copy.save("scan.vtp");
 | 面积加权表面采样 | `sample` | Open3D |
 | Poisson 重建 | `reconstruct_poisson` | Open3D；输入需有方向一致的非零法线 |
 | Loop 细分/平面切割/翻面 | `subdivide`, `cut_plane`, `reverse_faces` | VTK |
+| 截面/盒与球裁剪/拼接 | `slice_plane`, `clip_box`, `clip_sphere`, `append_meshes` | VTK；裁剪不封口，拼接仅保留公共兼容属性 |
 | 最近邻标签回映射 | `labels_mapping` | VTK 空间索引 |
 | 顶点↔面标签 | `vertex_labels_to_face_labels`, `face_labels_to_vertex_labels` | 多数投票；平票选较小标签，孤立点默认 -1 |
 | 归一化/高斯热图 | `get_normalize`, `get_gaussian_heatmap` | Eigen/标准数学 |
@@ -159,7 +211,7 @@ auto array = sindrecpp::utils_py::array_from_matrix(matrix);
 CI 分别构建 VTK-only、五个可选后端和全部后端共存配置，执行网格/属性/变换/拓扑/算法及 NumPy 测试。
 这是合成小网格的功能验证，不是扫描数据集的稳定性或性能评测；不声称某个后端最稳定。
 发布前仍应在真实扫描数据、复杂孔洞、自交、极端尺度和大型模型上验证。
-未实现：vedo 窗口/纹理 UI、所有后端的全量 API、曲线切割/曲线偏移、体素 offset、ARAP、
+未实现：vedo 全量交互控件、所有后端的全量 API、曲线切割/曲线偏移、体素 offset、ARAP、
 图割分割、CAD/OCC 转换与 Python 私有 `.smesh` 格式。这些不能用本页的“后端支持”替代。
 
 本次不因许可阻止接入，也不删除任何第三方版权声明。后续开源不自动满足依赖许可；

@@ -34,21 +34,32 @@
 #include <vtkPointData.h>
 #include <vtkPoints.h>
 #include <vtkPolyData.h>
+#include <vtkPolyDataAlgorithm.h>
 #include <vtkPolyDataConnectivityFilter.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkSTLReader.h>
 #include <vtkSTLWriter.h>
 #include <vtkSmartPointer.h>
 #include <vtkStaticPointLocator.h>
+#include <vtkStripper.h>
 #include <vtkTriangleFilter.h>
+#include <vtkTrivialProducer.h>
 #include <vtkXMLPolyDataReader.h>
 #include <vtkXMLPolyDataWriter.h>
+#if defined(SINDRECPP_UTILS3D_SHOW)
+#include "show_mesh.hpp"
+#endif
 
 namespace sindrecpp::utils3d {
 using Vertices = Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>;
 using Faces = Eigen::Matrix<std::int64_t, Eigen::Dynamic, 3, Eigen::RowMajor>;
 using Matrix = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 using Labels = Eigen::Matrix<std::int64_t, Eigen::Dynamic, 1>;
+struct MeshNormals {
+    bool points = true, faces = true, consistent = true, auto_orient = false;
+    bool flip = false, split = false;
+    double feature_angle = 30;
+};
 
 // Value semantics: copies and filter results never share mutable VTK storage.
 class SindreMesh {
@@ -125,10 +136,14 @@ class SindreMesh {
             mesh_->DeepCopy(other.mesh_);
         return *this;
     }
-    // Moves currently deep-copy, retaining a valid unchanged source object.
-    SindreMesh(SindreMesh &&other) : SindreMesh(static_cast<const SindreMesh &>(other)) {}
+    // Move transfers geometry without copying arrays; source becomes empty.
+    SindreMesh(SindreMesh &&other) { std::swap(mesh_, other.mesh_); }
     SindreMesh &operator=(SindreMesh &&other) {
-        return operator=(static_cast<const SindreMesh &>(other));
+        if (this != &other) {
+            SindreMesh temporary(std::move(other));
+            std::swap(mesh_, temporary.mesh_);
+        }
+        return *this;
     }
     SindreMesh clone() const { return *this; }
     vtkPolyData *get_native() const noexcept {
@@ -137,6 +152,40 @@ class SindreMesh {
     Eigen::Index npoints() const { return mesh_->GetNumberOfPoints(); }
     Eigen::Index nfaces() const { return mesh_->GetNumberOfPolys(); }
     bool empty() const { return npoints() == 0; }
+#if defined(SINDRECPP_UTILS3D_SHOW)
+    ShowMesh show(const ShowOptions &options = {}) const { return show_mesh(mesh_, options); }
+#endif
+    Eigen::Matrix<double, 2, 3, Eigen::RowMajor> bounds() const {
+        if (empty())
+            throw std::invalid_argument("Empty mesh has no bounds");
+        double b[6];
+        mesh_->GetBounds(b);
+        Eigen::Matrix<double, 2, 3, Eigen::RowMajor> result;
+        result << b[0], b[2], b[4], b[1], b[3], b[5];
+        return result;
+    }
+    Eigen::Vector3d dimensions() const {
+        auto b = bounds();
+        return (b.row(1) - b.row(0)).transpose();
+    }
+    SindreMesh filtered(vtkPolyDataAlgorithm *filter) const {
+        if (!filter)
+            throw std::invalid_argument("Null VTK filter");
+        filter->SetInputData(mesh_);
+        filter->Update();
+        if (filter->GetErrorCode() || !filter->GetOutput())
+            throw std::runtime_error("VTK filter failed");
+        return SindreMesh(filter->GetOutput());
+    }
+    // Snapshot source for caller-owned lazy VTK pipelines. Later mesh edits
+    // do not modify this source; retain the producer while using its port.
+    vtkSmartPointer<vtkTrivialProducer> pipeline_source() const {
+        auto data = vtkSmartPointer<vtkPolyData>::New();
+        data->DeepCopy(mesh_);
+        auto source = vtkSmartPointer<vtkTrivialProducer>::New();
+        source->SetOutput(data);
+        return source;
+    }
     Vertices vertices() const {
         Vertices v(npoints(), 3);
         double p[3];
@@ -326,17 +375,119 @@ class SindreMesh {
         else
             throw std::invalid_argument("Supported mesh formats: stl, ply, obj, vtp");
     }
-    void compute_normals(bool = false) {
+    void compute_normals(const MeshNormals &options = {}) {
+        if (!std::isfinite(options.feature_angle) || options.feature_angle < 0 ||
+            options.feature_angle > 180)
+            throw std::invalid_argument("Normal feature angle must lie in [0,180]");
         if (!nfaces())
             return;
         vtkNew<vtkPolyDataNormals> n;
         n->SetInputData(mesh_);
-        n->SplittingOff();
-        n->ConsistencyOn();
-        n->ComputePointNormalsOn();
-        n->ComputeCellNormalsOn();
+        n->SetSplitting(options.split);
+        n->SetFeatureAngle(options.feature_angle);
+        n->SetConsistency(options.consistent);
+        n->SetAutoOrientNormals(options.auto_orient);
+        n->SetFlipNormals(options.flip);
+        n->SetComputePointNormals(options.points);
+        n->SetComputeCellNormals(options.faces);
         n->Update();
         mesh_->DeepCopy(n->GetOutput());
+    }
+    bool has_data(const std::string &name, bool point = true) const {
+        return (point ? static_cast<vtkDataSetAttributes *>(mesh_->GetPointData())
+                      : static_cast<vtkDataSetAttributes *>(mesh_->GetCellData()))
+                   ->HasArray(name.c_str()) != 0;
+    }
+    std::vector<std::string> data_names(bool point = true) const {
+        auto *a = point ? static_cast<vtkDataSetAttributes *>(mesh_->GetPointData())
+                        : static_cast<vtkDataSetAttributes *>(mesh_->GetCellData());
+        std::vector<std::string> names;
+        for (int i = 0; i < a->GetNumberOfArrays(); ++i)
+            if (a->GetArrayName(i))
+                names.emplace_back(a->GetArrayName(i));
+        return names;
+    }
+    void remove_data(const std::string &name, bool point = true) {
+        if (!has_data(name, point))
+            throw std::out_of_range("Mesh array not found: " + name);
+        auto *a = point ? static_cast<vtkDataSetAttributes *>(mesh_->GetPointData())
+                        : static_cast<vtkDataSetAttributes *>(mesh_->GetCellData());
+        a->RemoveArray(name.c_str());
+        mesh_->Modified();
+    }
+    void rename_data(const std::string &old_name, const std::string &new_name, bool point = true) {
+        if (new_name.empty() || has_data(new_name, point))
+            throw std::invalid_argument("New array name empty or already exists");
+        auto *a = point ? static_cast<vtkDataSetAttributes *>(mesh_->GetPointData())
+                        : static_cast<vtkDataSetAttributes *>(mesh_->GetCellData());
+        auto *array = a->GetAbstractArray(old_name.c_str());
+        if (!array)
+            throw std::out_of_range("Mesh array not found: " + old_name);
+        array->SetName(new_name.c_str());
+        a->Modified();
+        mesh_->Modified();
+    }
+    void clear_data(bool point = true) {
+        if (point)
+            mesh_->GetPointData()->Initialize();
+        else
+            mesh_->GetCellData()->Initialize();
+        mesh_->Modified();
+    }
+    void set_uv(const Matrix &uv) {
+        if (uv.rows() != npoints() || uv.cols() != 2 || !uv.allFinite())
+            throw std::invalid_argument("UV must be finite Nx2");
+        set_data("TextureCoordinates", uv);
+        mesh_->GetPointData()->SetTCoords(mesh_->GetPointData()->GetArray("TextureCoordinates"));
+    }
+    Matrix get_uv() const {
+        auto *uv = mesh_->GetPointData()->GetTCoords();
+        if (!uv || uv->GetNumberOfComponents() != 2)
+            throw std::out_of_range("Texture coordinates missing");
+        Matrix result(uv->GetNumberOfTuples(), 2);
+        for (Eigen::Index i = 0; i < result.rows(); ++i)
+            for (int k = 0; k < 2; ++k)
+                result(i, k) = uv->GetComponent(i, k);
+        return result;
+    }
+    SindreMesh extract_faces(const std::vector<bool> &keep, bool compact = true) const {
+        auto copy = clone();
+        copy.update_faces(keep);
+        if (compact) {
+            std::vector<bool> used(copy.npoints(), false);
+            auto f = copy.faces();
+            for (Eigen::Index i = 0; i < f.rows(); ++i)
+                for (int k = 0; k < 3; ++k)
+                    used[f(i, k)] = true;
+            copy.update_vertex(used);
+        }
+        return copy;
+    }
+    SindreMesh extract_region(const std::string &name, double lower, double upper,
+                              bool point = false, bool all_vertices = true) const {
+        if (!std::isfinite(lower) || !std::isfinite(upper) || lower > upper)
+            throw std::invalid_argument("Invalid region range");
+        auto values = get_data(name, point);
+        if (values.cols() != 1)
+            throw std::invalid_argument("Region selection needs scalar data");
+        auto f = faces();
+        std::vector<bool> keep(f.rows(), false);
+        for (Eigen::Index i = 0; i < f.rows(); ++i) {
+            if (!point)
+                keep[i] = values(i, 0) >= lower && values(i, 0) <= upper;
+            else {
+                bool value = all_vertices;
+                for (int k = 0; k < 3; ++k) {
+                    const bool inside = values(f(i, k), 0) >= lower && values(f(i, k), 0) <= upper;
+                    if (all_vertices)
+                        value = value && inside;
+                    else
+                        value = value || inside;
+                }
+                keep[i] = value;
+            }
+        }
+        return extract_faces(keep);
     }
     Matrix vertex_normals() const { return normals(true); }
     Matrix face_normals() const { return normals(false); }
@@ -502,6 +653,53 @@ class SindreMesh {
             if (e.second.size() > 2)
                 x.push_back(e.first);
         return x;
+    }
+    std::vector<std::vector<std::int64_t>> boundary_loops() const {
+        std::map<std::int64_t, std::vector<std::int64_t>> adjacency;
+        std::set<Edge> remaining;
+        for (auto e : get_boundary()) {
+            adjacency[e[0]].push_back(e[1]);
+            adjacency[e[1]].push_back(e[0]);
+            remaining.insert(e);
+        }
+        for (const auto &v : adjacency)
+            if (v.second.size() != 2)
+                throw std::invalid_argument(
+                    "Boundary contains branching/open chains; use get_boundary for raw edges");
+        std::vector<std::vector<std::int64_t>> loops;
+        while (!remaining.empty()) {
+            const auto start = (*remaining.begin())[0];
+            auto current = start;
+            std::int64_t previous = -1;
+            std::vector<std::int64_t> loop;
+            do {
+                loop.push_back(current);
+                const auto &next = adjacency.at(current);
+                const auto target = next[0] != previous ? next[0] : next[1];
+                remaining.erase({std::min(current, target), std::max(current, target)});
+                previous = current;
+                current = target;
+                if (loop.size() > adjacency.size())
+                    throw std::runtime_error("Invalid boundary traversal");
+            } while (current != start);
+            loops.push_back(std::move(loop));
+        }
+        return loops; // Undirected cycle order, no clockwise/orientation guarantee.
+    }
+    vtkSmartPointer<vtkPolyData> feature_edges(double angle = 30) const {
+        if (!std::isfinite(angle) || angle < 0 || angle > 180)
+            throw std::invalid_argument("Invalid feature angle");
+        vtkNew<vtkFeatureEdges> filter;
+        filter->SetInputData(mesh_);
+        filter->BoundaryEdgesOff();
+        filter->NonManifoldEdgesOff();
+        filter->ManifoldEdgesOff();
+        filter->FeatureEdgesOn();
+        filter->SetFeatureAngle(angle);
+        filter->Update();
+        auto result = vtkSmartPointer<vtkPolyData>::New();
+        result->DeepCopy(filter->GetOutput());
+        return result;
     }
     std::vector<std::vector<std::int64_t>> get_vertex_adj_list() const {
         std::vector<std::set<std::int64_t>> s(npoints());

@@ -3,13 +3,17 @@
 #include <functional>
 #include <initializer_list>
 #include <queue>
+#include <vtkAppendPolyData.h>
+#include <vtkBox.h>
 #include <vtkClipPolyData.h>
+#include <vtkCutter.h>
 #include <vtkDecimatePro.h>
 #include <vtkFillHolesFilter.h>
 #include <vtkImplicitPolyDataDistance.h>
 #include <vtkLoopSubdivisionFilter.h>
 #include <vtkPlane.h>
 #include <vtkReverseSense.h>
+#include <vtkSphere.h>
 #include <vtkStaticCellLocator.h>
 #include <vtkWindowedSincPolyDataFilter.h>
 #if defined(SINDRECPP_UTILS3D_MESHLIB)
@@ -60,6 +64,62 @@
 #endif
 
 namespace sindrecpp::utils3d {
+// Curves retain vtkPolyData lines rather than being converted to triangle meshes.
+inline vtkSmartPointer<vtkPolyData>
+slice_plane(const SindreMesh &mesh, const Eigen::Vector3d &origin, const Eigen::Vector3d &normal) {
+    if (!origin.allFinite() || !normal.allFinite() || normal.norm() == 0)
+        throw std::invalid_argument("Invalid section plane");
+    vtkNew<vtkPlane> plane;
+    plane->SetOrigin(origin.data());
+    plane->SetNormal(normal.normalized().eval().data());
+    vtkNew<vtkCutter> cutter;
+    cutter->SetInputData(mesh.get_native());
+    cutter->SetCutFunction(plane);
+    vtkNew<vtkStripper> lines;
+    lines->SetInputConnection(cutter->GetOutputPort());
+    lines->Update();
+    auto result = vtkSmartPointer<vtkPolyData>::New();
+    result->DeepCopy(lines->GetOutput());
+    return result;
+}
+inline SindreMesh clip_box(const SindreMesh &mesh, const Eigen::Vector3d &lower,
+                           const Eigen::Vector3d &upper, bool inside = true) {
+    if (!lower.allFinite() || !upper.allFinite() || (lower.array() >= upper.array()).any())
+        throw std::invalid_argument("Invalid clip bounds");
+    vtkNew<vtkBox> box;
+    box->SetBounds(lower.x(), upper.x(), lower.y(), upper.y(), lower.z(), upper.z());
+    vtkNew<vtkClipPolyData> clip;
+    clip->SetInputData(mesh.get_native());
+    clip->SetClipFunction(box);
+    clip->SetInsideOut(inside);
+    clip->Update();
+    return SindreMesh(clip->GetOutput());
+}
+inline SindreMesh clip_sphere(const SindreMesh &mesh, const Eigen::Vector3d &center, double radius,
+                              bool inside = true) {
+    if (!center.allFinite() || !std::isfinite(radius) || radius <= 0)
+        throw std::invalid_argument("Invalid clip sphere");
+    vtkNew<vtkSphere> sphere;
+    sphere->SetCenter(center.data());
+    sphere->SetRadius(radius);
+    vtkNew<vtkClipPolyData> clip;
+    clip->SetInputData(mesh.get_native());
+    clip->SetClipFunction(sphere);
+    clip->SetInsideOut(inside);
+    clip->Update();
+    return SindreMesh(clip->GetOutput());
+}
+inline SindreMesh append_meshes(const std::vector<SindreMesh> &meshes, bool merge_points = false,
+                                double tolerance = 0) {
+    if (meshes.empty())
+        return {};
+    vtkNew<vtkAppendPolyData> append;
+    for (const auto &mesh : meshes)
+        append->AddInputData(mesh.get_native());
+    append->Update();
+    SindreMesh result(append->GetOutput());
+    return merge_points ? result.clean(tolerance) : result;
+}
 enum class Backend { automatic, meshlib, cgal, open3d, igl, vcg, vtk };
 enum class Operation {
     decimate,

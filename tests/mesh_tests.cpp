@@ -25,6 +25,38 @@ int main() {
         Faces f(4, 3);
         f << 0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3;
         SindreMesh mesh(v, f);
+        check(mesh.dimensions().isApprox(Eigen::Vector3d::Ones()), "Mesh bounds");
+        auto movable = mesh.clone();
+        auto moved = std::move(movable);
+        check(movable.empty() && moved.vertices().isApprox(v),
+              "Mesh move transfers geometry and empties source");
+        Matrix property(4, 1);
+        property << 0, 1, 2, 3;
+        moved.set_data("quality", property, false);
+        moved.rename_data("quality", "score", false);
+        check(moved.has_data("score", false), "Rename attribute");
+        check(moved.extract_region("score", 1, 2).nfaces() == 2, "Scalar region extraction");
+        moved.remove_data("score", false);
+        check(!moved.has_data("score", false), "Remove attribute");
+        Matrix uv_values(4, 2);
+        uv_values << 0, 0, 1, 0, 0, 1, 1, 1;
+        moved.set_uv(uv_values);
+        check(moved.get_uv().isApprox(uv_values), "Texture coordinates");
+        vtkNew<vtkTriangleFilter> filter;
+        check(moved.filtered(filter).nfaces() == 4, "Generic VTK filter");
+        auto pipeline = moved.pipeline_source();
+        filter->SetInputConnection(pipeline->GetOutputPort());
+        filter->Update();
+        moved.shift_xyz(Eigen::Vector3d::Ones());
+        check(filter->GetOutput()->GetNumberOfPoints() == 4, "Caller-owned pipeline source");
+        check(append_meshes({mesh, mesh}).nfaces() == 8, "Append meshes");
+        check(slice_plane(mesh, Eigen::Vector3d(.2, 0, 0), Eigen::Vector3d::UnitX())
+                      ->GetNumberOfLines() > 0,
+              "Plane section curves");
+        check(clip_box(mesh, Eigen::Vector3d(-1, -1, -1), Eigen::Vector3d(2, 2, 2)).nfaces() == 4,
+              "Box clipping");
+        check(clip_sphere(mesh, Eigen::Vector3d::Zero(), 2).nfaces() == 4, "Sphere clipping");
+        check(mesh.feature_edges(20)->GetNumberOfLines() > 0, "Sharp feature edges");
         check(mesh.npoints() == 4 && mesh.nfaces() == 4, "Mesh size");
         check(mesh.is_watertight() && mesh.get_boundary().empty(), "Closed tetrahedron");
         check(mesh.get_edges().size() == 6, "Unique edges");
@@ -79,6 +111,8 @@ int main() {
               "Plane clipping");
         Faces open_faces = f.topRows(3);
         SindreMesh open(v, open_faces);
+        check(open.boundary_loops().size() == 1 && open.boundary_loops()[0].size() == 3,
+              "Ordered boundary loop");
         check(!open.get_boundary().empty(), "Open boundary");
         check(fill_holes(open, Backend::vtk).is_watertight(), "VTK hole fill");
         check(mesh.split_component_by_faces().size() == 1, "Components");

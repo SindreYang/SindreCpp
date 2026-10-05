@@ -118,7 +118,7 @@ jobs:
       - name: Install geometry SDKs
         run: |
           sudo apt-get update
-          sudo apt-get install -y libvtk9-dev libeigen3-dev pybind11-dev clang ripgrep
+          sudo apt-get install -y libvtk9-dev libeigen3-dev pybind11-dev clang ripgrep xvfb xauth libgl1-mesa-dri
           python -m pip install numpy
       - name: Install selected optional backend
         env:
@@ -148,6 +148,7 @@ jobs:
           BACKEND: ${{ matrix.backend }}
         run: |
           OPTIONS=()
+          if [ "$BACKEND" = VTK ] || [ "$BACKEND" = ALL ]; then OPTIONS+=("-DSINDRECPP_UTILS3D_SHOW=ON"); fi
           if [ "$BACKEND" = ALL ]; then
             for SDK in CGAL OPEN3D IGL VCG MESHLIB; do OPTIONS+=("-DSINDRECPP_UTILS3D_${SDK}=ON"); done
           elif [ "$BACKEND" != VTK ]; then
@@ -163,4 +164,11 @@ jobs:
             -DSINDRECPP_IGL_ROOT="$RUNNER_TEMP/libigl" -DSINDRECPP_VCG_ROOT="$RUNNER_TEMP/vcglib" \
             -DPython3_EXECUTABLE="$(command -v python)" "${OPTIONS[@]}"
       - run: cmake --build build-geometry --parallel 1
-      - run: ctest --test-dir build-geometry --output-on-failure
+      - run: xvfb-run -a ctest --test-dir build-geometry --output-on-failure
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+      - uses: actions/upload-artifact@v4
+        if: matrix.backend == 'VTK'
+        with:
+          name: show-mesh-preview
+          path: build-geometry/show_mesh_preview.png
