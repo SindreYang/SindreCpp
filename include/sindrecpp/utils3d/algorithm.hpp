@@ -13,10 +13,12 @@
 #include <vtkStaticCellLocator.h>
 #include <vtkWindowedSincPolyDataFilter.h>
 #if defined(SINDRECPP_UTILS3D_MESHLIB)
-// MeshLib's translation macro `_` conflicts with private member names in
+// MeshLib's translation macros conflict with private member names in
 // Boost/CGAL. Keep it local to the SDK headers, preserving any caller macro.
 #pragma push_macro("_")
+#pragma push_macro("_t")
 #undef _
+#undef _t
 #include <MRMesh/MRBitSet.h>
 #include <MRMesh/MRMesh.h>
 #include <MRMesh/MRMeshBoolean.h>
@@ -25,6 +27,7 @@
 #include <MRMesh/MRMeshDecimate.h>
 #include <MRMesh/MRMeshFillHole.h>
 #include <MRMesh/MRMeshRelax.h>
+#pragma pop_macro("_t")
 #pragma pop_macro("_")
 #endif
 #if defined(SINDRECPP_UTILS3D_CGAL)
