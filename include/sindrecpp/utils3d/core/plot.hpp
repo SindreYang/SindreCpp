@@ -2,7 +2,7 @@
 #if !defined(SINDRECPP_UTILS3D_SHOW) || !defined(SINDRECPP_UTILS3D_VTK_DATA)
 #error "Enable SINDRECPP_UTILS3D_SHOW and SINDRECPP_UTILS3D_VTK_DATA."
 #endif
-#include "show_mesh.hpp"
+#include "show.hpp"
 #include <vtkAxis.h>
 #include <vtkChartXY.h>
 #include <vtkContextScene.h>

@@ -47,7 +47,7 @@
 #include <vtkXMLPolyDataReader.h>
 #include <vtkXMLPolyDataWriter.h>
 #if defined(SINDRECPP_UTILS3D_SHOW)
-#include "show_mesh.hpp"
+#include "show.hpp"
 #endif
 
 namespace sindrecpp::utils3d {

@@ -1,7 +1,7 @@
 # VTK 数据、图像、显示与功能清单
 
 VTK 封装分为网格、通用数据、图像、场分析、三维显示和二维绘图。
-`sindremesh.hpp` 是面向用户的快速入口。VTK 的核心对象集中在 `core/`，由 `core/vtk.hpp` 统一导出；算法和第三方库集中在 `algorithms.hpp`。
+`sindremesh.hpp` 是面向用户的快速入口。VTK 的核心对象按 vedo 风格分为 `mesh`、`data`、`image`、`plot` 和 `show`，集中在 `core/` 并由 `core/vtk.hpp` 统一导出；算法和第三方库集中在 `algorithms.hpp`。
 
 ```cmake
 set(SINDRECPP_WITH_UTILS3D ON CACHE BOOL "")
@@ -22,16 +22,17 @@ target_link_libraries(my_app PRIVATE SindreCpp::Utils3d)
 | --- | --- |
 | `utils3d/sindremesh.hpp` | 用户快速使用入口，三角网格和 `mesh.show()` |
 | `utils3d/core/vtk.hpp` | VTK 核心对象统一导出 |
+| `utils3d/core/mesh.hpp` | 三角网格、属性、拓扑和网格过滤器 |
+| `utils3d/core/data.hpp` | 通用数据集、场分析和数据集 I/O |
+| `utils3d/core/image.hpp` | 二/三维规则图像、图像滤波和重采样 |
+| `utils3d/core/plot.hpp` | 折线、散点、柱状图和 PNG 输出 |
+| `utils3d/core/show.hpp` | 多对象窗口、相机、拾取、截图和体显示 |
 | `utils3d/algorithms.hpp` | 网格算法、曲线截面、裁剪、拼接和第三方后端 |
-| `utils3d/core/show_mesh.hpp` | 多对象窗口、相机、拾取、截图；数据开关开启后支持体渲染与图像切片 |
-| `utils3d/core/sindredata.hpp` | 点、线、结构/非结构网格、组合数据、场分析、XML 读写 |
-| `utils3d/core/sindreimage.hpp` | 二/三维规则图像、图像滤波和重采样 |
-| `utils3d/core/show_plot.hpp` | 折线、散点、柱状图和 PNG 输出 |
 
 ## 图像与体数据
 
 ```cpp
-#include <sindrecpp/utils3d/core/sindreimage.hpp>
+#include <sindrecpp/utils3d/core/image.hpp>
 namespace u3 = sindrecpp::utils3d;
 u3::Matrix voxels = u3::Matrix::Zero(64*64*64, 1); // 换为实际体数据
 // x 最快：x + nx*(y + ny*z)，列是通道；spacing/origin 为物理坐标。
@@ -58,7 +59,7 @@ normalize 对全部通道共同求范围；常数输入映射到 lower。cast �
 ## 通用数据与场分析
 
 ```cpp
-#include <sindrecpp/utils3d/core/sindredata.hpp>
+#include <sindrecpp/utils3d/core/data.hpp>
 auto data = u3::SindreData::structured_grid(points, {nx,ny,nz});
 data.set_data("temperature", temperatures); // 点标量
 data.set_data("velocity", velocities);     // 点三维向量
@@ -85,7 +86,7 @@ XML 扩展名必须与数据类型一致；VTM 会生成相邻子文件，需整
 ## 显示与绘图
 
 ```cpp
-#include <sindrecpp/utils3d/core/show_plot.hpp>
+#include <sindrecpp/utils3d/core/plot.hpp>
 u3::ShowPlot plot;
 plot.add(x,y,"curve").add(x,y,"samples",u3::PlotKind::points);
 plot.title("Result").axis_titles("x","y").show();

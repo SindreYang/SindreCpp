@@ -1,5 +1,5 @@
 #pragma once
-#include "sindredata.hpp"
+#include "data.hpp"
 #include <vtkExtractVOI.h>
 #include <vtkImageCast.h>
 #include <vtkImageConnectivityFilter.h>

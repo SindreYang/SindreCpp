@@ -2,7 +2,7 @@
 
 `utils3d` 开启后以 VTK 9 为网格基础，Eigen 为数组交换基础。不开启时不查找任何 3D SDK。
 计算接口不创建渲染窗口。当前算法路径为 CPU；AI 的 CUDA 默认不影响此模块。
-显示独立放在 `core/show_mesh.hpp`，由 `SindreMesh::show()` 调用，按需开启。
+显示独立放在 `core/show.hpp`，由 `SindreMesh::show()` 调用，按需开启。
 
 ## 网格、算法与显示文件
 
@@ -10,8 +10,12 @@
 | --- | --- |
 | `utils3d/sindremesh.hpp` | 用户快速使用入口，导出 `SindreMesh` |
 | `utils3d/core/vtk.hpp` | VTK 核心对象统一入口 |
+| `utils3d/core/mesh.hpp` | VTK 网格对象和网格级操作 |
+| `utils3d/core/data.hpp` | VTK 通用数据集和场数据 |
+| `utils3d/core/image.hpp` | VTK 规则图像和体数据 |
+| `utils3d/core/plot.hpp` | VTK 二维绘图 |
+| `utils3d/core/show.hpp` | VTK 三维显示和交互 |
 | `utils3d/algorithms.hpp` | 算法、后端选择及后端网格转换 |
-| `utils3d/core/show_mesh.hpp` | 独立 VTK 显示窗口，不依赖网格算法后端 |
 
 命名参考 Python sindre 的 `SindreMesh`，设计参考 vedo 的简洁调用方式，但不复制 vedo 实现。
 这不是完整 VTK/vedo/Python sindre API 的逐项兼容移植，也不是五个第三方库所有函数的重导出。

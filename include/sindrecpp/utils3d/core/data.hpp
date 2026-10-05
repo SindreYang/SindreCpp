@@ -2,7 +2,7 @@
 #if !defined(SINDRECPP_UTILS3D_VTK_DATA)
 #error "Enable SINDRECPP_UTILS3D_VTK_DATA and link SindreCpp::Utils3d."
 #endif
-#include "sindremesh.hpp"
+#include "mesh.hpp"
 #include <vtkArrayCalculator.h>
 #include <vtkArrowSource.h>
 #include <vtkCallbackCommand.h>
