@@ -149,6 +149,15 @@ int main() {
         sf << 0, 1, 2, 0, 2, 3;
         auto uv = get_uv(SindreMesh(square, sf));
         check(uv.rows() == 4 && uv.cols() == 2 && uv.allFinite(), "UV");
+        Vertices disk(5, 3);
+        disk.topRows(4) = square;
+        disk.row(4) << .5, .5, 0;
+        Faces df(4, 3);
+        df << 0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4;
+        auto interior_uv = get_uv(SindreMesh(disk, df));
+        check(interior_uv.rows() == 5 && interior_uv.allFinite() &&
+                  interior_uv.row(4).norm() < 1e-8,
+              "UV interior harmonic solve");
 #endif
         check(mesh.vertices().isApprox(v) && mesh.get_vertex_labels() == labels,
               "Algorithms must retain input");

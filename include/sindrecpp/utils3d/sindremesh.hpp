@@ -125,8 +125,7 @@ class SindreMesh {
             mesh_->DeepCopy(other.mesh_);
         return *this;
     }
-    // Deliberately retain a valid empty object after moves, like ordinary value
-    // copies.
+    // Moves currently deep-copy, retaining a valid unchanged source object.
     SindreMesh(SindreMesh &&other) : SindreMesh(static_cast<const SindreMesh &>(other)) {}
     SindreMesh &operator=(SindreMesh &&other) {
         return operator=(static_cast<const SindreMesh &>(other));

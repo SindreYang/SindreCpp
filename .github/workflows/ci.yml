@@ -109,7 +109,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        backend: [VTK, CGAL, OPEN3D, IGL, VCG, MESHLIB]
+        backend: [VTK, CGAL, OPEN3D, IGL, VCG, MESHLIB, ALL]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -124,7 +124,10 @@ jobs:
         env:
           BACKEND: ${{ matrix.backend }}
         run: |
-          case "$BACKEND" in
+          BACKENDS=("$BACKEND")
+          if [ "$BACKEND" = ALL ]; then BACKENDS=(CGAL OPEN3D IGL VCG MESHLIB); fi
+          for SDK in "${BACKENDS[@]}"; do
+          case "$SDK" in
             CGAL) sudo apt-get install -y libcgal-dev ;;
             OPEN3D)
               curl --fail --location --retry 3 -o "$RUNNER_TEMP/open3d.tar.xz" https://github.com/isl-org/Open3D/releases/download/v0.19.0/open3d-devel-linux-x86_64-cxx11-abi-0.19.0.tar.xz
@@ -138,13 +141,18 @@ jobs:
               curl --fail --location --retry 3 -o "$RUNNER_TEMP/meshlib.deb" https://github.com/MeshInspector/MeshLib/releases/download/v3.1.4.297/meshlib_v3.1.4.297_ubuntu24-dev.deb
               sudo apt-get install -y "$RUNNER_TEMP/meshlib.deb" ;;
           esac
+          done
       - name: Configure selected backend
         env:
           BACKEND: ${{ matrix.backend }}
         run: |
           OPTIONS=()
-          if [ "$BACKEND" != VTK ]; then OPTIONS+=("-DSINDRECPP_UTILS3D_${BACKEND}=ON"); fi
-          if [ "$BACKEND" = OPEN3D ]; then
+          if [ "$BACKEND" = ALL ]; then
+            for SDK in CGAL OPEN3D IGL VCG MESHLIB; do OPTIONS+=("-DSINDRECPP_UTILS3D_${SDK}=ON"); done
+          elif [ "$BACKEND" != VTK ]; then
+            OPTIONS+=("-DSINDRECPP_UTILS3D_${BACKEND}=ON")
+          fi
+          if [ "$BACKEND" = OPEN3D ] || [ "$BACKEND" = ALL ]; then
             OPEN3D_CONFIG=$(rg --files "$RUNNER_TEMP/open3d" -g Open3DConfig.cmake)
             OPTIONS+=("-DOpen3D_DIR=$(dirname "$OPEN3D_CONFIG")")
           fi

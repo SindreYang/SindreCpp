@@ -367,7 +367,8 @@ inline SindreMesh decimate(const SindreMesh &m, const DecimateOptions &o = {}) {
 #if defined(SINDRECPP_UTILS3D_OPEN3D)
     if (b == Backend::open3d) {
         auto x = detail::to_open3d(m);
-        return detail::from_open3d(*x.SimplifyQuadricDecimation(int(o.target_faces)));
+        return detail::from_open3d(*x.SimplifyQuadricDecimation(
+            int(o.target_faces), std::numeric_limits<double>::infinity(), 1.0));
     }
 #endif
 #if defined(SINDRECPP_UTILS3D_IGL)
