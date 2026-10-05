@@ -34,7 +34,7 @@ target_link_libraries(my_app PRIVATE SindreCpp::Utils3d)
 VTK/CGAL/Open3D/MeshLib 使用已安装 SDK，不自动从源码构建大型依赖。
 MeshLib 使用 `find_package(meshlib CONFIG)`，链接 `MeshLib::MRMesh` 或 `MRMesh`，开启后要求 C++20。
 其他接口要求 C++17。CI 使用 MeshLib v3.1.4.297、libigl v2.5.0、固定 VCGlib 提交，
-以及 Ubuntu 24.04 的 VTK/CGAL/Open3D SDK。升级 SDK 后应重新运行后端测试。
+以及 Ubuntu 24.04 的 VTK/CGAL SDK、Open3D 0.19.0 官方 C++11-ABI SDK。升级 SDK 后应重新运行后端测试。
 
 ## 网格使用
 

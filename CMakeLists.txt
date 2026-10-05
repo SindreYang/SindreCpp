@@ -316,6 +316,8 @@ if(SINDRECPP_WITH_UTILS3D)
             message(FATAL_ERROR "MRMesh SDK must export MeshLib::MRMesh or MRMesh")
         endif()
         set_property(TARGET SindreCpp::Utils3d APPEND PROPERTY INTERFACE_LINK_LIBRARIES ${sindrecpp_meshlib_target})
+        set_property(TARGET SindreCpp::Utils3d APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+            "${MESHLIB_INCLUDE_DIR};${MESHLIB_THIRDPARTY_INCLUDE_DIR}")
         # MeshLib 3.x public headers use C++20.
         set_property(TARGET SindreCpp::Utils3d APPEND PROPERTY INTERFACE_COMPILE_FEATURES cxx_std_20)
     endif()

@@ -126,7 +126,10 @@ jobs:
         run: |
           case "$BACKEND" in
             CGAL) sudo apt-get install -y libcgal-dev ;;
-            OPEN3D) sudo apt-get install -y libopen3d-dev ;;
+            OPEN3D)
+              curl --fail --location --retry 3 -o "$RUNNER_TEMP/open3d.tar.xz" https://github.com/isl-org/Open3D/releases/download/v0.19.0/open3d-devel-linux-x86_64-cxx11-abi-0.19.0.tar.xz
+              mkdir -p "$RUNNER_TEMP/open3d"
+              tar -xf "$RUNNER_TEMP/open3d.tar.xz" -C "$RUNNER_TEMP/open3d" ;;
             IGL) git clone --depth 1 --branch v2.5.0 https://github.com/libigl/libigl.git "$RUNNER_TEMP/libigl" ;;
             VCG)
               git clone https://github.com/cnr-isti-vclab/vcglib.git "$RUNNER_TEMP/vcglib"
@@ -141,6 +144,10 @@ jobs:
         run: |
           OPTIONS=()
           if [ "$BACKEND" != VTK ]; then OPTIONS+=("-DSINDRECPP_UTILS3D_${BACKEND}=ON"); fi
+          if [ "$BACKEND" = OPEN3D ]; then
+            OPEN3D_CONFIG=$(rg --files "$RUNNER_TEMP/open3d" -g Open3DConfig.cmake)
+            OPTIONS+=("-DOpen3D_DIR=$(dirname "$OPEN3D_CONFIG")")
+          fi
           cmake -S . -B build-geometry -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_CXX_FLAGS_DEBUG=-O0 -DSINDRECPP_WITH_UTILS3D=ON -DSINDRECPP_WITH_UTILS_PY=ON \
             -DSINDRECPP_UTILS3D_BLAS_BACKEND=EIGEN -DSINDRECPP_UTILS3D_NATIVE_ARCH=OFF \

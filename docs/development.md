@@ -22,7 +22,7 @@ SindreCpp/
 新增功能时，优先按用户看到的功能放置：
 
 - 字符串处理放在 `sindrecpp/general.hpp` 的 `general::string` 能力中
-- 数学处理放在 `sindrecpp/utils3d.hpp`（底层使用 Eigen）
+- 网格对象放在 `sindrecpp/utils3d/sindremesh.hpp`（VTK），几何算法放在 `utils3d/algorithm.hpp`；数学交换使用 Eigen
 - 日志能力放在 `sindrecpp/general.hpp` 的 `general::log` 能力中
 - 媒体能力应放在 `sindrecpp/utilsav.hpp`
 - 图像能力应放在 `sindrecpp/utils2d.hpp`
@@ -36,7 +36,7 @@ SindreCpp 的顶层组织跟随 Sindre：
 
 - `general`：通用工具、字符串、日志、HTTP、JSON、CLI；
 - `utils2d`：OpenCV 图像和推理预处理；
-- `utils3d`：3D 和数学能力；
+- `utils3d`：VTK SindreMesh、几何算法和 Eigen 数学交换；后端独立按需开启，详见 [网格指南](mesh.md)；
 - `utilsav`：音视频能力，预留；
 - `ai`：ONNX Runtime CPU/CUDA 和独立 TensorRT 推理；
 - `deploy`：部署能力，预留；

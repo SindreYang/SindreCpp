@@ -88,7 +88,9 @@ SINDRECPP_WITH_<MODULE>
 
 ## 6. 注意 utils3d 模块的可移植性
 
-Utils3d 模块对外提供用户功能命名，底层实现使用 Eigen。用户代码应使用 `sindrecpp::utils3d`，不要依赖 Eigen 的实现名称。
+Utils3d 使用 VTK 9 封装 SindreMesh，Eigen 用于数组与数学交换；MeshLib/CGAL/Open3D/libigl/VCG 后端独立开启。
+MeshLib 开启时该模块要求 C++20，其余接口为 C++17。网格与 NumPy 转换全部独立拷贝。
+跨后端算法不自动传递标签/颜色/UV；拓扑变化后需显式回映射。详见 [网格指南](mesh.md)。
 
 `SINDRECPP_UTILS3D_NATIVE_ARCH=ON` 会使用构建机器的 CPU 指令集，适合本机性能测试，不适合直接分发给不同 CPU 的用户。
 
