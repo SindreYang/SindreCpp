@@ -1,6 +1,6 @@
 #include <sindrecpp/utils3d/core/vtk.hpp>
 #if defined(SINDRECPP_UTILS3D_SHOW)
-#include <sindrecpp/utils3d/core/show_plot.hpp>
+#include <sindrecpp/utils3d/core/plot.hpp>
 #endif
 #include "vtk_coverage.hpp"
 #include <iostream>
