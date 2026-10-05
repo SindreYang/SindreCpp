@@ -24,7 +24,7 @@ target_link_libraries(my_app PRIVATE SindreCpp::Utils3d)
 ```cpp
 #include <sindrecpp/utils3d/sindreimage.hpp>
 namespace u3 = sindrecpp::utils3d;
-u3::Matrix voxels(64*64*64, 1); // 填充实际体数据
+u3::Matrix voxels = u3::Matrix::Zero(64*64*64, 1); // 换为实际体数据
 // x 最快：x + nx*(y + ny*z)，列是通道；spacing/origin 为物理坐标。
 u3::SindreImage image(voxels, {64,64,64}, Eigen::Vector3d(.5,.5,1));
 auto filtered = image.gaussian().normalize();
@@ -120,7 +120,10 @@ plot.title("Result").axis_titles("x","y").show();
 | 100 | 动画时间轴、视频录制、整场景导出 | 未封装 |
 
 当前 01–90 有封装，91–100 未封装，即本清单接口覆盖 90/100。
-执行验证比例须结合 tests 和 CI 结果，不能把这 90% 写成“整个 VTK 已覆盖 90%”。
-STL/PLY/OBJ、曲率等已有接口仍有真实文件/边界场景验证缺项；全库80%验收必须另列测试证据。
+执行验证由成功的 `mesh_tests`、`show_mesh_tests`、`vtk_data_tests` 输出案例 ID，
+`tools/check_vtk_coverage.py` 汇总报告；VTK/ALL CI 要求执行验证 >=80/100。
+报告和网格/体渲染/切片/图表截图上传到 CI 附件，不把仅编译成功计作验证。
+这些是合成数据场景测试，仍有真实医疗/仿真数据、边界输入和性能测试缺项。
+不能把本清单的 90% 写成“整个 VTK 已覆盖 90%”。
 
 VTK 范围参考：[官方介绍](https://vtk.org/about/)、[官方模块目录](https://docs.vtk.org/en/latest/modules/index.html)。

@@ -19,6 +19,7 @@
 #include <vtkGradientFilter.h>
 #include <vtkMultiBlockDataSet.h>
 #include <vtkPointDataToCellData.h>
+#include <vtkPlane.h>
 #include <vtkProbeFilter.h>
 #include <vtkRectilinearGrid.h>
 #include <vtkStreamTracer.h>

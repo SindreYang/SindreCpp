@@ -91,6 +91,7 @@ SINDRECPP_WITH_<MODULE>
 Utils3d 使用 VTK 9 封装 SindreMesh，Eigen 用于数组与数学交换；MeshLib/CGAL/Open3D/libigl/VCG 后端独立开启。
 MeshLib 开启时该模块要求 C++20，其余接口为 C++17。网格与 NumPy 转换全部独立拷贝。
 跨后端算法不自动传递标签/颜色/UV；拓扑变化后需显式回映射。详见 [网格指南](mesh.md)。
+显示、数据/图像处理分别按需开启；完整能力域的项目清单、数据语义与缺项见 [VTK 指南](vtk.md)。
 
 `SINDRECPP_UTILS3D_NATIVE_ARCH=ON` 会使用构建机器的 CPU 指令集，适合本机性能测试，不适合直接分发给不同 CPU 的用户。
 

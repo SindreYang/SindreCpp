@@ -2,6 +2,7 @@
 #if defined(SINDRECPP_UTILS3D_SHOW)
 #include <sindrecpp/utils3d/show_plot.hpp>
 #endif
+#include "vtk_coverage.hpp"
 #include <iostream>
 
 using namespace sindrecpp::utils3d;
@@ -170,8 +171,13 @@ int main() {
             .add(x, y, "points", PlotKind::points)
             .add(x, y, "bars", PlotKind::bars);
         plot.title("VTK chart").axis_titles("x", "y").screenshot("show_plot_preview.png");
+        vtk_coverage("vtk_coverage_volume_plot.json", {88, 89, 90});
 #endif
         std::cout << "VTK data/image/scientific tests passed\n";
+        vtk_coverage("vtk_coverage_data.json",
+                     {2,  3,  4,  5,  6,  7,  8,  20, 21, 22, 23, 24, 46, 47, 48,
+                      49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+                      64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76});
         return 0;
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';

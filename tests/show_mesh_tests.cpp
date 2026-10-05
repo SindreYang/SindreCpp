@@ -1,3 +1,4 @@
+#include "vtk_coverage.hpp"
 #include <iostream>
 #include <sindrecpp/utils3d/sindremesh.hpp>
 #include <vtkCamera.h>
@@ -132,6 +133,8 @@ int main() {
         event_view.get_interactor()->SetEventPosition(160, 120);
         event_view.get_interactor()->InvokeEvent(vtkCommand::LeftButtonPressEvent);
         check(called, "Mouse pick callback");
+        // End the click: VTK's camera style holds event focus during a drag.
+        event_view.get_interactor()->InvokeEvent(vtkCommand::LeftButtonReleaseEvent);
         event_view.on_key([&](const std::string &key) { called = key == "x"; });
         called = false;
         event_view.get_interactor()->SetKeySym("x");
@@ -164,6 +167,7 @@ int main() {
         check(mesh.vertices().isApprox(v) && mesh.get_vertex_labels() == ids,
               "Display must retain source geometry and attributes");
         std::cout << "show_mesh rendering tests passed\n";
+        vtk_coverage("vtk_coverage_show.json", {25, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87});
         return 0;
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';

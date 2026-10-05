@@ -23,6 +23,8 @@ SindreCpp/
 
 - 字符串处理放在 `sindrecpp/general.hpp` 的 `general::string` 能力中
 - 网格对象放在 `sindrecpp/utils3d/sindremesh.hpp`（VTK），几何算法放在 `utils3d/algorithm.hpp`；数学交换使用 Eigen
+- 显示独立放在 `utils3d/show_mesh.hpp`，由网格调用；数据集/图像/场分析放在 `sindredata.hpp` / `sindreimage.hpp`，二维绘图放在 `show_plot.hpp`
+- `SINDRECPP_UTILS3D_SHOW` 与 `SINDRECPP_UTILS3D_VTK_DATA` 分别按需开启；不要把原生 VTK 可访问性当作封装完成，覆盖清单见 [VTK 指南](vtk.md)
 - 日志能力放在 `sindrecpp/general.hpp` 的 `general::log` 能力中
 - 媒体能力应放在 `sindrecpp/utilsav.hpp`
 - 图像能力应放在 `sindrecpp/utils2d.hpp`
