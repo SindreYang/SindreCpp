@@ -64,6 +64,10 @@
 #endif
 
 namespace sindrecpp::utils3d {
+using Vertices = core::Vertices;
+using Faces = core::Faces;
+using Matrix = core::Matrix;
+using Labels = core::Labels;
 using CoreMesh = core::Mesh;
 #define SindreMesh CoreMesh
 // Curves retain vtkPolyData lines rather than being converted to triangle meshes.
