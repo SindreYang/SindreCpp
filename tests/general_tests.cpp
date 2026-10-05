@@ -1,6 +1,4 @@
-#include <sindrecpp/core.hpp>
-#include <sindrecpp/pointer.hpp>
-#include <sindrecpp/string.hpp>
+#include <sindrecpp/general.hpp>
 
 #include <cstdlib>
 #include <iostream>
@@ -12,17 +10,17 @@
 } } while (false)
 
 int main() {
-    auto value = sindrecpp::Result<int>::success(42);
+    auto value = sindrecpp::general::Result<int>::success(42);
     CHECK(value);
     CHECK(value.value() == 42);
 
-    auto failure = sindrecpp::Result<int>::failure({{}, "expected failure"});
+    auto failure = sindrecpp::general::Result<int>::failure({{}, "expected failure"});
     CHECK(!failure);
     CHECK(failure.error().message == "expected failure");
 
-    auto no_value = sindrecpp::Result<void>::success();
+    auto no_value = sindrecpp::general::Result<void>::success();
     CHECK(no_value);
-    auto no_value_error = sindrecpp::Result<void>::failure({{}, "failed"});
+    auto no_value_error = sindrecpp::general::Result<void>::failure({{}, "failed"});
     CHECK(!no_value_error);
     CHECK(no_value_error.error().message == "failed");
 
@@ -36,5 +34,5 @@ int main() {
 
     auto pointer = sindrecpp::general::pointer::make_unique<std::string>("owned");
     CHECK(*pointer == "owned");
-    CHECK(std::string(sindrecpp::version) == "0.1.0");
+    CHECK(std::string(sindrecpp::general::version) == "0.1.0");
 }

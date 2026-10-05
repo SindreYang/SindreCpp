@@ -24,8 +24,8 @@ SindreCpp/
 - 字符串处理放在 `sindrecpp/general.hpp` 的 `general::string` 能力中
 - 数学处理放在 `sindrecpp/utils3d.hpp`（底层使用 Eigen）
 - 日志能力放在 `sindrecpp/general.hpp` 的 `general::log` 能力中
-- 媒体能力应放在 `sindrecpp/media.hpp`
-- 图像能力应放在 `sindrecpp/image.hpp`
+- 媒体能力应放在 `sindrecpp/utilsav.hpp`
+- 图像能力应放在 `sindrecpp/utils2d.hpp`
 - 底层库别名放入对应模块的 `native` 命名空间
 
 不要为每一个函数单独创建头文件。
@@ -35,10 +35,10 @@ SindreCpp/
 SindreCpp 的顶层组织跟随 Sindre：
 
 - `general`：通用工具、字符串、日志、HTTP、JSON、CLI；
-- `utils2d`：2D 图像能力，预留；
+- `utils2d`：OpenCV 图像和推理预处理；
 - `utils3d`：3D 和数学能力；
 - `utilsav`：音视频能力，预留；
-- `ai`：AI 能力，预留；
+- `ai`：ONNX Runtime CPU/CUDA 和独立 TensorRT 推理；
 - `deploy`：部署能力，预留；
 - `platform`：平台相关能力，预留；
 - `apps`：应用级能力，预留。
@@ -61,8 +61,10 @@ SindreCpp 的顶层组织跟随 Sindre：
 namespace sindrecpp::general::string {}
 namespace sindrecpp::utils3d {}
 
+namespace sindrecpp::general {
 class Result {};
 struct Error {};
+}
 
 std::string replace_all(...);
 bool starts_with(...);
@@ -154,3 +156,13 @@ ctest --test-dir build -C Release --output-on-failure
 - 没有引入不必要的兼容别名；
 - 没有把内部实现名称暴露给用户；
 - README 或对应文档已经更新。
+
+## 按需模块
+
+只有无第三方依赖的 general 默认开启；其他功能域和第三方集成默认关闭。
+Result/Error/version 属于 general，无独立 Core 目标。
+GUI/Python 域为 utils_gui/utils_py，不保留旧名称。
+AI 默认选择 ONNX Runtime+CUDA；独立 TensorRT 显式开启，并可关闭 ORT。
+提供 infer、infer_async 和两阶段 Pipeline，错误经 future 传播，关闭排空任务。
+未启用 AI 不查找 ORT/GPU SDK。
+详见 inference.md。

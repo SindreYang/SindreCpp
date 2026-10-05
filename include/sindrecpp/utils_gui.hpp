@@ -1,12 +1,12 @@
 #pragma once
 
-#if !defined(SINDRECPP_WITH_GUI)
-#error "Enable SINDRECPP_WITH_GUI and link SindreCpp::Gui before including this header."
+#if !defined(SINDRECPP_WITH_UTILS_GUI)
+#error "Enable SINDRECPP_WITH_UTILS_GUI and link SindreCpp::Utils_gui before including this header."
 #endif
 
 #include <imgui.h>
 
-namespace sindrecpp::gui {
+namespace sindrecpp::utils_gui {
 
 namespace native = ImGui;
 
@@ -34,4 +34,4 @@ private:
     ImGuiContext* context_;
 };
 
-} // namespace sindrecpp::gui
+} // namespace sindrecpp::utils_gui

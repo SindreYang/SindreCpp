@@ -5,3 +5,5 @@ CMakeUserPresets.json
 *.user
 *.suo
 *.vcxproj.user
+
+/tests/models/*.onnx

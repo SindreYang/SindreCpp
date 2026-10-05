@@ -24,13 +24,82 @@ jobs:
           -DSINDRECPP_WITH_POINTER=ON
           -DSINDRECPP_WITH_STRING=ON
           -DSINDRECPP_WITH_LOG=ON
-          -DSINDRECPP_WITH_GUI=ON
-          -DSINDRECPP_WITH_PYTHON=ON
+          -DSINDRECPP_WITH_UTILS_GUI=ON
+          -DSINDRECPP_WITH_UTILS_PY=ON
           -DSINDRECPP_WITH_HTTP=ON
           -DSINDRECPP_WITH_JSON=ON
           -DSINDRECPP_WITH_CLI=ON
-          -DSINDRECPP_WITH_EIGEN=ON
+          -DSINDRECPP_WITH_UTILS3D=ON
       - name: Build
         run: cmake --build build --config Release --parallel 2
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+  minimal:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Default general-only build
+        run: cmake -S . -B build-default -DSINDRECPP_BUILD_TESTS=ON
+      - run: cmake --build build-default --config Release --parallel 2
+      - run: ctest --test-dir build-default -C Release --output-on-failure
+      - name: All modules disabled
+        run: cmake -S . -B build-empty -DSINDRECPP_WITH_GENERAL=OFF -DSINDRECPP_BUILD_TESTS=ON
+      - run: cmake --build build-empty --config Release --parallel 2
+      - name: Local FetchContent consumer
+        run: cmake -S tests/fetchcontent_consumer -B build-consumer
+      - run: cmake --build build-consumer --config Release --parallel 2
+
+  vision-ai-cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test SDKs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopencv-dev
+          python -m pip install onnx==1.17.0
+          curl --fail --location --retry 3 -o ort.tgz https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz
+          tar -xzf ort.tgz
+          python tests/create_test_model.py
+      - name: Compile ONNX Runtime CUDA API (no GPU execution)
+        run: >-
+          g++ -std=c++17 -fsyntax-only tests/ai_tests.cpp
+          -Iinclude -Ionnxruntime-linux-x64-1.22.0/include
+          -DSINDRECPP_AI_ONNXRUNTIME=1 -DSINDRECPP_AI_CUDA=1
+      - name: Configure CPU inference and image tests
+        run: >-
+          cmake -S . -B build-ai -DCMAKE_BUILD_TYPE=Release
+          -DSINDRECPP_WITH_AI=ON -DSINDRECPP_AI_CUDA=OFF
+          -DSINDRECPP_WITH_UTILS2D=ON
+          -DSINDRECPP_ONNXRUNTIME_ROOT=${{ github.workspace }}/onnxruntime-linux-x64-1.22.0
+      - run: cmake --build build-ai --parallel 2
+      - run: ctest --test-dir build-ai --output-on-failure
+
+  trt-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Get pinned NVIDIA API headers (not runtime SDK installation)
+        run: |
+          python -m pip install nvidia-cuda-runtime-cu12==12.9.79 nvidia-cuda-nvcc-cu12==12.9.86
+          curl --fail --location --retry 3 -o trt.tgz https://github.com/NVIDIA/TensorRT/archive/b8db91e15be2cae4465ac17fab19e0f969e45407.tar.gz
+          tar -xzf trt.tgz
+          curl --fail --location --retry 3 -o parser.tgz https://github.com/onnx/onnx-tensorrt/archive/9a9f7883dd7b8cb0a718395bac2075fab6f97da8.tar.gz
+          tar -xzf parser.tgz
+      - name: Compile standalone TensorRT conversion, async and device APIs
+        run: |
+          CUDA_RUNTIME_INCLUDE=$(python -c 'import nvidia.cuda_runtime; print(list(nvidia.cuda_runtime.__path__)[0] + "/include")')
+          CUDA_NVCC_INCLUDE=$(python -c 'import nvidia.cuda_nvcc; print(list(nvidia.cuda_nvcc.__path__)[0] + "/include")')
+          g++ -std=c++17 -pthread -fsyntax-only -Wno-deprecated-declarations tests/trt_tests.cpp \
+            -Iinclude -ITensorRT-b8db91e15be2cae4465ac17fab19e0f969e45407/include -Ionnx-tensorrt-9a9f7883dd7b8cb0a718395bac2075fab6f97da8 \
+            -I"$CUDA_RUNTIME_INCLUDE" -I"$CUDA_NVCC_INCLUDE" -DSINDRECPP_AI_TRT=1

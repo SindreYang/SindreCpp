@@ -1,127 +1,133 @@
 # SindreCpp
 
-Reusable C++17 utilities and integrations for everyday projects. SindreCpp provides a small dependency-free core and a one-stop target for common tools.
+C++17 capability toolkit following Sindre naming. All third-party dependencies are opt-in.
 
 ## Modules
 
-SindreCpp follows the same capability domains as Sindre:
-
-| CMake option | Domain target | Header | Scope |
+| Option | Target | Header / namespace | Scope |
 | --- | --- | --- | --- |
-| `SINDRECPP_WITH_GENERAL` | `SindreCpp::General` | `<sindrecpp/general.hpp>` | Common utilities, strings, logging, HTTP, JSON, and CLI |
-| `SINDRECPP_WITH_UTILS3D` | `SindreCpp::Utils3d` | `<sindrecpp/utils3d.hpp>` | 3D/math primitives backed by Eigen |
-| `SINDRECPP_WITH_GUI` | `SindreCpp::Gui` | `<sindrecpp/gui.hpp>` | Dear ImGui context lifetime helper |
-| `SINDRECPP_WITH_PYTHON` | `SindreCpp::Python` | `<sindrecpp/python.hpp>` | Python embedding and NumPy conversion |
+| SINDRECPP_WITH_GENERAL | SindreCpp::General | general.hpp / general | Result, Error, version, strings, pointers, optional integrations |
+| SINDRECPP_WITH_UTILS_GUI | SindreCpp::Utils_gui | utils_gui.hpp / utils_gui | ImGui context lifetime |
+| SINDRECPP_WITH_UTILS_PY | SindreCpp::Utils_py | utils_py.hpp / utils_py | Python embedding and NumPy conversion |
+| SINDRECPP_WITH_UTILS2D | SindreCpp::Utils2d | utils2d.hpp / utils2d | OpenCV images and preprocessing |
+| SINDRECPP_WITH_UTILS3D | SindreCpp::Utils3d | utils3d.hpp / utils3d | Eigen vectors/matrices; optional BLAS |
+| SINDRECPP_WITH_AI | SindreCpp::Ai | ai.hpp / ai | Tensor types, async execution, pipeline and selected backends |
+| SINDRECPP_AI_ONNXRUNTIME | SindreCpp::OnnxRuntime | ai/onnxruntime.hpp / ai::onnxruntime | Independent ONNX Runtime CPU/CUDA inference |
+| SINDRECPP_AI_TRT | SindreCpp::Trt | ai/trt.hpp / ai::trt | Independent TensorRT conversion and engine inference |
 
-The domain targets are the normal public entry points. Focused headers such as `string.hpp`, `log.hpp`, and `json.hpp` remain available for a smaller include surface, while their namespaces stay under `sindrecpp::general`.
+Only dependency-free general defaults ON and can be disabled.
+All other domains/integrations default OFF. AI defaults to the ONNX Runtime backend and CUDA support
+when enabled; native TensorRT is opt-in. The backend switches only apply when AI is enabled.
+TensorRT does not link ONNX Runtime. Set AI_ONNXRUNTIME=OFF for a TRT-only build.
+General integrations use SINDRECPP_WITH_POINTER, STRING, LOG, HTTP, JSON and CLI (all OFF).
+Core/Gui/Python old targets, namespaces and headers have been removed without aliases.
+Base strings and pointers work without CsString/CsPointer.
 
-All modules are enabled by default and are available through the unified `SindreCpp::SindreCpp` target. Each integration exposes common SindreCpp names and a `native` namespace for advanced use of its underlying library. Dear ImGui's windowing and rendering backends remain the responsibility of the host application. Eigen enables its compiler-supported vectorization by default; use a Release build for optimized code. `SINDRECPP_UTILS3D_NATIVE_ARCH=ON` opts into CPU-specific compiler flags and can make the resulting binary incompatible with other machines. The Python module requires Python development files; NumPy conversion helpers also require NumPy at runtime.
-
-When a supported dependency target is already present in the parent build or installed with CMake, SindreCpp reuses it. Otherwise CMake fetches the pinned upstream release. Upstream test/example options are set only in the dependency's scope, and existing parent settings take precedence. The dependency projects retain their own licenses; SindreCpp does not copy or relicense them.
-
-## Add with FetchContent
+## Add to a project
 
 ```cmake
 include(FetchContent)
-
-FetchContent_Declare(
-    SindreCpp
+set(SINDRECPP_WITH_AI ON CACHE BOOL "")
+set(SINDRECPP_WITH_UTILS2D ON CACHE BOOL "")
+set(SINDRECPP_ONNXRUNTIME_ROOT "/path/to/onnxruntime" CACHE PATH "")
+FetchContent_Declare(SindreCpp
     GIT_REPOSITORY https://github.com/SindreYang/SindreCpp.git
-    GIT_TAG v0.1.0
-)
+    GIT_TAG main) # Pin a tested commit for production.
 FetchContent_MakeAvailable(SindreCpp)
-
 add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE SindreCpp::SindreCpp)
+target_link_libraries(my_app PRIVATE SindreCpp::Ai SindreCpp::Utils2d)
+```
+
+SindreCpp::SindreCpp aggregates enabled domains without enabling additional dependencies.
+OpenCV uses OpenCV_DIR (core/imgproc/imgcodecs); ORT uses its SDK root or parent targets.
+TensorRT uses SINDRECPP_TENSORRT_ROOT and a CUDA Toolkit. SDKs are not built/downloaded by SindreCpp.
+
+## Synchronous, asynchronous and pipeline inference
+
+```cpp
+#include <sindrecpp/ai.hpp>
+
+sindrecpp::ai::onnxruntime::Model model("model.onnx"); // CUDA default
+sindrecpp::ai::Tensors input{ /* dense float32 tensors in model input order */ };
+auto output = model.infer(input);
+auto future = model.infer_async(input);
+auto async_output = future.get(); // Errors are rethrown here.
+```
+
+Both backend Models provide infer, infer_async and warm_up.
+Pipeline<Input, Prepared, Output> has separate preprocessing/inference workers, so CPU work for
+the next item overlaps inference for the current one. Bounded queues reject excess submissions;
+close drains accepted work. Capture shared model ownership in callbacks.
+See [docs/inference.md](docs/inference.md) for complete pipeline usage and ownership rules.
+
+## Standalone TensorRT
+
+```cmake
+set(SINDRECPP_WITH_AI ON CACHE BOOL "")
+set(SINDRECPP_AI_ONNXRUNTIME OFF CACHE BOOL "")
+set(SINDRECPP_AI_TRT ON CACHE BOOL "")
+set(SINDRECPP_TENSORRT_ROOT "/path/to/TensorRT-10.13.x" CACHE PATH "")
+# After FetchContent_MakeAvailable:
+target_link_libraries(my_app PRIVATE SindreCpp::Trt)
 ```
 
 ```cpp
-#include <sindrecpp/sindrecpp.hpp>
+#include <sindrecpp/ai/trt.hpp>
 
-#include <string>
-
-int main() {
-    auto label = sindrecpp::general::string::trim("  daily utility  ");
-    sindrecpp::general::log::info("Starting {}", std::string(label));
-    auto document = sindrecpp::general::json::parse(R"({"ready":true})");
-    return document.root()["ready"].get_bool().value() ? 0 : 1;
-}
+namespace trt = sindrecpp::ai::trt;
+auto options = trt::BuildOptions::max_performance();
+options.fp16 = true; // User must validate precision.
+options.workspace_bytes = std::size_t{4} << 30;
+options.profiles = {{"images", {1, 3, 640, 640}, {4, 3, 640, 640}, {8, 3, 640, 640}}};
+trt::convert_onnx("model.onnx", "model.engine", options);
+trt::Model model("model.engine");
+auto future = model.infer_async(input);
+auto output = future.get();
 ```
 
-To reduce the dependency set, turn off individual `SINDRECPP_WITH_*` options before `FetchContent_MakeAvailable`; `SindreCpp::SindreCpp` then contains only the enabled modules. You can also continue linking an individual target such as `SindreCpp::Json`. The GUI module provides ImGui core/context support; the host application supplies rendering and window backends.
+BuildOptions::cross_gpu selects Ampere-and-newer compatibility, not arbitrary NVIDIA GPUs.
+same_compute_capability is a narrower compatibility choice. Hardware compatibility, precision,
+workspace, optimization level, auxiliary streams, profiles and version compatibility are user-controlled.
+Presets are starting points, not proof of maximum performance.
 
-HTTP enables `SINDRECPP_HTTP_OPENSSL` auto-detection by default. If OpenSSL is available, cpp-httplib adds HTTPS support; otherwise it remains HTTP-only. Eigen automatically uses the SIMD features enabled by the compiler target. Build in Release mode for optimized code. `SINDRECPP_UTILS3D_NATIVE_ARCH=ON` is the default and enables CPU-specific compiler flags for maximum build-machine performance; set it to `OFF` when distributing binaries to other CPU models. The setting propagates to code that uses Eigen. Alignment macros remain at Eigen's defaults to avoid ABI mismatches with other libraries.
+TRT enqueue returns a CUDA completion ticket (ready/get/wait).
+enqueue_device binds caller-owned GPU input/output buffers without host copies.
+Pinned host staging/device allocations are reused by the host-input interface.
+At most one outstanding CUDA ticket per Model; use multiple Models/streams for concurrency.
+The engine loader accepts trusted plans only; embedded runtime code needs explicit permission.
 
-Eigen's dense operations use `SINDRECPP_UTILS3D_BLAS_BACKEND=AUTO` by default: if CMake finds a host BLAS, SindreCpp links it and enables Eigen's BLAS integration; otherwise Eigen uses its built-in kernels. Set the option to `EIGEN` to force built-in kernels or `BLAS` to require an external BLAS. To select an installed vendor, pass CMake's `BLA_VENDOR`, for example `-DBLA_VENDOR=OpenBLAS` or `-DBLA_VENDOR=Intel10_64lp`. SindreCpp does not download or build a second BLAS implementation. Eigen routes eligible dynamic/large dense products through BLAS; most other Eigen operations still use Eigen's own algorithms.
+## Images and other utilities
 
-### Utils3d/BLAS benchmark
+utils2d: load/save, resize/crop, color conversion, normalize, letterbox and to_tensor.
+Default to_tensor: BGR -> RGB, NCHW, float32, pixel/255; preprocessing must match the model.
+Crop returns an independent copy; letterbox returns scale/padding.
 
-The optional benchmark compares Eigen's built-in double-precision matrix multiplication against the selected BLAS `dgemm`, using the same seeded matrices and single-thread settings. It reports average time, GFLOP/s, speedup, maximum absolute error, and relative L2 error. Build it in Release mode with a BLAS installed:
+Result/Error/version now live under sindrecpp::general. trim/split return views; keep source text alive.
+Optional log exposes warning() and rotating_file(name, path), 10 MiB/file and five retained files.
+utils_gui manages context only; host owns window/render backends.
+utils_py needs Python development files; NumPy helpers need NumPy at runtime.
+Header inclusion alone does not create an interpreter/context/model.
 
-```powershell
-$env:OPENBLAS_NUM_THREADS = "1"
-cmake -S . -B build-bench -DCMAKE_BUILD_TYPE=Release `
-  -DSINDRECPP_BUILD_UTILS3D_BENCHMARKS=ON `
-  -DSINDRECPP_UTILS3D_BLAS_BACKEND=EIGEN `
-  -DSINDRECPP_UTILS3D_NATIVE_ARCH=ON `
-  -DBLA_VENDOR=OpenBLAS
-cmake --build build-bench --config Release
-.\build-bench\sindrecpp_utils3d_benchmark.exe 1024 5
-```
+utils3d supports SINDRECPP_UTILS3D_BLAS_BACKEND=AUTO/EIGEN/BLAS.
+Use SINDRECPP_UTILS3D_NATIVE_ARCH=OFF for portable/cross-compiled binaries.
+SINDRECPP_BUILD_UTILS3D_BENCHMARKS enables the optional GEMM benchmark.
 
-`SINDRECPP_UTILS3D_BLAS_BACKEND=EIGEN` keeps Eigen's built-in path active in the library for this comparison; the benchmark still links the detected BLAS directly. Set `OPENBLAS_NUM_THREADS=1` (or the equivalent vendor thread control) for a single-thread comparison. Results depend on CPU, compiler, BLAS build, and threading configuration.
+## Build and test
 
-### Rotating log file
-
-The log module includes a ready-to-use size-rotating logger. Defaults are 10 MiB per file and five retained files:
-
-```cpp
-auto file_log = sindrecpp::general::log::rotating_file("app", "logs/app.log");
-file_log->info("Started {}", "MyApp");
-```
-
-Pass `max_size_bytes` and `max_files` to change the rotation limits. The returned logger is named and does not replace spdlog's global default logger.
-
-When SindreCpp is included with FetchContent, its own tests and examples default to OFF. When building SindreCpp directly, they default to ON.
-
-```cpp
-#include <sindrecpp/core.hpp>
-#include <sindrecpp/string.hpp>
-
-auto label = sindrecpp::general::string::trim("  daily utility  ");
-auto config = sindrecpp::Result<std::string>::success(std::string(label));
-```
-
-`Result<T>` represents success or an `Error`; `value()` reads the result and `error()` reads its failure details. String helpers operate on UTF-8 byte sequences for ASCII-compatible operations. Use `sindrecpp::general::string::Utf8String` for CsString's Unicode-aware API when the String module is enabled.
-
-## Project conventions
-
-SindreCpp follows the Sindre naming and organization style while respecting normal C++ conventions:
-
-- namespaces, functions, and variables use lower snake case;
-- public types use PascalCase;
-- CMake targets use `SindreCpp::Name`;
-- feature options use `SINDRECPP_WITH_NAME`;
-- modules follow Sindre capability domains such as `general`, `utils2d`, `utils3d`, `utilsav`, `ai`, `deploy`, `platform`, and `apps`;
-- modules are named by user-facing capability, not by the underlying dependency;
-- advanced access to a wrapped dependency is exposed through a module's `native` namespace;
-- workflow states use `start` and `done`, not `complete`;
-- functionality stays concentrated in capability-level headers instead of one header per function.
-
-See [docs/development.md](docs/development.md) for the complete development guide and [docs/notes.md](docs/notes.md) for dependency, portability, and API design notes.
-
-## Local build
-
-Requirements: CMake 3.20+, a C++17 compiler, and Git when enabling third-party modules.
-
-```powershell
-cmake -S . -B build -DSINDRECPP_BUILD_TESTS=ON
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-See `examples/basic_usage.cpp` for the module APIs. Disable an integration at configure time with options such as `-DSINDRECPP_WITH_PYTHON=OFF`.
+For inference fixtures: pip install onnx==1.17.0; python tests/create_test_model.py.
+CPU builds require ORT 1.22+ matching headers/runtime; GPU ORT also needs matching CUDA/cuDNN.
+Native TRT targets 10.13.x and CUDA Toolkit 12+; TensorRT 11 is deliberately rejected.
+For CPU-only ORT, set SINDRECPP_AI_CUDA=OFF and explicitly select Options.backend=Backend::cpu.
 
-## License
+CI runs Windows/Linux integrations, general-only/all-disabled builds, OpenCV/ORT CPU execution,
+async/queue/pipeline tests and native TRT API compilation. GPU conversion/inference tests are opt-in
+with SINDRECPP_BUILD_GPU_TESTS=ON and require real GPU hardware.
 
-MIT. See [LICENSE](LICENSE).
+[Inference guide](docs/inference.md) · [Development](docs/development.md) · [Notes](docs/notes.md).
+MIT; dependencies keep their licenses.

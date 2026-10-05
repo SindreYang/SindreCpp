@@ -75,7 +75,7 @@ SINDRECPP_WITH_<MODULE>
 例如：
 
 ```bash
--DSINDRECPP_WITH_PYTHON=OFF
+-DSINDRECPP_WITH_UTILS_PY=OFF
 -DSINDRECPP_WITH_UTILS3D=OFF
 ```
 
@@ -84,7 +84,7 @@ SINDRECPP_WITH_<MODULE>
 - 对应第三方依赖不应被下载；
 - 对应 target 不应被加入总 target；
 - 对应头文件不应要求该依赖；
-- 核心模块仍应可以独立构建。
+- general 仍可无第三方依赖独立构建。
 
 ## 6. 注意 utils3d 模块的可移植性
 
@@ -104,9 +104,9 @@ Utils3d 模块对外提供用户功能命名，底层实现使用 Eigen。用户
 - `EIGEN`：使用 Eigen 内置实现；
 - `BLAS`：强制要求外部 BLAS。
 
-## 7. 注意 Python 模块的环境要求
+## 7. 注意 utils_py 模块的环境要求
 
-Python 模块需要：
+utils_py 模块需要：
 
 - Python 解释器；
 - Python 开发文件；
@@ -116,14 +116,14 @@ Python 模块需要：
 如果宿主项目不需要 Python，应关闭：
 
 ```bash
--DSINDRECPP_WITH_PYTHON=OFF
+-DSINDRECPP_WITH_UTILS_PY=OFF
 ```
 
-不要让基础 C++ 项目因为默认开启 Python 而强制安装完整 Python 开发环境。
+utils_py 默认关闭，只有启用后才要求 Python 开发环境。
 
-## 8. 注意 GUI 模块的职责边界
+## 8. 注意 utils_gui 模块的职责边界
 
-GUI 模块只负责 Dear ImGui 核心和上下文生命周期。
+utils_gui 模块只负责 Dear ImGui 核心和上下文生命周期。
 
 窗口、输入和渲染后端由宿主项目负责，例如：
 
@@ -174,3 +174,12 @@ GUI 模块只负责 Dear ImGui 核心和上下文生命周期。
 - Release 构建通过测试；
 - README 中的版本和 FetchContent 标签一致；
 - 公开 API 没有临时名称。
+
+## 12. 异步与独立 TensorRT
+
+AI 的 TRT 后端不依赖 ORT，转换与 engine 执行使用原生 TensorRT。
+跨 GPU 兼容由用户指定硬件级别，不意味着任意 GPU 都能加载。
+future 的 get 传播失败；有界队列满时拒绝新提交，close 排空旧任务。
+Pipeline 在预处理和推理之间实际重叠工作，数据所有权必须清楚。
+Pending 析构会等待 CUDA stream；设备缓冲由用户保持到完成。
+详细参数、API 和 GPU 验证边界见 inference.md。

@@ -7,11 +7,11 @@
 #if defined(SINDRECPP_WITH_LOG)
 #include <sindrecpp/log.hpp>
 #endif
-#if defined(SINDRECPP_WITH_GUI)
-#include <sindrecpp/gui.hpp>
+#if defined(SINDRECPP_WITH_UTILS_GUI)
+#include <sindrecpp/utils_gui.hpp>
 #endif
-#if defined(SINDRECPP_WITH_PYTHON)
-#include <sindrecpp/python.hpp>
+#if defined(SINDRECPP_WITH_UTILS_PY)
+#include <sindrecpp/utils_py.hpp>
 #endif
 #if defined(SINDRECPP_WITH_HTTP)
 #include <sindrecpp/http.hpp>
@@ -27,22 +27,24 @@
 #endif
 
 int main() {
+#if defined(SINDRECPP_WITH_GENERAL)
     auto text = sindrecpp::general::string::trim("  SindreCpp  ");
     auto owner = sindrecpp::general::pointer::make_unique<std::string>(text);
-    std::cout << *owner << " " << sindrecpp::version << '\n';
+    std::cout << *owner << " " << sindrecpp::general::version << '\n';
+#endif
 
 #if defined(SINDRECPP_WITH_LOG)
-    sindrecpp::general::log::info("Hello from SindreCpp {}", sindrecpp::version);
+    sindrecpp::general::log::info("Hello from SindreCpp {}", sindrecpp::general::version);
     auto file_logger = sindrecpp::general::log::rotating_file("sindrecpp-example", "sindrecpp-example.log");
     file_logger->info("Rotating file logging is ready");
     sindrecpp::general::log::native::drop("sindrecpp-example");
 #endif
-#if defined(SINDRECPP_WITH_GUI)
-    sindrecpp::gui::Context context;
+#if defined(SINDRECPP_WITH_UTILS_GUI)
+    sindrecpp::utils_gui::Context context;
 #endif
-#if defined(SINDRECPP_WITH_PYTHON)
-    sindrecpp::python::Interpreter interpreter;
-    auto answer = sindrecpp::python::native::eval("1 + 1");
+#if defined(SINDRECPP_WITH_UTILS_PY)
+    sindrecpp::utils_py::Interpreter interpreter;
+    auto answer = sindrecpp::utils_py::native::eval("1 + 1");
     if (answer.cast<int>() != 2) return 1;
 #endif
 #if defined(SINDRECPP_WITH_HTTP)
@@ -64,10 +66,10 @@ int main() {
 #endif
 }
 
-#if defined(SINDRECPP_WITH_PYTHON)
+#if defined(SINDRECPP_WITH_UTILS_PY)
 [[maybe_unused]] static void python_numpy_compile_smoke() {
-    const auto array = sindrecpp::python::array_from_vector(std::vector<int>{1, 2, 3});
-    const auto values = sindrecpp::python::vector_from_array<int>(array);
+    const auto array = sindrecpp::utils_py::array_from_vector(std::vector<int>{1, 2, 3});
+    const auto values = sindrecpp::utils_py::vector_from_array<int>(array);
     (void)values;
 }
 #endif

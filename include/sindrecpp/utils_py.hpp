@@ -1,7 +1,7 @@
 #pragma once
 
-#if !defined(SINDRECPP_WITH_PYTHON)
-#error "Enable SINDRECPP_WITH_PYTHON and link SindreCpp::Python before including this header."
+#if !defined(SINDRECPP_WITH_UTILS_PY)
+#error "Enable SINDRECPP_WITH_UTILS_PY and link SindreCpp::Utils_py before including this header."
 #endif
 
 #include <pybind11/embed.h>
@@ -11,7 +11,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace sindrecpp::python {
+namespace sindrecpp::utils_py {
 
 namespace native = pybind11;
 using Interpreter = pybind11::scoped_interpreter;
@@ -41,4 +41,4 @@ std::vector<T> vector_from_array(const pybind11::array& input) {
     return std::vector<T>(begin, begin + info.size);
 }
 
-} // namespace sindrecpp::python
+} // namespace sindrecpp::utils_py
