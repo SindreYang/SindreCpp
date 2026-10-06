@@ -58,8 +58,8 @@ string.hpp
 常规使用：
 
 ```cpp
-#include <sindrecpp/general.hpp>
-#include <sindrecpp/utils3d.hpp>
+#include <general/index.hpp>
+#include <utils3d/index.hpp>
 ```
 
 `string`、`log`、`json` 等聚焦命名空间属于 `general` 领域内部能力；`utils3d` 负责 3D 和数学能力。
@@ -93,7 +93,7 @@ MeshLib 开启时该模块要求 C++20，其余接口为 C++17。网格与 NumPy
 跨后端算法不自动传递标签/颜色/UV；拓扑变化后需显式回映射。详见 [网格指南](mesh.md)。
 显示、数据/图像处理分别按需开启；完整能力域的项目清单、数据语义与缺项见 [VTK 指南](vtk.md)。
 
-`SINDRECPP_UTILS3D_NATIVE_ARCH=ON` 会使用构建机器的 CPU 指令集，适合本机性能测试，不适合直接分发给不同 CPU 的用户。
+`SINDRECPP_UTILS3D_NATIVE_ARCH` 默认关闭；开启 `ON` 后会使用构建机器的 CPU 指令集，适合本机性能测试，不适合直接分发给不同 CPU 的用户。
 
 分发二进制时建议：
 
@@ -124,20 +124,16 @@ utils_py 模块需要：
 
 utils_py 默认关闭，只有启用后才要求 Python 开发环境。
 
-## 8. 注意 utils_gui 模块的职责边界
+## 8. utils_gui 的后端和职责边界
 
-utils_gui 模块只负责 Dear ImGui 核心和上下文生命周期。
+`utils_gui` 默认使用匹配版本的 Dear ImGui core + GLFW + OpenGL3 backend，
+由 `GuiApplication::create()` 统一完成窗口、显示器、DPI、输入和渲染初始化。
+默认主题为暗色，圆角、间距和字体缩放保持一致；字体搜索支持系统目录和显式路径，
+图片加载支持 UTF-8/中文路径，并通过 `TextureUploader` 与宿主 GPU 纹理对象衔接。
 
-窗口、输入和渲染后端由宿主项目负责，例如：
-
-- GLFW；
-- SDL；
-- Win32；
-- OpenGL；
-- Vulkan；
-- DirectX。
-
-不要在 SindreCpp 中偷偷绑定某一个窗口系统。
+宿主若已经有 SDL、Win32、Vulkan 或 DirectX 生命周期，可将
+`SINDRECPP_GUI_GLFW_OPENGL3` 关闭，仅使用 ImGui 核心 `Context`、图片 CPU 解码
+和通用控件封装，不会强行绑定 GLFW。
 
 ## 9. 对外 API 要少而明确
 

@@ -14,7 +14,7 @@ target_link_libraries(my_app PRIVATE SindreCpp::Utils3d)
 常用网格程序可以直接包含 `utils3d/sindremesh.hpp`。需要完整 VTK 数据和显示对象时，统一包含：
 
 ```cpp
-#include <sindrecpp/utils3d/core/vtk.hpp>
+#include <utils3d/core/vtk.hpp>
 ```
 
 这个入口按编译开关导出数据、图像、显示和绘图类型；关闭对应开关时不会引入相应接口。
@@ -33,7 +33,7 @@ target_link_libraries(my_app PRIVATE SindreCpp::Utils3d)
 ## 图像与体数据
 
 ```cpp
-#include <sindrecpp/utils3d.hpp>
+#include <utils3d/index.hpp>
 namespace u3 = sindrecpp::utils3d;
 u3::Matrix voxels = u3::Matrix::Zero(64*64*64, 1); // 换为实际体数据
 // x 最快：x + nx*(y + ny*z)，列是通道；spacing/origin 为物理坐标。
@@ -60,7 +60,7 @@ normalize 对全部通道共同求范围；常数输入映射到 lower。cast �
 ## 通用数据与场分析
 
 ```cpp
-#include <sindrecpp/utils3d.hpp>
+#include <utils3d/index.hpp>
 auto data = u3::Data::structured_grid(points, {nx,ny,nz});
 data.set_data("temperature", temperatures); // 点标量
 data.set_data("velocity", velocities);     // 点三维向量
@@ -87,7 +87,7 @@ XML 扩展名必须与数据类型一致；VTM 会生成相邻子文件，需整
 ## 显示与绘图
 
 ```cpp
-#include <sindrecpp/utils3d.hpp>
+#include <utils3d/index.hpp>
 u3::Plot plot;
 plot.add(x,y,"curve").add(x,y,"samples",u3::PlotKind::points);
 plot.title("Result").axis_titles("x","y").show();

@@ -10,10 +10,15 @@ SindreCpp 是 Sindre 生态的 C++17 基础库，提供稳定、直接、面向�
 
 ```text
 SindreCpp/
-├── include/sindrecpp/   # 对外头文件
+├── include/sindrecpp/   # 根聚合头
+├── modules/              # General/AI/GUI/Utils2d/Utils3d
+│   └── <module>/{include,src,tests,docs,AGENTS.md,CMakeLists.txt}
 ├── examples/            # 最小可运行示例
+├── thirds/              # 按模块登记的第三方依赖来源、版本和接入方式
 ├── tests/               # 单元测试
 ├── docs/                # 开发规范和注意事项
+├── cmake/               # 编译器默认值、选项和公共 CMake 函数
+├── CMakePresets.json    # build_win/build_linux 的标准入口
 ├── CMakeLists.txt       # CMake 配置
 ├── README.md            # 项目入口文档
 └── LICENSE
@@ -21,14 +26,14 @@ SindreCpp/
 
 新增功能时，优先按用户看到的功能放置：
 
-- 字符串处理放在 `sindrecpp/general.hpp` 的 `general::string` 能力中
+- 字符串处理放在 `general/core/string.hpp` 的 `general::string` 能力中
 - `utils3d/core/` 按 vedo 的模块思路组织 VTK 核心对象：`mesh.hpp`、`data.hpp`、`image.hpp`、`plot.hpp`、`show.hpp`，并由 `utils3d/core/vtk.hpp` 统一导出
 - `utils3d/sindremesh.hpp` 是用户快速使用入口；复杂算法和第三方后端集中在 `utils3d/algorithms.hpp`
 - 显示、数据集、图像和绘图实现位于 `utils3d/core/`，由核心统一入口按开关导出；数学交换使用 Eigen
 - `SINDRECPP_UTILS3D_SHOW` 与 `SINDRECPP_UTILS3D_VTK_DATA` 分别按需开启；不要把原生 VTK 可访问性当作封装完成，覆盖清单见 [VTK 指南](vtk.md)
-- 日志能力放在 `sindrecpp/general.hpp` 的 `general::log` 能力中
+- 日志能力通过 General 的 `general/observability.hpp` 暴露，底层实现位于 `general/core/log.hpp`
 - 媒体能力应放在 `sindrecpp/utilsav.hpp`
-- 图像能力应放在 `sindrecpp/utils2d.hpp`
+- 图像能力应放在 `modules/utils2d`，入口为 `utils2d/index.hpp`
 - 底层库别名放入对应模块的 `native` 命名空间
 
 不要为每一个函数单独创建头文件。
@@ -38,15 +43,37 @@ SindreCpp/
 SindreCpp 的顶层组织跟随 Sindre：
 
 - `general`：通用工具、字符串、日志、HTTP、JSON、CLI；
+
+通用错误约定：新接口优先返回 `general::Result<T>`；`general::Error` 同时保存 code、message
+和 context，调用方可用 `describe()` 生成日志文本。字符串数值解析和 `json::try_parse()`
+遵循这一约定，不要求调用方通过异常控制普通失败路径。
+进程、动态库、临时文件、环境、URL、版本、自启动、桌面能力、scope guard、ranges 和诊断
+封装也必须沿用该约定；平台或第三方后端未启用时返回 `function_not_supported`，不得静默成功。
 - `utils2d`：OpenCV 图像和推理预处理；
 - `utils3d`：VTK SindreMesh、几何算法和 Eigen 数学交换；后端独立按需开启，详见 [网格指南](mesh.md)；
 - `utilsav`：音视频能力，预留；
 - `ai`：ONNX Runtime CPU/CUDA 和独立 TensorRT 推理；
-- `deploy`：部署能力，预留；
-- `platform`：平台相关能力，预留；
+- `general` 内部按用户用途划分为 utility、text、data、serialization、filesystem、network、runtime、host、observability 和 bindings；
 - `apps`：应用级能力，预留。
 
-第三方库只能作为域内实现，不直接决定 SindreCpp 的顶层模块名称。
+第三方库只能作为域内实现，不直接决定 SindreCpp 的顶层模块名称。平台差异放在
+General 的实现细节和 CMake 中，不以 `platform` 或 `deploy` 作为公共 API 分类。
+
+## 编译器策略
+
+Clang/clang-cl 是首选编译器。公共 target 默认启用：
+
+- Clang：`-Wall -Wextra -Wpedantic`
+- clang-cl/MSVC：`/W4 /permissive- /Zc:__cplusplus /utf-8 /bigobj`
+
+可以通过 `SINDRECPP_WARNINGS_AS_ERRORS=ON` 开启 CI 的警告即错误策略；
+`SINDRECPP_MSVC_STATIC_RUNTIME=ON` 只应在应用自身也使用静态 CRT 时开启。
+
+## 构建目录和运行时
+
+Windows 使用 `build_win`，Linux 使用 `build_linux`；二者的生成文件统一放在
+各自的 `bin/` 中。Windows 下 General、AI、GUI、Utils2d 和 Utils3d 的测试/示例
+目标会在构建后复制已发现的 DLL 到目标文件同目录，避免加载到系统中不匹配的版本。
 
 ## 命名规则
 
@@ -124,6 +151,8 @@ if (!result) {
 
 ## 依赖管理
 
+- 第三方依赖登记在 `thirds/<module>/`，包括来源、固定版本、许可证/SDK 说明和 CMake cache 覆盖点；
+- 模块 CMake 通过 `thirds/Dependencies.cmake` 接入 Git/URL 依赖，下载源码只进入构建目录 `_deps/`；
 - 优先复用父项目中已经存在的 CMake target；
 - 没有现成 target 时才使用 FetchContent；
 - 第三方库的测试、示例和文档默认关闭；
@@ -140,6 +169,10 @@ cmake -S . -B build -DSINDRECPP_BUILD_TESTS=ON
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
+
+The general layer is non-throwing at its public boundary. Use
+`-DSINDRECPP_NO_EXCEPTIONS=ON` for the compiler-no-exceptions validation build; optional
+third-party adapters must also provide their corresponding no-exception configuration.
 
 新增模块至少应覆盖：
 
@@ -165,7 +198,7 @@ ctest --test-dir build -C Release --output-on-failure
 只有无第三方依赖的 general 默认开启；其他功能域和第三方集成默认关闭。
 Result/Error/version 属于 general，无独立 Core 目标。
 GUI/Python 域为 utils_gui/utils_py，不保留旧名称。
-AI 默认选择 ONNX Runtime+CUDA；独立 TensorRT 显式开启，并可关闭 ORT。
+AI 默认选择 ONNX Runtime CPU；CUDA 需要显式开启，独立 TensorRT 显式开启，并可关闭 ORT。
 提供 infer、infer_async 和两阶段 Pipeline，错误经 future 传播，关闭排空任务。
 未启用 AI 不查找 ORT/GPU SDK。
 详见 inference.md。

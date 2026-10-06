@@ -41,7 +41,14 @@ target_link_libraries(my_app PRIVATE SindreCpp::Utils3d)
 ```
 
 VTK/CGAL/Open3D/MeshLib 使用已安装 SDK，不自动从源码构建大型依赖。
-MeshLib 使用 `find_package(meshlib CONFIG)`，链接 `MeshLib::MRMesh` 或 `MRMesh`，开启后要求 C++20。
+MeshLib 优先使用 `find_package(meshlib CONFIG)`，链接 `MeshLib::MRMesh` 或 `MRMesh`，开启后要求 C++20。
+如果官方 SDK 没有提供 CMake package，可设置：
+
+```bash
+-DSINDRECPP_MESHLIB_ROOT=/path/to/MeshLibDist/install
+```
+
+该目录需要包含 `include/MRMesh` 和 `lib/Debug|Release/MRMesh`。SindreCpp 会自动建立导入 target，并隔离 SDK 自带的 Boost/Eigen/pybind11 头目录，避免覆盖父项目依赖。
 其他接口要求 C++17。CI 使用 MeshLib v3.1.4.297、libigl v2.5.0、固定 VCGlib 提交，
 以及 Ubuntu 24.04 的 VTK/CGAL SDK、Open3D 0.19.0 官方 C++11-ABI SDK。升级 SDK 后应重新运行后端测试。
 Open3D 的 Linux 预编译 SDK 还需要 libc++/libc++abi 运行库；与 MeshLib 共用时需检查 TBB 版本。
@@ -52,7 +59,7 @@ MeshLib 与 Utils_py 同时开启时，CMake 将独立 pybind11 的头文件放�
 ## 网格使用
 
 ```cpp
-#include <sindrecpp/utils3d.hpp>
+#include <utils3d/index.hpp>
 namespace u3 = sindrecpp::utils3d;
 u3::SindreMesh mesh("scan.ply");
 // 所有常用操作返回 SindreMesh&，可以连续调用。
@@ -141,9 +148,11 @@ VTK 功能扩展；原生可访问性不计为高层功能已封装。截图为 
 
 ## 算法与选择顺序
 
-每种操作只执行一个后端；`automatic` 在已开启且有实现的后端中按下表选第一个。
+每种操作通常只执行一个后端；`automatic` 在已开启且有实现的后端中按下表选第一个。
 用户指定的 MeshLib → CGAL → Open3D → 其他，是选择优先级，不是已通过实验的稳定性排名。
-不适合该操作/没有该封装的后端不会为了优先级强行使用；执行失败直接抛异常，不偷偷换算法重试。
+不适合该操作/没有该封装的后端不会为了优先级强行使用。Open3D Windows SDK 在部分合法小网格上
+可能出现内存分配失败；此时 `decimate/smooth/clean` 会回退到 VTK 的稳定实现，以保持常用流程可用。
+如果业务必须严格验证指定后端，应使用该后端的原生 API 或自行记录实际执行路径。
 `get_backend`、`get_supported_backends`、`get_available_backends` 可检查实际选择。
 
 | 算法 | 接口 | 后端顺序 |
@@ -187,6 +196,10 @@ CGAL 布尔路径检查自相交，但仍应验证输入是方向正确的有效
 补洞默认尝试所有边界，可能封闭本来有意保留的开口；切平面不自动封口。
 Poisson/采样/配准目前为 Open3D legacy CPU 路径，不承诺 CUDA。
 
+Windows 下 MeshLib + CGAL 已用 MSVC C++20 验证。当前 vcpkg CGAL 头文件在
+clang-cl/C++20 的组合下会在 CGAL 自身的迭代器代码中失败，CMake 会在配置期给出
+明确提示；clang-cl 仍支持 MeshLib-only 和 CGAL-only 构建。
+
 ### 属性与标签
 
 所有自由算法返回新对象，输入不被修改。跨后端几何转换只交换顶点和三角面：
@@ -199,10 +212,11 @@ VTP 支持保留自定义数组；STL/OBJ/PLY 不能保证保存全部属性，�
 
 ## NumPy ↔ Eigen/网格
 
-同时链接 `SindreCpp::Utils_py` 与 `SindreCpp::Utils3d`，Python 解释器由调用者管理。
+同时启用 General 的 `SINDRECPP_WITH_UTILS_PY` 与 `SINDRECPP_WITH_UTILS3D`，链接
+`SindreCpp::General` 与 `SindreCpp::Utils3d`，Python 解释器由调用者管理。
 
 ```cpp
-#include <sindrecpp/utils_py.hpp>
+#include <general/core/python.hpp>
 sindrecpp::utils_py::Interpreter python;
 // pybind11::array vertices, faces 从调用者获取：
 auto mesh = sindrecpp::utils_py::mesh_from_arrays(vertices, faces);

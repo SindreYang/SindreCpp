@@ -7,7 +7,7 @@
 - 两者共用 ai::Tensor、ai::Tensors 和 Pipeline，不共享后端运行库依赖。
 - 不再通过 ORT TensorRT 执行提供器实现 TRT。
 
-仅 general 默认开启。AI 默认关闭；启用 AI 后默认 ONNX Runtime+CUDA。
+仅 general 默认开启。AI 默认关闭；启用 AI 后默认 ONNX Runtime，默认编译和运行 CPU。
 TRT 独立开启：SINDRECPP_WITH_AI=ON、SINDRECPP_AI_TRT=ON。
 只用 TRT 时关闭 SINDRECPP_AI_ONNXRUNTIME；此时不查找 ORT。
 只用基础执行/流水线时两个后端都可关闭。
@@ -19,6 +19,10 @@ TRT 独立开启：SINDRECPP_WITH_AI=ON、SINDRECPP_AI_TRT=ON。
 - infer_async(inputs)：返回 std::future，数据归任务所有，失败在 get 时重抛。
 - warm_up(inputs, iterations)：显式预热。
 
+需要统一非异常边界时，ONNX Runtime `Model` 提供 `try_create`、`try_infer`、
+`try_infer_typed`、`try_infer_async` 等 `try_*` 接口，返回 General `Result`，错误包含
+`ai.onnxruntime.*` context。
+
 ORT 另外提供 infer_into，重用已知形状的主机输出缓冲。
 同一 Model 的同步/异步基础接口串行，有界 FIFO 默认等待队列容量 16。
 满队列立即报错，不丢任务、不隐式覆盖旧输入。队列容量可配置。
@@ -28,8 +32,8 @@ close 停止异步提交并排空已接收任务；同步 infer 仍可调用。
 流水线有独立的预处理、推理线程，真正重叠两个阶段，不是简单逐项调用：
 
 ```cpp
-#include <sindrecpp/ai.hpp>
-#include <sindrecpp/utils2d.hpp>
+#include <ai/index.hpp>
+#include <utils2d/index.hpp>
 
 using namespace sindrecpp;
 auto model = std::make_shared<ai::onnxruntime::Model>("model.onnx");
@@ -129,15 +133,16 @@ Pending 可移动到其他线程，持有共享引擎资源；析构会等待 st
 - 输出尺寸必须能从输入形状推导，不支持数据依赖输出分配；
 - 标量支持，零元素不支持；INT8/FP16 I/O 等需自定义原生实现；
 - 一个构建 profile，加载可选 engine 中指定 profile。
-- TRT10.13.x API，TensorRT11 明确拒绝，不假设已删除API仍可用。
+- TRT 10.11+ API；TensorRT 11+ 尚未支持，不假设已删除 API 仍可用。
 
 ## 安装与部署
 
 ORT：1.22+ C/C++ SDK，同版头文件/动态库，GPU用官方GPU包。
-CPU需 SINDRECPP_AI_CUDA=OFF 且 Options.backend=Backend::cpu。
-请求 CUDA 缺失时明确失败，不静默改成 CPU。
+CPU 可直接使用默认 CMake 选项和 Options。启用 `SINDRECPP_AI_CUDA=ON` 后再选择
+`Backend::cuda`；CUDA/Provider 缺失会明确失败，
+不会静默降级为 CPU。
 
-TRT：安装 TensorRT10.13.x 的 nvinfer/nvinfer_plugin/nvonnxparser 和 CUDA Toolkit12+。
+TRT：安装 TensorRT 10.11+ 的 nvinfer/nvinfer_plugin/nvonnxparser 和 CUDA Toolkit 12+。
 设置 SINDRECPP_TENSORRT_ROOT、CUDAToolkit_ROOT，或父项目提供 TensorRT::nvinfer、
 TensorRT::nvinfer_plugin、TensorRT::nvonnxparser targets。
 引擎与 GPU/TRT/平台兼容性必须验证。version_compatible 可能包含运行时代码，
@@ -166,8 +171,8 @@ CPU/队列/流水线、Windows/Linux、OpenCV测试在CI执行。
 TRT和CUDA在无GPU runner仅检查官方API编译，不能证明GPU执行或跨卡兼容。
 真实GPU测试：
 ```bash
-python -m pip install onnx==1.17.0
-python tests/create_test_model.py
+uv run --with onnx==1.17.0 python tests/create_test_model.py
+# Generates the float32, int32, and float16 fixtures used by the AI tests.
 cmake -S . -B build-trt -DCMAKE_BUILD_TYPE=Release \
   -DSINDRECPP_WITH_AI=ON -DSINDRECPP_AI_ONNXRUNTIME=OFF -DSINDRECPP_AI_TRT=ON \
   -DSINDRECPP_BUILD_GPU_TESTS=ON -DSINDRECPP_TENSORRT_ROOT=/path/to/TensorRT
