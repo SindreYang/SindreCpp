@@ -1,15 +1,15 @@
-#include <ai/trt.hpp>
+#include <sindre/ai/trt.h>
 #include <chrono>
 #include <iostream>
 
 int main(int argc, char** argv) {
-    using namespace sindrecpp::ai;
-    namespace trt = sindrecpp::ai::trt;
+    using namespace sindre::ai;
+    namespace trt = sindre::ai::trt;
     if (argc != 2) return 1;
     try {
-        const auto source = std::filesystem::temp_directory_path() / "sindrecpp-模型-中文.onnx";
+        const auto source = std::filesystem::temp_directory_path() / "sindre-模型-中文.onnx";
         const auto destination = std::filesystem::temp_directory_path() /
-            ("sindrecpp-引擎-中文-" +
+            ("sindre-引擎-中文-" +
              std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".engine");
         std::filesystem::copy_file(argv[1], source,
                                    std::filesystem::copy_options::overwrite_existing);

@@ -4,25 +4,25 @@
     {
       "name": "windows-clang",
       "displayName": "Windows clang-cl",
-      "generator": "NMake Makefiles",
-      "binaryDir": "${sourceDir}/build_win",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang-cl",
         "CMAKE_CXX_COMPILER": "clang-cl",
-        "SINDRECPP_BUILD_TESTS": "ON",
-        "SINDRECPP_BUILD_EXAMPLES": "ON"
+        "SINDRE_BUILD_TESTS": "ON",
+        "SINDRE_BUILD_EXAMPLES": "ON"
       }
     },
     {
       "name": "linux-clang",
       "displayName": "Linux Clang",
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build_linux",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
-        "SINDRECPP_BUILD_TESTS": "ON",
-        "SINDRECPP_BUILD_EXAMPLES": "ON"
+        "SINDRE_BUILD_TESTS": "ON",
+        "SINDRE_BUILD_EXAMPLES": "ON"
       }
     }
   ]

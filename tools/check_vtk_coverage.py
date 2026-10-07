@@ -19,7 +19,7 @@ for path in sorted(args.directory.glob("vtk_coverage_*.json")):
     evidence[path.name] = ids
     passed.update(ids)
 report = {
-    "scope": "SindreCpp project VTK functional checklist; NOT official VTK API coverage",
+    "scope": "sindre project VTK functional checklist; NOT official VTK API coverage",
     "total_scenarios": 100,
     "implemented_scenarios": len(implemented),
     "execution_verified_scenarios": len(passed),

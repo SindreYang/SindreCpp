@@ -1,4 +1,4 @@
-#include <ai/execution.hpp>
+#include <sindre/ai/execution.h>
 #include <atomic>
 #include <chrono>
 #include <iostream>
@@ -6,7 +6,7 @@
 #include <vector>
 
 int main() {
-    using namespace sindrecpp::ai;
+    using namespace sindre::ai;
     using namespace std::chrono_literals;
     try {
         detail::Executor executor(8);

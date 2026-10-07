@@ -1,11 +1,11 @@
 include_guard(GLOBAL)
 
-function(sindrecpp_apply_compiler_defaults target)
+function(sindre_apply_compiler_defaults target)
     if(NOT TARGET ${target})
         message(FATAL_ERROR "Cannot apply compiler defaults to unknown target '${target}'")
     endif()
 
-    if(SINDRECPP_ENABLE_WARNINGS)
+    if(SINDRE_ENABLE_WARNINGS)
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
             if(MSVC)
                 # clang-cl accepts the MSVC-compatible warning and conformance flags.
@@ -24,7 +24,7 @@ function(sindrecpp_apply_compiler_defaults target)
         endif()
     endif()
 
-    if(SINDRECPP_WARNINGS_AS_ERRORS)
+    if(SINDRE_WARNINGS_AS_ERRORS)
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
             target_compile_options(${target} INTERFACE -Werror)
         elseif(MSVC)
@@ -32,7 +32,7 @@ function(sindrecpp_apply_compiler_defaults target)
         endif()
     endif()
 
-    if(MSVC AND SINDRECPP_MSVC_STATIC_RUNTIME)
+    if(MSVC AND SINDRE_MSVC_STATIC_RUNTIME)
         set_property(TARGET ${target} PROPERTY
             MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()

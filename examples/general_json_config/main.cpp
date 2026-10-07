@@ -1,10 +1,10 @@
-#include <general/serialization.hpp>
+#include <sindre/general.h>
 
 #include <cstdlib>
 #include <iostream>
 #include <string_view>
 
-namespace general = sindrecpp::general;
+namespace general = sindre::general;
 
 static int report_failure(std::string_view operation, const general::Error &error) {
     std::cerr << operation << " failed: " << error.describe() << '\n';
@@ -13,14 +13,14 @@ static int report_failure(std::string_view operation, const general::Error &erro
 
 static void set_example_environment() {
 #if defined(_WIN32)
-    _putenv_s("SINDRECPP_EXAMPLE_APP_PORT", "9090");
+    _putenv_s("SINDRE_EXAMPLE_APP_PORT", "9090");
 #else
-    setenv("SINDRECPP_EXAMPLE_APP_PORT", "9090", 1);
+    setenv("SINDRE_EXAMPLE_APP_PORT", "9090", 1);
 #endif
 }
 
 int main() {
-    const auto document = general::json::try_parse(R"({"name":"SindreCpp","enabled":true})");
+    const auto document = general::json::try_parse(R"({"name":"sindre","enabled":true})");
     if (!document) return report_failure("parse JSON", document.error());
 
     const auto name = document.value().root()["name"].get_string();
@@ -40,7 +40,7 @@ int main() {
     if (!config) return report_failure("load configuration", config.error());
 
     set_example_environment();
-    const auto environment = config.value().apply_environment("SINDRECPP_EXAMPLE");
+    const auto environment = config.value().apply_environment("SINDRE_EXAMPLE");
     if (!environment) return report_failure("apply environment", environment.error());
 
     const auto port = config.value().get_int("app.port");

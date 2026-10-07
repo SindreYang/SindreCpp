@@ -1,11 +1,11 @@
-#include <general/index.hpp>
+#include <sindre/general.h>
 
 #include <cstdint>
 #include <iostream>
 #include <string_view>
 #include <vector>
 
-namespace general = sindrecpp::general;
+namespace general = sindre::general;
 
 static int report_failure(std::string_view operation, const general::Error &error) {
     std::cerr << operation << " failed: " << error.describe() << '\n';
@@ -13,7 +13,7 @@ static int report_failure(std::string_view operation, const general::Error &erro
 }
 
 int main() {
-    const auto title = general::string::String("  SindreCpp  ")
+    const auto title = general::string::String("  sindre  ")
                            .trim()
                            .replace("Cpp", "Toolkit");
     const auto number = general::string::parse_int(" 42 ");
@@ -39,9 +39,9 @@ int main() {
         return 1;
     }
 
-    auto temporary = general::temp::File::create("sindrecpp-example-");
+    auto temporary = general::temp::File::create("sindre-example-");
     if (!temporary) return report_failure("create temporary file", temporary.error());
-    const auto written = general::path::write_text(temporary.value().path(), "SindreCpp UTF-8 text\n");
+    const auto written = general::path::write_text(temporary.value().path(), "sindre UTF-8 text\n");
     if (!written) return report_failure("write UTF-8 text", written.error());
     const auto read = general::path::read_text(temporary.value().path());
     if (!read) return report_failure("read UTF-8 text", read.error());

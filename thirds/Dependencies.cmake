@@ -3,11 +3,16 @@ include_guard(GLOBAL)
 include(FetchContent)
 
 # This file is included by the root project. The cache path also remains
-# available when a standalone example embeds SindreCpp with add_subdirectory().
-set(SINDRECPP_THIRDS_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE PATH
-    "SindreCpp third-party dependency registry")
+# available when a standalone example embeds sindre with add_subdirectory().
+set(SINDRE_THIRDS_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE PATH
+    "sindre third-party dependency registry")
 
-function(sindrecpp_thirds_declare_git name repository tag)
+set(SINDRE_THIRD_EIGEN_REPOSITORY
+    "https://gitlab.com/libeigen/eigen.git" CACHE STRING "Eigen repository")
+set(SINDRE_THIRD_EIGEN_TAG
+    "3.4.1" CACHE STRING "Eigen fixed fallback tag")
+
+function(sindre_thirds_declare_git name repository tag)
     if(NOT repository OR NOT tag)
         message(FATAL_ERROR
             "Third-party Git dependency '${name}' requires a repository and a fixed tag/commit")
@@ -18,7 +23,15 @@ function(sindrecpp_thirds_declare_git name repository tag)
         GIT_SHALLOW TRUE)
 endfunction()
 
-function(sindrecpp_thirds_declare_url name url sha256)
+function(sindre_thirds_declare_local name source_dir)
+    if(NOT IS_DIRECTORY "${source_dir}")
+        message(FATAL_ERROR
+            "Fixed third-party source for '${name}' was not found: ${source_dir}")
+    endif()
+    FetchContent_Declare(${name} SOURCE_DIR "${source_dir}")
+endfunction()
+
+function(sindre_thirds_declare_url name url sha256)
     if(NOT url OR NOT sha256)
         message(FATAL_ERROR
             "Third-party URL dependency '${name}' requires a URL and SHA256 checksum")

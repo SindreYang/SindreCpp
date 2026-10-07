@@ -1,56 +1,55 @@
-# SindreCpp repository guidance
+# sindrecpp repository guidance
 
-## Architecture
+本文件只保留仓库协作时必须遵守的规则；详细架构、模块边界、命名、构建和测试
+说明统一放在 [`docs/development/`](docs/development/development.md)。使用者文档
+从 [`docs/README.md`](docs/README.md) 开始。
 
-The public library is split into five modules: `General`, `AI`, `GUI`,
-`Utils2d`, and `Utils3d`. Each module owns its public headers, optional source
-files, CMake target, tests, and module documentation under `modules/<name>/`.
+## 当前结构
 
-Public targets are `SindreCpp::General`, `SindreCpp::Ai`,
-`SindreCpp::Gui`, `SindreCpp::Utils2d`, `SindreCpp::Utils3d`, and the aggregate
-`SindreCpp::SindreCpp`. Do not reintroduce standalone public targets for old
-integrations such as Json, Http, Log, or Utils_py; those are General options.
+- 公共头文件唯一位置：`include/sindre/`。
+- 模块实现和测试位置：`modules/<module>/{src,tests,CMakeLists.txt}`。
+- 模块公共 target：`sindre::general`、`sindre::utils_py`、`sindre::ai`、
+  `sindre::gui`、`sindre::utils_2d`、`sindre::utils_3d`。
+- 项目文档唯一位置：`docs/`，分为 `guides/`、`modules/`、`dependencies/`、
+  `development/`；代码目录不放 README 或模块文档。
+- 第三方依赖登记在 `thirds/<module>/`，不把第三方头文件复制进项目。
 
-Every module exposes `include/sindrecpp/<module>/index.hpp`. Use that index for
-module-level includes. General exposes purpose-oriented aggregates such as
-`general/text.hpp`, `general/filesystem.hpp`, `general/network.hpp`, and
-`general/runtime.hpp`; `general/core/` contains the reusable low-level APIs.
+不要恢复旧的 `include/<module>/index.h`、模块本地公共头、Json/Http/Log 独立
+target 或 catch-all 聚合 target。项目自己的头文件统一使用 `.h`，第三方头文件
+保留上游后缀。
 
-## Contracts
+## 不可破坏的公共约定
 
-- C++17 is the baseline.
-- Public operations return `sindrecpp::general::Result<T>` where failure can
-  carry `code`, `message`, and `context`.
-- Optional third-party integrations are enabled by CMake and their compile
-  definitions must travel through the owning module target.
-- AI execution must preserve cancellation, deadline/timeout, progress, and
-  Result-based error semantics. Backend exceptions must not cross the public
-  boundary.
-- Keep platform-specific behavior inside General's implementation details and
-  CMake; expose capabilities through purpose-oriented headers such as
-  `general/filesystem.hpp`, `general/network.hpp`, and `general/host.hpp`.
+- C++17 是最低标准。
+- 可失败的公共操作优先返回 `sindre::general::Result<T>`；错误保留 `code`、
+  `message` 和 `context`。
+- 新公共接口不得让第三方异常穿透错误边界；平台或后端未启用时返回明确错误。
+- 可选依赖只通过所属模块的 CMake target 传递。
+- AI、并发和异步接口不得丢失取消、超时/截止时间、重试和进度语义。
+- 公共函数遵循“动词前缀 + 对象”，例如 `get_xxx`、`set_xxx`、`change_xxx`、
+  `try_xxx`；完整前缀表和命名规则见开发指南。
 
-## Build and test
+## 工作流程
 
-Configure from the repository root. Enable only the modules required by the
-consumer, for example `-DSINDRECPP_WITH_GENERAL=ON -DSINDRECPP_WITH_AI=ON`.
-Prefer `cmake --preset windows-clang` or `cmake --preset linux-clang`; these use
-`build_win`/`build_linux` and place generated files in the corresponding `bin/`.
-`SINDRECPP_BUILD_TESTS` controls module tests; each module CMake file registers
-tests with a `sindrecpp.<module>` prefix. AI runtime fixtures live in
-`modules/ai/tests/models`.
+1. 先读对应的模块、依赖和指南文档，再决定实现位置。
+2. 检查 Git 状态、现有代码、CMake target 和测试，保留用户已有修改。
+3. 只修改负责该能力的模块，避免把可选依赖扩散到 General 或宿主项目。
+4. 修改公共头或公共依赖后，至少构建 General 和受影响模块并运行测试。
+5. 行为、API、开关或依赖变化时同步更新 `docs/` 中对应文档和示例。
+6. 检查 Markdown 链接、`git diff --check`，并区分编译验证和真实运行验证。
 
-On Windows, keep runtime DLLs beside the generated executable. Module CMake
-files use the common runtime-copy helper; do not reintroduce system PATH-only
-workarounds for a dependency that can be copied locally.
+涉及 GUI、网络、Python、AI 或后端 SDK 时，不得只凭编译或静态检查声称功能完成；
+需要实际启动对应程序或测试，并报告环境限制。
 
-When changing public headers, build at least General and the changed module,
-then run the registered tests. Do not infer AI typed-tensor support from a
-successful model load alone; run int32, float16, int64, and bool fixtures when
-the backend is available.
+## 构建入口
 
-## Documentation rule
+从仓库根目录配置：
 
-Before changing a module's public contract, update that module's `docs/` files
-and its `AGENTS.md` if build or dependency behavior changes. Keep examples and
-test names aligned with the module target names.
+```powershell
+cmake -S . -B build -G Ninja -DSINDRE_BUILD_TESTS=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+模块开关、依赖要求、编译器策略、测试边界和模块内部规则以 `docs/` 为准；当仓库
+规则变化时更新本文件，并避免复制一整套长期说明造成双份规范。

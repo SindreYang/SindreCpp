@@ -1,4 +1,4 @@
-#include <ai/index.hpp>
+#include <sindre/ai.h>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -7,8 +7,8 @@
 #include <stdexcept>
 
 int main(int argc, char** argv) {
-    using namespace sindrecpp::ai;
-    using namespace sindrecpp::ai::onnxruntime;
+    using namespace sindre::ai;
+    using namespace sindre::ai::onnxruntime;
     if (argc != 2) return 1;
     try {
         Options options;
@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
         Model default_model(argv[1]);
         if (default_model.get_backend() != Backend::cpu) return 16;
         Model model(argv[1], options);
-        const auto chinese_model = std::filesystem::temp_directory_path() / "sindrecpp-模型-中文.onnx";
+        const auto chinese_model = std::filesystem::temp_directory_path() / "sindre-模型-中文.onnx";
         std::filesystem::copy_file(argv[1], chinese_model,
                                    std::filesystem::copy_options::overwrite_existing);
         Model chinese_path_model(chinese_model, options);
@@ -75,12 +75,12 @@ int main(int argc, char** argv) {
         if (!rejected) return 17;
         rejected = false;
         try { Model missing("not-a-model.onnx", options); }
-        catch (const Ort::Exception&) { rejected = true; }
+        catch (const std::exception&) { rejected = true; }
         if (!rejected) return 8;
         const auto providers = get_available_backends();
         Options gpu_options = options;
         gpu_options.backend = Backend::cuda;
-#if defined(SINDRECPP_AI_CUDA)
+#if defined(SINDRE_AI_CUDA)
         if (std::find(providers.begin(), providers.end(), "CUDAExecutionProvider") == providers.end()) {
             rejected = false;
             try { Model gpu(argv[1], gpu_options); }

@@ -1,0 +1,55 @@
+include("${SINDRE_THIRDS_DIR}/utils_py/Dependencies.cmake")
+
+find_package(Python3 3.12 REQUIRED COMPONENTS Interpreter Development.Embed)
+if(NOT TARGET pybind11::embed)
+    find_package(pybind11 CONFIG QUIET)
+endif()
+if(NOT TARGET pybind11::embed)
+    sindre_thirds_declare_git(pybind11
+        "${SINDRE_THIRD_UTILS_PY_PYBIND11_REPOSITORY}"
+        "${SINDRE_THIRD_UTILS_PY_PYBIND11_TAG}")
+    sindre_make_available(pybind11 PYBIND11_TEST=OFF)
+endif()
+
+add_library(sindre_utils_py SHARED src/python.cpp)
+add_library(sindre::utils_py ALIAS sindre_utils_py)
+target_compile_features(sindre_utils_py PUBLIC cxx_std_17)
+target_include_directories(sindre_utils_py
+    PUBLIC
+        $<BUILD_INTERFACE:${SINDRE_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>)
+target_compile_definitions(sindre_utils_py
+    PUBLIC SINDRE_WITH_UTILS_PY=1 SINDRE_UTILS_PY_SHARED=1
+    PRIVATE SINDRE_UTILS_PY_BUILD=1)
+target_link_libraries(sindre_utils_py
+    PUBLIC sindre::general pybind11::embed Python3::Python)
+set_target_properties(sindre_utils_py PROPERTIES EXPORT_NAME utils_py)
+sindre_copy_target_runtime_dlls(sindre_utils_py)
+
+if(SINDRE_BUILD_TESTS)
+    execute_process(
+        COMMAND "${Python3_EXECUTABLE}" -c "import sys; print(sys.base_prefix)"
+        OUTPUT_VARIABLE _sindre_utils_py_test_python_home
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND_ERROR_IS_FATAL ANY)
+    file(TO_CMAKE_PATH "${_sindre_utils_py_test_python_home}"
+        _sindre_utils_py_test_python_home)
+    add_executable(sindre_utils_py_tests tests/python_runtime_tests.cpp)
+    target_compile_definitions(sindre_utils_py_tests PRIVATE
+        SINDRE_TEST_PYTHON_EXECUTABLE="${Python3_EXECUTABLE}"
+        SINDRE_TEST_PYTHON_HOME="${_sindre_utils_py_test_python_home}")
+    target_link_libraries(sindre_utils_py_tests PRIVATE sindre::utils_py)
+    sindre_copy_target_runtime_dlls(sindre_utils_py_tests)
+    add_test(NAME sindre.utils_py.runtime COMMAND sindre_utils_py_tests)
+
+    if(SINDRE_WITH_UTILS_3D)
+        add_executable(sindre_utils_py_numpy_tests tests/python_numpy_tests.cpp)
+        target_compile_definitions(sindre_utils_py_numpy_tests PRIVATE
+            SINDRE_TEST_PYTHON_EXECUTABLE="${Python3_EXECUTABLE}"
+            SINDRE_TEST_PYTHON_HOME="${_sindre_utils_py_test_python_home}")
+        target_link_libraries(sindre_utils_py_numpy_tests
+            PRIVATE sindre::utils_py sindre::utils_3d)
+        sindre_copy_target_runtime_dlls(sindre_utils_py_numpy_tests)
+        add_test(NAME sindre.utils_py.numpy COMMAND sindre_utils_py_numpy_tests)
+    endif()
+endif()

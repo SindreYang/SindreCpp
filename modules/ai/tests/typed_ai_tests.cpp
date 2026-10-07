@@ -1,4 +1,4 @@
-#include <ai/onnxruntime.hpp>
+#include <sindre/ai/onnxruntime.h>
 
 #include <cstdint>
 #include <iostream>
@@ -8,8 +8,8 @@
 int main(int argc, char **argv) {
     if (argc != 3) return 1;
     try {
-        using namespace sindrecpp::ai;
-        using namespace sindrecpp::ai::onnxruntime;
+        using namespace sindre::ai;
+        using namespace sindre::ai::onnxruntime;
         Model model(argv[1]);
         const std::string kind = argv[2];
         TypedTensor input;
