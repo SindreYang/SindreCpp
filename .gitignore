@@ -8,3 +8,18 @@ CMakeUserPresets.json
 *.vcxproj.user
 
 /tests/models/*.onnx
+
+# Local build/install audits and generated reports
+/install*/
+/install-*/
+/install-*.log
+/diff-check*.log
+/vtk_coverage_show.json
+/show_mesh_preview.png
+/build-openblas-official.zip
+
+# Downloaded/extracted third-party caches
+/thirds/ai/onnxruntime/
+/thirds/general/openblas/
+/thirds/general/packages/
+/thirds/general/sources/
