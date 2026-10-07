@@ -51,19 +51,30 @@ RE2 是 General 的固定必需依赖，但公共命名空间使用 `sindre::gen
 
 ### 字符串
 
-`sindre::general::string::BasicString<Encoding>` 是 CsString 的高级封装，编码策略
-由模板参数决定，不由 General 固定为 UTF-8：
+公共层只提供一个 `sindre::general::string::String`。用户不需要选择编码模板，
+也不需要区分 UTF-8 字符串和 UTF-16 字符串；CsString 的编码策略和存储细节由
+General 内部管理：
 
 ```cpp
-using String = sindre::general::string::String;     // CsString::utf8
-using String16 = sindre::general::string::String16; // CsString::utf16
+#include <sindre/general/string.h>
+
+using sindre::general::string::String;
+
+String text("中文");
+String windows_text(u"中文");
+auto utf8 = windows_text.to_utf8();
+auto utf16 = text.to_utf16();
+auto number = String("42").to_int();
+auto ratio = String("3.14").to_float();
+auto enabled = String("yes").to_bool();
 ```
 
-字符串的 `size()`、索引、查找和截取按 Unicode code point 工作；底层存储单元、
-编码转换以及非法输入的替换策略由 CsString 决定。需要与旧接口交互时显式调用
-`try_to_utf8()`、`try_to_utf16()` 或 `to_utf8()`，不提供隐式 `std::string` 转换。
-修改、转换和可能访问越界的操作使用 `try_*`，失败统一返回带有 `code`、`message`
-和 `context` 的 `Result`。
+`String` 的 `size()`、索引、查找和截取按 Unicode code point 工作。构造函数可以
+直接接收常用的 UTF-8/UTF-16 输入；需要与外部 API 交互时使用 `to_utf8()`、
+`to_utf16()`，不提供隐式 `std::string` 转换；类型解析直接使用 `to_int()`、
+`to_float()`、`to_bool()`。可能失败的转换和操作返回带有 `code`、`message` 和
+`context` 的 `Result`，编码互操作还提供 `try_to_utf8()`/`try_to_utf16()` 形式。
+公共 API 不暴露 `BasicString`、`String16` 或 CsString 编码别名。
 
 ## CMake
 

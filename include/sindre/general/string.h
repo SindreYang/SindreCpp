@@ -63,11 +63,11 @@ std::string join(const std::vector<std::string_view> &parts, std::string_view se
 std::string join(std::initializer_list<std::string_view> parts, std::string_view separator);
 std::string join(const std::vector<std::string> &parts, std::string_view separator);
 
+namespace detail {
+
 template <class Encoding,
           class Allocator = std::allocator<typename Encoding::storage_unit>>
 class BasicString;
-
-namespace detail {
 
 template <class Value>
 struct is_basic_string : std::false_type {};
@@ -103,13 +103,13 @@ auto try_invoke(Function &&function, std::string context)
 
 } // namespace detail
 
-/// @brief CsString-backed Unicode string with a compile-time encoding policy.
+/// @brief CsString-backed Unicode string implementation.
 ///
 /// `size()` and indexes use Unicode code points. Storage units, conversion and
 /// malformed-input handling are delegated to CsString. Use `try_*` methods at
 /// public failure boundaries; they convert backend exceptions into Result.
 template <class Encoding, class Allocator>
-class BasicString {
+class detail::BasicString {
 public:
     using encoding_type = Encoding;
     using allocator_type = Allocator;
@@ -318,6 +318,32 @@ public:
 
     /// @brief Explicit UTF-8 interop for logging, streams and legacy APIs.
     std::string to_utf8() const { return try_to_utf8().value(); }
+    /// @brief Explicit UTF-16 interop for Windows and UTF-16 based APIs.
+    std::u16string to_utf16() const { return try_to_utf16().value(); }
+    /// @brief Parse the string as a strict integer.
+    Result<std::int64_t> to_int(int base = 10) const noexcept {
+        const auto converted = try_to_utf8();
+        if (!converted) return Result<std::int64_t>::failure(converted.error());
+        return parse_int(converted.value(), base);
+    }
+    /// @brief Parse the string as a strict finite floating-point value.
+    Result<double> to_float() const noexcept {
+        const auto converted = try_to_utf8();
+        if (!converted) return Result<double>::failure(converted.error());
+        return parse_float(converted.value());
+    }
+    /// @brief Parse common Python-style boolean spellings.
+    Result<bool> to_bool() const noexcept {
+        const auto converted = try_to_utf8();
+        if (!converted) return Result<bool>::failure(converted.error());
+        const auto normalized = lower_ascii(trim(converted.value()));
+        if (normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on")
+            return Result<bool>::success(true);
+        if (normalized == "0" || normalized == "false" || normalized == "no" || normalized == "off")
+            return Result<bool>::success(false);
+        return Result<bool>::failure(std::make_error_code(std::errc::invalid_argument),
+                                     "Expected a boolean value", "string.to_bool");
+    }
 
     template <class OtherEncoding, class OtherAllocator>
     bool operator==(const BasicString<OtherEncoding, OtherAllocator> &other) const noexcept {
@@ -348,8 +374,12 @@ private:
     native_type value_;
 };
 
-using String = BasicString<CsString::utf8>;
-using String16 = BasicString<CsString::utf16>;
+/// @brief The single public string type used by Sindre.
+///
+/// Callers do not select an encoding policy. CsString owns the representation
+/// and conversion details internally; construct this type from UTF-8 or UTF-16
+/// input and use `to_utf8()` / `to_utf16()` when crossing an external API.
+using String = detail::BasicString<CsString::utf8>;
 
 template <class Part>
 inline void concat_append(std::string &result, Part &&part) {
@@ -367,10 +397,6 @@ inline std::string concat(Parts &&...parts) {
     (concat_append(result, std::forward<Parts>(parts)), ...);
     return result;
 }
-
-namespace native = CsString;
-using Utf8String = CsString::CsString;
-using Utf16String = CsString::CsString_utf16;
 
 } // namespace sindre::general::string
 
