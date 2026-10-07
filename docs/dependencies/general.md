@@ -11,17 +11,18 @@ Eigen and OpenBLAS belong to the separate Math foundation; see
 | --- | --- | --- | --- | --- |
 | string | [CsString](https://github.com/copperspice/cs_string) | fixed source + static implementation | `string-1.4.1` | yes |
 | logging | [spdlog](https://github.com/gabime/spdlog) | fixed source under `thirds/general/sources` | `v1.17.0` | yes |
-| HTTP/HTTPS | [cpp-httplib](https://github.com/yhirose/cpp-httplib) + OpenSSL | fixed source + fixed package | `v0.56.0` / OpenSSL 3.3.0 | yes |
+| HTTP/HTTPS and encryption | [cpp-httplib](https://github.com/yhirose/cpp-httplib) + OpenSSL | fixed source + fixed package | `v0.56.0` / OpenSSL 3.3.0 | yes |
 | JSON/config | [simdjson](https://github.com/simdjson/simdjson) | fixed source under `thirds/general/sources` | `v4.6.11` | yes |
 | CLI | [argparse](https://github.com/p-ranav/argparse) | fixed source under `thirds/general/sources` | `v3.2` | yes |
 | regular expressions | [RE2](https://github.com/google/re2) | fixed package under `thirds/general/packages` | `2024-04-01#2` | yes |
 | crash reporting | [Crashpad](https://chromium.googlesource.com/crashpad/crashpad/) | fixed platform package under `thirds/general/packages` | `2022-09-05#5` | yes |
 | compression | [zlib](https://zlib.net/) | fixed package under `thirds/general/packages` | `1.3.1` | yes |
 
-cpp-httplib is an implementation dependency of `sindre_general_runtime`. The installed
+cpp-httplib and OpenSSL are implementation dependencies of `sindre_general_runtime`. OpenSSL
+also backs General's AES-256-GCM/PBKDF2 file and memory encryption APIs. The installed
 package does not install `httplib.h` as a public header and consumers should include only
 `sindre/general/network.h`. OpenSSL remains a transitive link dependency for the static
-General target because HTTPS code is compiled into the runtime.
+General target because HTTPS and cryptographic code are compiled into the runtime.
 
 The fixed General source trees are stored under `thirds/general`.
 The fixed binary package set for RE2, Crashpad, zlib and OpenSSL is kept under

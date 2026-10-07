@@ -118,6 +118,66 @@ int main() {
     CHECK(std::filesystem::exists(temporary_path));
     std::filesystem::remove(temporary_path);
 
+    const auto crypto_source = root / L"加密-源.bin";
+    const auto crypto_encrypted = root / L"加密-目标.bin";
+    const auto crypto_decrypted = root / L"解密-目标.bin";
+    std::vector<std::uint8_t> crypto_bytes(4097);
+    for (std::size_t index = 0; index < crypto_bytes.size(); ++index)
+        crypto_bytes[index] = static_cast<std::uint8_t>((index * 37) & 0xff);
+    CHECK(sindre::general::path::write_bytes(crypto_source, crypto_bytes));
+    std::vector<std::uint64_t> encrypt_progress;
+    bool encrypt_progress_valid = true;
+    sindre::general::file::CryptoOptions crypto_options;
+    crypto_options.buffer_size = 128;
+    crypto_options.progress = [&](std::uint64_t current, std::uint64_t total) {
+        if (total != crypto_bytes.size()) encrypt_progress_valid = false;
+        encrypt_progress.push_back(current);
+    };
+    CHECK(sindre::general::file::encrypt(crypto_source, crypto_encrypted,
+                                         "file password", crypto_options));
+    CHECK(std::filesystem::is_regular_file(crypto_encrypted));
+    CHECK(encrypt_progress_valid && !encrypt_progress.empty() &&
+          encrypt_progress.back() == crypto_bytes.size());
+    for (std::size_t index = 1; index < encrypt_progress.size(); ++index)
+        CHECK(encrypt_progress[index] >= encrypt_progress[index - 1]);
+
+    std::vector<std::uint64_t> decrypt_progress;
+    bool decrypt_progress_valid = true;
+    crypto_options.progress = [&](std::uint64_t current, std::uint64_t total) {
+        if (total != crypto_bytes.size()) decrypt_progress_valid = false;
+        decrypt_progress.push_back(current);
+    };
+    CHECK(sindre::general::file::decrypt(crypto_encrypted, crypto_decrypted,
+                                         "file password", crypto_options));
+    const auto decrypted_file_bytes = sindre::general::path::read_bytes(crypto_decrypted);
+    CHECK(decrypted_file_bytes && decrypted_file_bytes.value() == crypto_bytes);
+    CHECK(decrypt_progress_valid && !decrypt_progress.empty() &&
+          decrypt_progress.back() == crypto_bytes.size());
+
+    const auto preserved = root / L"保留-目标.bin";
+    CHECK(sindre::general::path::write_text(preserved, "preserve"));
+    auto no_overwrite = sindre::general::file::decrypt(
+        crypto_encrypted, preserved, "file password");
+    CHECK(!no_overwrite &&
+          no_overwrite.error().code == std::make_error_code(std::errc::file_exists));
+    CHECK(sindre::general::path::read_text(preserved).value() == "preserve");
+    const auto wrong_destination = root / L"错误密码.bin";
+    auto wrong_file_password = sindre::general::file::decrypt(
+        crypto_encrypted, wrong_destination, "wrong password");
+    CHECK(!wrong_file_password &&
+          wrong_file_password.error().code == std::make_error_code(std::errc::permission_denied));
+    CHECK(!std::filesystem::exists(wrong_destination));
+    sindre::general::CancellationSource crypto_source_token;
+    crypto_source_token.cancel();
+    crypto_options.progress = {};
+    crypto_options.token = crypto_source_token.get_token();
+    const auto cancelled_destination = root / L"取消-目标.bin";
+    auto cancelled_crypto = sindre::general::file::encrypt(
+        crypto_source, cancelled_destination, "file password", crypto_options);
+    CHECK(!cancelled_crypto &&
+          cancelled_crypto.error().code == std::make_error_code(std::errc::operation_canceled));
+    CHECK(!std::filesystem::exists(cancelled_destination));
+
     CHECK(sindre::general::startup::get_startup_location("sindre-system-test"));
     // Interactive desktop backends are covered by platform-specific smoke tests.
 

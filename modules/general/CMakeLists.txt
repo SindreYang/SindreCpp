@@ -6,6 +6,7 @@ target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_GENERAL=1)
 if(SINDRE_GENERAL_BUILD_LIBRARY)
     set(SINDRE_GENERAL_SOURCES
         src/core.cpp
+        src/crypto.cpp
         src/system.cpp
         src/runtime.cpp
         src/cli.cpp
@@ -36,7 +37,7 @@ if(SINDRE_GENERAL_BUILD_LIBRARY)
         target_link_libraries(sindre_general_runtime PRIVATE advapi32 shell32 user32 comdlg32 ole32)
     endif()
     target_compile_definitions(sindre_general_runtime PRIVATE SINDRE_GENERAL_BUILDING_LIBRARY=1)
-    foreach(feature IN ITEMS LOG HTTP JSON CLI RE2 CRASHPAD ZLIB)
+    foreach(feature IN ITEMS LOG HTTP JSON CLI RE2 CRASHPAD ZLIB CRYPTO)
         if(SINDRE_WITH_${feature})
             target_compile_definitions(sindre_general_runtime PRIVATE
                 SINDRE_WITH_${feature}=1)
@@ -106,9 +107,14 @@ if(SINDRE_WITH_LOG)
     endif()
 endif()
 
+if(SINDRE_WITH_CRYPTO)
+    find_package(OpenSSL 3.3.0 EXACT CONFIG REQUIRED COMPONENTS Crypto
+        PATHS "${SINDRE_GENERAL_PACKAGE_ROOT}" NO_DEFAULT_PATH)
+endif()
+
 if(SINDRE_WITH_HTTP)
     set(SINDRE_HTTPLIB_BUNDLED OFF)
-    if(SINDRE_HTTP_OPENSSL)
+    if(SINDRE_HTTP_OPENSSL AND NOT TARGET OpenSSL::SSL)
         find_package(OpenSSL 3.3.0 EXACT CONFIG REQUIRED COMPONENTS SSL Crypto
             PATHS "${SINDRE_GENERAL_PACKAGE_ROOT}" NO_DEFAULT_PATH)
     endif()
@@ -169,6 +175,13 @@ if(SINDRE_WITH_HTTP)
         endif()
     endif()
     target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_HTTP=1)
+endif()
+
+if(SINDRE_WITH_CRYPTO AND NOT (SINDRE_WITH_HTTP AND SINDRE_HTTP_OPENSSL))
+    target_link_libraries(sindre_general INTERFACE OpenSSL::Crypto)
+    if(TARGET sindre_general_runtime)
+        target_link_libraries(sindre_general_runtime PRIVATE OpenSSL::Crypto)
+    endif()
 endif()
 
 if(SINDRE_WITH_JSON)

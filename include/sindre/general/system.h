@@ -4,6 +4,7 @@
 /// @brief 系统环境、文件、目录、配置和桌面相关基础接口。
 
 #include <sindre/general/core.h>
+#include <sindre/general/runtime.h>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -59,6 +60,27 @@ Result<void> move_path(const std::filesystem::path &source,
 Result<std::vector<std::filesystem::path>> list_directory(
     const std::filesystem::path &directory, bool recursive = false) noexcept;
 Result<std::vector<std::filesystem::path>> glob(std::string_view pattern) noexcept;
+}
+
+namespace sindre::general::file {
+/// @brief 文件加解密的缓冲区、覆盖、进度和取消选项。
+struct CryptoOptions {
+    bool overwrite = false;
+    std::size_t buffer_size = 1024 * 1024;
+    std::function<void(std::uint64_t current, std::uint64_t total)> progress;
+    CancellationToken token{};
+};
+
+/// @brief 流式加密文件并在成功后原子替换目标文件。
+Result<void> encrypt(const std::filesystem::path &source,
+                     const std::filesystem::path &destination,
+                     std::string_view password,
+                     CryptoOptions options = {}) noexcept;
+/// @brief 流式解密文件并在认证成功后原子替换目标文件。
+Result<void> decrypt(const std::filesystem::path &source,
+                     const std::filesystem::path &destination,
+                     std::string_view password,
+                     CryptoOptions options = {}) noexcept;
 }
 
 namespace sindre::general::file_watch {

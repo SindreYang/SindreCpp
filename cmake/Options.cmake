@@ -52,6 +52,7 @@ set(SINDRE_WITH_CLI ON)
 set(SINDRE_WITH_RE2 ON)
 set(SINDRE_WITH_CRASHPAD ON)
 set(SINDRE_WITH_ZLIB ON)
+set(SINDRE_WITH_CRYPTO ON)
 
 # Python/NumPy utilities. This is a standalone module because it has a
 # separate interpreter/extension dependency profile from General.

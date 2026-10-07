@@ -163,6 +163,38 @@ sindre::general::system::unset_environment_variable("OLD_SETTING");
 `*`、`?` 和独立路径组件 `**`。文件哈希按流式块读取；MD5 只用于缓存、去重和
 非安全完整性检查，安全校验应使用 SHA-256。
 
+### 加密
+
+General 提供不暴露 OpenSSL 类型的内存和单文件加解密接口。默认使用
+AES-256-GCM 与 PBKDF2-HMAC-SHA256；每次加密自动生成随机 salt 和 nonce，密文带有
+自描述头和认证标签。文本接口返回 Base64，二进制接口使用字节数组：
+
+```cpp
+auto encrypted = sindre::general::codec::encrypt("secret", "password");
+auto plaintext = encrypted
+    ? sindre::general::codec::decrypt(encrypted.value(), "password")
+    : sindre::general::Result<std::string>::failure(encrypted.error());
+```
+
+文件接口采用同目录临时文件，只有完整写入、认证成功、刷新并替换目标后才完成；失败、
+取消、密码错误或磁盘错误会删除临时文件，不会破坏已有目标。默认不覆盖已有目标，使用
+`file::CryptoOptions::overwrite = true` 显式允许覆盖；选项还支持缓冲区大小、进度回调
+和 `CancellationToken`：
+
+```cpp
+sindre::general::file::CryptoOptions options;
+options.progress = [](std::uint64_t current, std::uint64_t total) {
+    std::cout << current << "/" << total << '\n';
+};
+auto encrypted_file = sindre::general::file::encrypt(
+    "plain.bin", "secret.sindre", "password", options);
+auto decrypted_file = sindre::general::file::decrypt(
+    "secret.sindre", "restored.bin", "password", options);
+```
+
+当前范围是单文件，不是目录、ZIP/TAR 或断点续传；密码不会写入错误上下文或日志。需要
+加密目录时，先由上层选择归档格式和文件清单，再对归档文件调用此接口。
+
 ### JSON 与配置
 
 General 默认集成固定版本的 simdjson，但用户不需要直接操作 simdjson DOM。普通 JSON

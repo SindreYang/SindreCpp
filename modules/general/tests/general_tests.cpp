@@ -274,6 +274,22 @@ int main() {
     const auto decoded = sindre::general::codec::base64_decode(encoded.value());
     CHECK(decoded && decoded.value() == bytes);
     CHECK(!sindre::general::codec::base64_decode("bad?"));
+    const std::string secret("中文\0binary", 13);
+    const auto encrypted_text = sindre::general::codec::encrypt(secret, "correct horse");
+    CHECK(encrypted_text);
+    const auto decrypted_text = sindre::general::codec::decrypt(encrypted_text.value(), "correct horse");
+    CHECK(decrypted_text && decrypted_text.value() == secret);
+    const auto wrong_password = sindre::general::codec::decrypt(encrypted_text.value(), "wrong horse");
+    CHECK(!wrong_password &&
+          wrong_password.error().code == std::make_error_code(std::errc::permission_denied));
+    auto tampered = encrypted_text.value();
+    tampered[tampered.size() - 1] = tampered[tampered.size() - 1] == 'A' ? 'B' : 'A';
+    CHECK(!sindre::general::codec::decrypt(tampered, "correct horse"));
+    const auto encrypted_bytes = sindre::general::codec::encrypt_bytes(bytes, "binary password");
+    CHECK(encrypted_bytes);
+    const auto decrypted_bytes = sindre::general::codec::decrypt_bytes(
+        encrypted_bytes.value(), "binary password");
+    CHECK(decrypted_bytes && decrypted_bytes.value() == bytes);
     const auto compressed = sindre::general::codec::simple_compress(
         std::vector<std::uint8_t>{1, 1, 1, 2, 3, 3, 3, 3});
     CHECK(compressed && compressed.value().size() < 8 &&

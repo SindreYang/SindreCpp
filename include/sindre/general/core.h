@@ -218,6 +218,20 @@ Result<std::string> try_hex(std::uint64_t value);
 Result<std::string> uuid4();
 Result<std::string> base64_encode(const std::vector<std::uint8_t> &data);
 Result<std::vector<std::uint8_t>> base64_decode(std::string_view text);
+/// @brief 使用 AES-256-GCM 和 PBKDF2-HMAC-SHA256 加密文本并返回 Base64 信封。
+Result<std::string> encrypt(std::string_view plaintext,
+                            std::string_view password) noexcept;
+/// @brief 解密由 `encrypt` 生成的 Base64 信封。
+Result<std::string> decrypt(std::string_view ciphertext,
+                            std::string_view password) noexcept;
+/// @brief 使用 AES-256-GCM 和 PBKDF2-HMAC-SHA256 加密二进制数据。
+Result<std::vector<std::uint8_t>> encrypt_bytes(
+    const std::vector<std::uint8_t> &data,
+    std::string_view password) noexcept;
+/// @brief 解密由 `encrypt_bytes` 生成的二进制信封。
+Result<std::vector<std::uint8_t>> decrypt_bytes(
+    const std::vector<std::uint8_t> &data,
+    std::string_view password) noexcept;
 /// @brief 对内存中的字节执行 RLE 编码；这不是文件压缩格式。
 Result<std::vector<std::uint8_t>> rle_compress(const std::vector<std::uint8_t> &data);
 /// @brief 解码由 `rle_compress` 生成的内存字节序列。
