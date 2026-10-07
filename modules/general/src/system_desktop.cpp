@@ -129,7 +129,7 @@ Result<void> add_tray_icon(HWND window, std::string_view tooltip, bool balloon =
     if (tip.empty() && !tooltip.empty())
         return Result<void>::failure(std::make_error_code(std::errc::illegal_byte_sequence),
                                      "Invalid UTF-8 tray tooltip", "desktop.tray");
-    std::wcsncpy(data.szTip, tip.c_str(), ARRAYSIZE(data.szTip) - 1);
+    (void)::wcsncpy_s(data.szTip, ARRAYSIZE(data.szTip), tip.c_str(), _TRUNCATE);
     if (!::Shell_NotifyIconW(NIM_ADD, &data))
         return Result<void>::failure(win32_error(), "Cannot add tray icon", "desktop.tray");
     if (balloon) {
@@ -142,13 +142,33 @@ Result<void> add_tray_icon(HWND window, std::string_view tooltip, bool balloon =
         }
         data.uFlags = NIF_INFO;
         data.dwInfoFlags = NIIF_INFO;
-        std::wcsncpy(data.szInfoTitle, wide_title.c_str(), ARRAYSIZE(data.szInfoTitle) - 1);
-        std::wcsncpy(data.szInfo, wide_message.c_str(), ARRAYSIZE(data.szInfo) - 1);
+        (void)::wcsncpy_s(data.szInfoTitle, ARRAYSIZE(data.szInfoTitle), wide_title.c_str(), _TRUNCATE);
+        (void)::wcsncpy_s(data.szInfo, ARRAYSIZE(data.szInfo), wide_message.c_str(), _TRUNCATE);
         if (!::Shell_NotifyIconW(NIM_MODIFY, &data)) {
             ::Shell_NotifyIconW(NIM_DELETE, &data);
             return Result<void>::failure(win32_error(), "Cannot show notification", "desktop.notify");
         }
     }
+    return Result<void>::success();
+}
+
+Result<void> modify_tray_balloon(HWND window, std::string_view title,
+                                 std::string_view message) noexcept {
+    const auto wide_title = utf16(title);
+    const auto wide_message = utf16(message);
+    if ((!title.empty() && wide_title.empty()) || (!message.empty() && wide_message.empty()))
+        return Result<void>::failure(std::make_error_code(std::errc::illegal_byte_sequence),
+                                     "Invalid UTF-8 notification text", "desktop.notify");
+    NOTIFYICONDATAW data{};
+    data.cbSize = sizeof(data);
+    data.hWnd = window;
+    data.uID = 1;
+    data.uFlags = NIF_INFO;
+    data.dwInfoFlags = NIIF_INFO;
+    (void)::wcsncpy_s(data.szInfoTitle, ARRAYSIZE(data.szInfoTitle), wide_title.c_str(), _TRUNCATE);
+    (void)::wcsncpy_s(data.szInfo, ARRAYSIZE(data.szInfo), wide_message.c_str(), _TRUNCATE);
+    if (!::Shell_NotifyIconW(NIM_MODIFY, &data))
+        return Result<void>::failure(win32_error(), "Cannot show notification", "desktop.notify");
     return Result<void>::success();
 }
 
@@ -177,6 +197,20 @@ Result<std::vector<std::filesystem::path>> parse_open_file_buffer(const std::vec
 }
 
 #elif defined(__linux__)
+
+struct LinuxTrayState {
+    pid_t process = -1;
+};
+
+LinuxTrayState &linux_tray_state() {
+    static LinuxTrayState state;
+    return state;
+}
+
+std::mutex &linux_tray_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
 
 struct CommandResult {
     int exit_code = -1;
@@ -277,7 +311,7 @@ Result<CommandResult> run_command(const std::vector<std::string> &arguments,
     };
     std::size_t input_offset = 0;
     while (output_open || error_open || input_open) {
-        pollfd descriptors[2]{};
+        pollfd descriptors[3]{};
         int count = 0;
         int output_index = -1;
         int error_index = -1;
@@ -305,9 +339,11 @@ Result<CommandResult> run_command(const std::vector<std::string> &arguments,
                                                   "Desktop command timed out", "desktop.command");
         }
         (void)::poll(descriptors, static_cast<nfds_t>(count), static_cast<int>(remaining));
-        if (output_open && output_index >= 0 && (descriptors[output_index].revents & (POLLIN | POLLHUP)))
+        if (output_open && output_index >= 0 &&
+            (descriptors[output_index].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL)))
             read_pipe(output_pipe[0], result.output, output_open, output_overflow);
-        if (error_open && error_index >= 0 && (descriptors[error_index].revents & (POLLIN | POLLHUP)))
+        if (error_open && error_index >= 0 &&
+            (descriptors[error_index].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL)))
             read_pipe(error_pipe[0], result.error, error_open, error_overflow);
         if (output_overflow || error_overflow) {
             ::kill(child, SIGKILL);
@@ -317,7 +353,13 @@ Result<CommandResult> run_command(const std::vector<std::string> &arguments,
             return Result<CommandResult>::failure(std::make_error_code(std::errc::value_too_large),
                                                   "Desktop command output is too large", "desktop.command");
         }
-        if (input_open && input_index >= 0 && (descriptors[input_index].revents & POLLOUT)) {
+        if (input_open && input_index >= 0 &&
+            (descriptors[input_index].revents & (POLLOUT | POLLERR | POLLHUP | POLLNVAL))) {
+            if (descriptors[input_index].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+                ::close(input_pipe[1]);
+                input_open = false;
+                continue;
+            }
             const auto count_to_write = std::min<std::size_t>(4096, input.size() - input_offset);
             const auto written = ::write(input_pipe[1], input.data() + input_offset, count_to_write);
             if (written > 0) input_offset += static_cast<std::size_t>(written);
@@ -482,6 +524,7 @@ Result<void> send_notification(std::string_view title, std::string_view message)
 #if defined(_WIN32)
     std::lock_guard<std::mutex> lock(tray_mutex());
     auto &state = tray_state();
+    if (state.active && state.window) return modify_tray_balloon(state.window, title, message);
     bool temporary = false;
     if (!state.window) {
         auto window = create_tray_window();
@@ -585,15 +628,19 @@ Result<std::vector<std::filesystem::path>> open_file_dialog(std::filesystem::pat
 Result<std::filesystem::path> save_file_dialog(std::filesystem::path initial, std::string suggested) noexcept {
 #if defined(_WIN32)
     std::vector<wchar_t> buffer(32768, L'\0');
-    const auto initial_text = initial.empty() ? std::wstring{} : initial.wstring();
     const auto suggested_text = utf16(suggested);
-    const auto filename = suggested_text.empty() ? initial_text : suggested_text;
-    std::copy(filename.begin(), filename.end(), buffer.begin());
+    if (!suggested.empty() && suggested_text.empty())
+        return Result<std::filesystem::path>::failure(
+            std::make_error_code(std::errc::illegal_byte_sequence),
+            "Invalid UTF-8 suggested file name", "desktop.file_dialog");
+    std::copy(suggested_text.begin(), suggested_text.end(), buffer.begin());
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
     dialog.lpstrFile = buffer.data();
     dialog.nMaxFile = static_cast<DWORD>(buffer.size());
     dialog.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    const auto initial_text = initial.empty() ? std::wstring{} : initial.wstring();
+    dialog.lpstrInitialDir = initial_text.empty() ? nullptr : initial_text.c_str();
     if (!::GetSaveFileNameW(&dialog)) return ::CommDlgExtendedError() == 0 ? Result<std::filesystem::path>::failure(std::make_error_code(std::errc::operation_canceled), "File selection was cancelled", "desktop.file_dialog") : Result<std::filesystem::path>::failure(std::error_code(::CommDlgExtendedError(), std::system_category()), "File dialog failed", "desktop.file_dialog");
     const auto value = utf8(buffer.data());
     if (value.empty()) return Result<std::filesystem::path>::failure(std::make_error_code(std::errc::illegal_byte_sequence), "Invalid UTF-16 file dialog result", "desktop.file_dialog");
@@ -655,7 +702,20 @@ Result<void> start_tray(std::string_view tooltip) noexcept {
     return Result<void>::success();
 #elif defined(__linux__)
     if (!command_exists("yad")) return unsupported_void("desktop.tray", "Linux tray requires yad");
-    return command_status({"yad", "--notification", "--text", std::string(tooltip)}, "desktop.tray");
+    std::lock_guard<std::mutex> lock(linux_tray_mutex());
+    auto &state = linux_tray_state();
+    if (state.process > 0) return Result<void>::success();
+    const auto process = ::fork();
+    if (process < 0)
+        return Result<void>::failure(std::error_code(errno, std::generic_category()),
+                                     "Cannot start Linux tray", "desktop.tray");
+    if (process == 0) {
+        const auto text = std::string(tooltip);
+        ::execlp("yad", "yad", "--notification", "--text", text.c_str(), static_cast<char *>(nullptr));
+        _exit(127);
+    }
+    state.process = process;
+    return Result<void>::success();
 #else
     return unsupported_void("desktop.tray");
 #endif
@@ -676,6 +736,12 @@ Result<void> stop_tray() noexcept {
     state.active = false;
     return Result<void>::success();
 #elif defined(__linux__)
+    std::lock_guard<std::mutex> lock(linux_tray_mutex());
+    auto &state = linux_tray_state();
+    if (state.process <= 0) return Result<void>::success();
+    ::kill(state.process, SIGTERM);
+    ::waitpid(state.process, nullptr, 0);
+    state.process = -1;
     return Result<void>::success();
 #else
     return unsupported_void("desktop.tray");

@@ -51,6 +51,12 @@ CMake configuration. The Linux profile was provisioned with the fixed vcpkg
 macOS is rejected during configuration until an equivalent tested profile is
 provided.
 
+Desktop helpers do not add a compiled third-party dependency. Windows uses the platform
+Win32/COM libraries already linked by General. Linux desktop helpers discover optional
+runtime commands such as `notify-send`, `zenity`, `kdialog`, `wl-copy`, `xclip`, `pkexec`
+and `yad`; missing commands produce `function_not_supported` rather than a configure-time
+failure. These commands are executed with argument vectors, never through a shell.
+
 The fixed Windows package profile uses static libraries and the static MSVC
 runtime with `_ITERATOR_DEBUG_LEVEL=0`. General applies the same ABI to Debug
 and Release consumers.

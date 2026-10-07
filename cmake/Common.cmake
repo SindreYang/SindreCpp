@@ -29,84 +29,6 @@ target_include_directories(sindre_base INTERFACE
     $<BUILD_INTERFACE:${SINDRE_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 target_link_libraries(sindre_base INTERFACE Threads::Threads)
-set(SINDRE_EIGEN_BLAS_ENABLED OFF)
-
-if(SINDRE_WITH_EIGEN AND (SINDRE_WITH_GENERAL OR SINDRE_WITH_UTILS_2D OR
-                          SINDRE_WITH_UTILS_3D OR SINDRE_WITH_UTILS_PY))
-    # Eigen is part of the fixed General dependency profile. Never accept a
-    # host-installed Eigen target because that can silently change the ABI.
-    sindre_thirds_declare_local(eigen
-        "${SINDRE_THIRDS_DIR}/general/sources/eigen/3.4.1/eigen-3.4.1")
-    set(EIGEN_BUILD_DOC OFF)
-    set(EIGEN_BUILD_PKGCONFIG OFF)
-    FetchContent_MakeAvailable(eigen)
-    if(NOT TARGET Eigen3::Eigen)
-        message(FATAL_ERROR "SINDRE_WITH_EIGEN requires an Eigen3::Eigen target")
-    endif()
-    target_link_libraries(sindre_base INTERFACE Eigen3::Eigen)
-
-    string(TOUPPER "${SINDRE_EIGEN_BLAS_BACKEND}" _sindre_eigen_blas_backend)
-    if(NOT _sindre_eigen_blas_backend MATCHES "^(AUTO|MKL|OPENBLAS|BLAS|EIGEN)$")
-        message(FATAL_ERROR
-            "SINDRE_EIGEN_BLAS_BACKEND must be AUTO, MKL, OPENBLAS, BLAS, or EIGEN")
-    endif()
-    set(_sindre_eigen_blas_found OFF)
-    if(NOT _sindre_eigen_blas_backend STREQUAL "EIGEN")
-        if(_sindre_eigen_blas_backend STREQUAL "MKL")
-            set(BLA_VENDOR Intel10_64lp)
-            find_package(BLAS REQUIRED)
-        elseif(_sindre_eigen_blas_backend STREQUAL "OPENBLAS")
-            set(BLA_VENDOR OpenBLAS)
-            # Official Windows archives ship an OpenBLASConfig.cmake file,
-            # but older releases expose variables instead of a CMake target.
-            # Prefer its MSVC import library when the package is discoverable,
-            # then let FindBLAS create the standard BLAS::BLAS target.
-            find_package(${SINDRE_THIRD_GENERAL_OPENBLAS_CONFIG_PACKAGE} CONFIG QUIET)
-            if(DEFINED OpenBLAS_INCLUDE_DIRS AND NOT DEFINED BLAS_LIBRARIES)
-                get_filename_component(_sindre_openblas_root
-                    "${OpenBLAS_INCLUDE_DIRS}" DIRECTORY)
-                if(EXISTS "${_sindre_openblas_root}/lib/${SINDRE_THIRD_GENERAL_OPENBLAS_IMPORT_LIBRARY}")
-                    set(BLAS_LIBRARIES
-                        "${_sindre_openblas_root}/lib/${SINDRE_THIRD_GENERAL_OPENBLAS_IMPORT_LIBRARY}"
-                        CACHE STRING "OpenBLAS import library" FORCE)
-                endif()
-            endif()
-            find_package(BLAS REQUIRED)
-        elseif(_sindre_eigen_blas_backend STREQUAL "BLAS")
-            find_package(BLAS REQUIRED)
-        else()
-            # AUTO lets CMake prefer an installed optimized vendor while still
-            # allowing a portable Eigen-only build when no BLAS is present.
-            find_package(BLAS QUIET)
-        endif()
-        if(TARGET BLAS::BLAS)
-            set(_sindre_eigen_blas_found ON)
-            set(SINDRE_EIGEN_BLAS_ENABLED ON)
-            target_link_libraries(sindre_base INTERFACE BLAS::BLAS)
-            target_compile_definitions(sindre_base INTERFACE EIGEN_USE_BLAS=1)
-        elseif(NOT _sindre_eigen_blas_backend STREQUAL "AUTO")
-            message(FATAL_ERROR "Requested Eigen BLAS backend was not found")
-        endif()
-    endif()
-    if(SINDRE_EIGEN_NATIVE_ARCH)
-        if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-            # clang-cl accepts the clang tuning option through /clang:. This
-            # enables Eigen's native SIMD detection, including AVX2 and FMA
-            # on supported x86 CPUs.
-            target_compile_options(sindre_base INTERFACE /clang:-march=native)
-        elseif(MSVC)
-            target_compile_options(sindre_base INTERFACE /arch:AVX2)
-        elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU|AppleClang")
-            target_compile_options(sindre_base INTERFACE -march=native)
-        endif()
-    endif()
-    if(_sindre_eigen_blas_found)
-        message(STATUS "Sindre Eigen backend: ${_sindre_eigen_blas_backend} via BLAS::BLAS")
-    else()
-        message(STATUS "Sindre Eigen backend: Eigen native vectorization")
-    endif()
-endif()
-
 if(SINDRE_NO_EXCEPTIONS)
     target_compile_definitions(sindre_base INTERFACE
         SINDRE_NO_EXCEPTIONS=1
@@ -177,16 +99,33 @@ function(sindre_copy_runtime_dirs target)
     endif()
 
     foreach(runtime_dir IN LISTS ARGN)
-        if(NOT IS_DIRECTORY "${runtime_dir}")
+        file(TO_CMAKE_PATH "${runtime_dir}" _sindre_runtime_dir)
+        if(NOT IS_DIRECTORY "${_sindre_runtime_dir}")
             continue()
         endif()
-        file(GLOB runtime_files CONFIGURE_DEPENDS "${runtime_dir}/*.dll")
+        file(GLOB runtime_files CONFIGURE_DEPENDS "${_sindre_runtime_dir}/*.dll")
         foreach(runtime_file IN LISTS runtime_files)
             add_custom_command(TARGET ${target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${runtime_file}" "$<TARGET_FILE_DIR:${target}>"
                 VERBATIM)
         endforeach()
+    endforeach()
+endfunction()
+
+function(sindre_copy_runtime_files target)
+    if(NOT WIN32 OR NOT TARGET ${target})
+        return()
+    endif()
+
+    foreach(runtime_file IN LISTS ARGN)
+        if(NOT EXISTS "${runtime_file}")
+            continue()
+        endif()
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${runtime_file}" "$<TARGET_FILE_DIR:${target}>"
+            VERBATIM)
     endforeach()
 endfunction()
 
@@ -201,7 +140,7 @@ function(sindre_copy_target_runtime_dlls target)
             -P "${SINDRE_CMAKE_DIR}/CopyRuntime.cmake"
         COMMAND_EXPAND_LISTS
         VERBATIM)
-    if(SINDRE_OPENBLAS_RUNTIME_DIR)
-        sindre_copy_runtime_dirs(${target} "${SINDRE_OPENBLAS_RUNTIME_DIR}")
+    if(SINDRE_MATH_OPENBLAS_RUNTIME_DIR)
+        sindre_copy_runtime_dirs(${target} "${SINDRE_MATH_OPENBLAS_RUNTIME_DIR}")
     endif()
 endfunction()

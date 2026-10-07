@@ -1,12 +1,12 @@
 #include <sindre/general.h>
-#include <Eigen/Core>
+#include <sindre/general/network.h>
 
 #include <iostream>
 
 int main() {
-    Eigen::Vector3d value(1.0, 2.0, 3.0);
     const auto parsed = sindre::general::string::parse_int("42");
-    if (!parsed || parsed.value() != 42 || value.sum() != 6.0)
+    const auto target = sindre::general::network::parse("https://example.com/api?q=1");
+    if (!parsed || parsed.value() != 42 || !target || target.value().get_host() != "example.com")
         return 1;
     std::cout << sindre::general::library_abi() << '\n';
     return 0;

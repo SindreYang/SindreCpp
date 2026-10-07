@@ -39,7 +39,7 @@ sindre_add_static_target(utils_3d "${SINDRE_SOURCE_DIR}/include" ${_sindre_utils
 target_include_directories(sindre_utils_3d PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/private")
 target_compile_definitions(sindre_utils_3d PUBLIC SINDRE_WITH_UTILS_3D=1)
-target_link_libraries(sindre_utils_3d PUBLIC sindre::general Eigen3::Eigen ${VTK_LIBRARIES})
+target_link_libraries(sindre_utils_3d PUBLIC sindre::general sindre::math ${VTK_LIBRARIES})
 if(SINDRE_UTILS_3D_NATIVE_ARCH)
     add_library(sindre_utils_3d_native_arch INTERFACE)
     if(MSVC)
@@ -49,22 +49,6 @@ if(SINDRE_UTILS_3D_NATIVE_ARCH)
     endif()
     target_link_libraries(sindre_utils_3d PUBLIC sindre_utils_3d_native_arch)
     install(TARGETS sindre_utils_3d_native_arch EXPORT sindrecppTargets)
-endif()
-
-string(TOUPPER "${SINDRE_UTILS_3D_BLAS_BACKEND}" _sindre_blas_backend)
-if(NOT _sindre_blas_backend MATCHES "^(AUTO|EIGEN|BLAS)$")
-    message(FATAL_ERROR "SINDRE_UTILS_3D_BLAS_BACKEND must be AUTO, EIGEN, or BLAS")
-endif()
-if(NOT TARGET BLAS::BLAS AND NOT _sindre_blas_backend STREQUAL "EIGEN")
-    if(_sindre_blas_backend STREQUAL "BLAS")
-        find_package(BLAS REQUIRED)
-    else()
-        find_package(BLAS QUIET)
-    endif()
-endif()
-if(TARGET BLAS::BLAS AND NOT _sindre_blas_backend STREQUAL "EIGEN")
-    target_link_libraries(sindre_utils_3d PUBLIC BLAS::BLAS)
-    target_compile_definitions(sindre_utils_3d PUBLIC EIGEN_USE_BLAS=1)
 endif()
 
 foreach(backend IN ITEMS MESHLIB CGAL OPEN3D IGL VCG)
@@ -94,14 +78,54 @@ if(SINDRE_UTILS_3D_OPEN3D)
     target_link_libraries(sindre_utils_3d PUBLIC Open3D::Open3D)
 endif()
 if(SINDRE_UTILS_3D_MESHLIB)
-    find_package(meshlib CONFIG REQUIRED
+    # MeshLib 3.1.4 is built with and explicitly requires C++20.  Keep the
+    # repository baseline at C++17 while raising only this optional backend's
+    # usage requirement.
+    target_compile_features(sindre_utils_3d PUBLIC cxx_std_20)
+    set_property(TARGET sindre_utils_3d PROPERTY CXX_STANDARD 20)
+    set_property(TARGET sindre_utils_3d PROPERTY CXX_STANDARD_REQUIRED ON)
+    # MeshLib's official Windows distribution is a prebuilt DLL/import-library
+    # SDK and, unlike its example plugin, does not ship a CMake package config.
+    # Prefer a package target when one is available, then expose the official
+    # extracted SDK without compiling MeshLib from source.
+    find_package(meshlib CONFIG QUIET
         HINTS "${SINDRE_MESHLIB_ROOT}" "${SINDRE_MESHLIB_ROOT}/lib/cmake")
     if(TARGET MeshLib::MRMesh)
         target_link_libraries(sindre_utils_3d PUBLIC MeshLib::MRMesh)
     elseif(TARGET MRMesh)
         target_link_libraries(sindre_utils_3d PUBLIC MRMesh)
     else()
-        message(FATAL_ERROR "MRMesh SDK must export MeshLib::MRMesh or MRMesh")
+        find_path(_sindre_meshlib_include
+            MRMesh/MRMesh.h
+            HINTS "${SINDRE_MESHLIB_ROOT}"
+            PATH_SUFFIXES include)
+        find_library(_sindre_meshlib_import
+            NAMES MRMesh
+            HINTS "${SINDRE_MESHLIB_ROOT}"
+            PATH_SUFFIXES lib/Release lib)
+        find_file(_sindre_meshlib_runtime
+            NAMES MRMesh.dll
+            HINTS "${SINDRE_MESHLIB_ROOT}"
+            PATH_SUFFIXES app/Release bin)
+        if(NOT _sindre_meshlib_include OR NOT _sindre_meshlib_import OR
+           NOT _sindre_meshlib_runtime)
+            message(FATAL_ERROR
+                "MeshLib SDK must provide include/MRMesh/MRMesh.h, "
+                "lib/Release/MRMesh.lib, and app/Release/MRMesh.dll; "
+                "set SINDRE_MESHLIB_ROOT to the extracted official SDK root")
+        endif()
+        if(NOT TARGET MeshLib::MRMesh)
+            add_library(MeshLib::MRMesh SHARED IMPORTED GLOBAL)
+            set_target_properties(MeshLib::MRMesh PROPERTIES
+                IMPORTED_IMPLIB "${_sindre_meshlib_import}"
+                IMPORTED_LOCATION "${_sindre_meshlib_runtime}"
+                INTERFACE_INCLUDE_DIRECTORIES "${_sindre_meshlib_include}")
+        endif()
+        get_filename_component(_sindre_meshlib_runtime_dir
+            "${_sindre_meshlib_runtime}" DIRECTORY)
+        set(SINDRE_MESHLIB_RUNTIME_DIR "${_sindre_meshlib_runtime_dir}" CACHE INTERNAL
+            "MeshLib runtime directory selected from the extracted SDK" FORCE)
+        target_link_libraries(sindre_utils_3d PUBLIC MeshLib::MRMesh)
     endif()
 endif()
 if(SINDRE_UTILS_3D_IGL)
@@ -174,6 +198,12 @@ if(SINDRE_BUILD_TESTS)
             if(SINDRE_UTILS_3D_VTK_DATA)
                 list(APPEND _sindre_vtk_tests sindre.vtk_data)
             endif()
+            if(SINDRE_UTILS_3D_MESHLIB AND SINDRE_MESHLIB_RUNTIME_DIR)
+                sindre_copy_runtime_dirs(sindre_utils_3d_tests
+                    "${SINDRE_MESHLIB_RUNTIME_DIR}")
+                sindre_copy_runtime_dirs(sindre_mesh_tests
+                    "${SINDRE_MESHLIB_RUNTIME_DIR}")
+            endif()
             if(SINDRE_UTILS_3D_SHOW)
                 list(APPEND _sindre_vtk_tests sindre.show_mesh)
             endif()
@@ -184,11 +214,7 @@ if(SINDRE_BUILD_TESTS)
 endif()
 
 if(SINDRE_BUILD_UTILS_3D_BENCHMARKS)
-    if(NOT TARGET BLAS::BLAS)
-        message(WARNING "Utils_3d benchmark requested, but BLAS::BLAS is unavailable")
-    else()
-        add_executable(sindre_utils_3d_benchmark tests/utils_3d_benchmark.cpp)
-        target_link_libraries(sindre_utils_3d_benchmark PRIVATE sindre::utils_3d BLAS::BLAS)
-        sindre_copy_target_runtime_dlls(sindre_utils_3d_benchmark)
-    endif()
+    add_executable(sindre_utils_3d_benchmark tests/utils_3d_benchmark.cpp)
+    target_link_libraries(sindre_utils_3d_benchmark PRIVATE sindre::utils_3d)
+    sindre_copy_target_runtime_dlls(sindre_utils_3d_benchmark)
 endif()

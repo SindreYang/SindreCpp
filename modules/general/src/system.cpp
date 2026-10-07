@@ -1,6 +1,26 @@
 #include <sindre/general/system.h>
 #include <sindre/general/string.h>
 
+#include <array>
+#include <cctype>
+#include <climits>
+#include <cstring>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <iphlpapi.h>
+#include <windows.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#endif
+
 #if defined(SINDRE_WITH_JSON)
 
 #include <sindre/general/string.h>
@@ -1032,7 +1052,9 @@ Result<void> move_path(const std::filesystem::path &source,
 #include <windows.h>
 #elif defined(__linux__) || defined(__APPLE__)
 #include <fcntl.h>
+#include <pwd.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
@@ -1040,6 +1062,150 @@ Result<void> move_path(const std::filesystem::path &source,
 #endif
 
 namespace sindre::general::system {
+
+Result<ShellResult> shell_run(std::string command, ShellOptions options) noexcept {
+    if (command.empty()) {
+        return Result<ShellResult>::failure(
+            std::make_error_code(std::errc::invalid_argument),
+            "Shell command is empty", "system.shell_run");
+    }
+    if (command.find('\0') != std::string::npos) {
+        return Result<ShellResult>::failure(
+            std::make_error_code(std::errc::invalid_argument),
+            "Shell command contains a NUL character", "system.shell_run");
+    }
+    if (options.timeout_seconds < 0) {
+        return Result<ShellResult>::failure(
+            std::make_error_code(std::errc::invalid_argument),
+            "Shell timeout is negative", "system.shell_run");
+    }
+
+    process::Options process_options;
+    process_options.working_directory = std::move(options.working_directory);
+    process_options.capture_output = options.capture_output;
+    process_options.timeout = std::chrono::seconds(options.timeout_seconds);
+    process_options.token = std::move(options.token);
+    process_options.maximum_output_bytes = options.maximum_output_bytes;
+
+#if defined(_WIN32)
+    const auto quote_windows_argument = [](std::string_view value) {
+        std::string quoted("\"");
+        std::size_t backslashes = 0;
+        for (const char character : value) {
+            if (character == '\\') {
+                ++backslashes;
+                continue;
+            }
+            if (character == '"') {
+                quoted.append(backslashes * 2u + 1u, '\\');
+                quoted.push_back('"');
+                backslashes = 0;
+                continue;
+            }
+            quoted.append(backslashes, '\\');
+            backslashes = 0;
+            quoted.push_back(character);
+        }
+        quoted.append(backslashes * 2u, '\\');
+        quoted.push_back('"');
+        return quoted;
+    };
+
+    const auto backend = options.backend == ShellBackend::platform_default
+        ? ShellBackend::cmd : options.backend;
+    switch (backend) {
+    case ShellBackend::cmd:
+        // cmd.exe is started directly by process::run; shell operators remain
+        // available because the command is passed after /S /C.
+        command.insert(0, "cmd.exe /D /S /C ");
+        break;
+    case ShellBackend::powershell: {
+        if (command.size() > static_cast<std::size_t>(INT_MAX)) {
+            return Result<ShellResult>::failure(
+                std::make_error_code(std::errc::value_too_large),
+                "PowerShell command is too large", "system.shell_run");
+        }
+        const int length = ::MultiByteToWideChar(
+            CP_UTF8, MB_ERR_INVALID_CHARS, command.data(), static_cast<int>(command.size()), nullptr, 0);
+        if (length <= 0) {
+            return Result<ShellResult>::failure(
+                std::make_error_code(std::errc::illegal_byte_sequence),
+                "PowerShell command is not valid UTF-8", "system.shell_run");
+        }
+        std::wstring wide_command(static_cast<std::size_t>(length), L'\0');
+        if (::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, command.data(),
+                                  static_cast<int>(command.size()), wide_command.data(), length) != length) {
+            return Result<ShellResult>::failure(
+                std::make_error_code(std::errc::illegal_byte_sequence),
+                "PowerShell command conversion failed", "system.shell_run");
+        }
+        std::vector<std::uint8_t> utf16_bytes(wide_command.size() * sizeof(wchar_t));
+        if (!utf16_bytes.empty()) {
+            std::memcpy(utf16_bytes.data(), wide_command.data(), utf16_bytes.size());
+        }
+        auto encoded = codec::base64_encode(utf16_bytes);
+        if (!encoded) {
+            return Result<ShellResult>::failure(encoded.error().with_context("system.shell_run"));
+        }
+        command = "powershell.exe -NoLogo -NoProfile -NonInteractive "
+                  "-ExecutionPolicy Bypass -EncodedCommand " + encoded.value();
+        break;
+    }
+    case ShellBackend::sh:
+        command = "sh.exe -c " + quote_windows_argument(command);
+        break;
+    case ShellBackend::bash:
+        command = "bash.exe -c " + quote_windows_argument(command);
+        break;
+    case ShellBackend::platform_default:
+        break;
+    }
+#else
+    const auto backend = options.backend == ShellBackend::platform_default
+        ? ShellBackend::bash : options.backend;
+    std::filesystem::path shell_path;
+    switch (backend) {
+    case ShellBackend::sh:
+        shell_path = "/bin/sh";
+        break;
+    case ShellBackend::bash:
+        shell_path = "/bin/bash";
+        break;
+    case ShellBackend::powershell:
+        // PowerShell 7 exposes the same -Command/-c contract on POSIX.
+        shell_path = "pwsh";
+        break;
+    case ShellBackend::cmd:
+        return Result<ShellResult>::failure(
+            std::make_error_code(std::errc::function_not_supported),
+            "cmd backend is only supported on Windows", "system.shell_run");
+    case ShellBackend::platform_default:
+        break;
+    }
+    if (shell_path.has_root_path()) {
+        std::error_code filesystem_error;
+        if (!std::filesystem::is_regular_file(shell_path, filesystem_error) || filesystem_error) {
+            return Result<ShellResult>::failure(
+                std::make_error_code(std::errc::no_such_file_or_directory),
+                "Required shell backend is not available: " + shell_path.string(),
+                "system.shell_run");
+        }
+    }
+    process_options.shell_executable = shell_path;
+#endif
+
+    auto result = process::run(std::move(command), std::move(process_options));
+    if (!result) {
+        return Result<ShellResult>::failure(result.error().with_context("system.shell_run"));
+    }
+
+    ShellResult output;
+    output.exit_code = result.value().exit_code;
+    output.signaled = result.value().signaled;
+    output.stdout_text = std::move(result.value().stdout_text);
+    output.stderr_text = std::move(result.value().stderr_text);
+    return Result<ShellResult>::success(std::move(output));
+}
 
 Result<std::string> get_environment_variable(std::string_view name) noexcept {
     if (name.empty()) return Result<std::string>::failure(
@@ -1183,21 +1349,305 @@ Result<Information> get_system_information() noexcept {
 #endif
     result.cpu_count = std::thread::hardware_concurrency();
 #if defined(_WIN32)
+    using RtlGetVersionFunction = LONG(WINAPI *)(PRTL_OSVERSIONINFOW);
+    if (const auto ntdll = ::GetModuleHandleW(L"ntdll.dll")) {
+        const auto get_version = reinterpret_cast<RtlGetVersionFunction>(
+            ::GetProcAddress(ntdll, "RtlGetVersion"));
+        RTL_OSVERSIONINFOW os_version_info{};
+        os_version_info.dwOSVersionInfoSize = sizeof(os_version_info);
+        if (get_version && get_version(&os_version_info) == 0) {
+            result.os_version = std::to_string(os_version_info.dwMajorVersion) + "." +
+                std::to_string(os_version_info.dwMinorVersion) + "." +
+                std::to_string(os_version_info.dwBuildNumber);
+        }
+    }
+    if (result.os_version.empty()) result.os_version = "unknown";
+
+    std::array<wchar_t, 256> text_buffer{};
+    DWORD text_length = static_cast<DWORD>(text_buffer.size());
+    if (!::GetComputerNameW(text_buffer.data(), &text_length)) {
+        return Result<Information>::failure(
+            std::make_error_code(std::errc::io_error), "Cannot query hostname",
+            "system.get_system_information");
+    }
+    result.hostname = path::to_utf8(std::filesystem::path(
+        std::wstring(text_buffer.data(), text_length)));
+
+    HKEY processor_key = nullptr;
+    if (::RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                        L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+                        0, KEY_READ, &processor_key) == ERROR_SUCCESS) {
+        std::array<wchar_t, 512> processor_name{};
+        DWORD processor_name_size = static_cast<DWORD>(processor_name.size() * sizeof(wchar_t));
+        DWORD processor_name_type = 0;
+        if (::RegQueryValueExW(processor_key, L"ProcessorNameString", nullptr,
+                               &processor_name_type, reinterpret_cast<LPBYTE>(processor_name.data()),
+                               &processor_name_size) == ERROR_SUCCESS &&
+            (processor_name_type == REG_SZ || processor_name_type == REG_EXPAND_SZ)) {
+            auto character_count = processor_name_size / sizeof(wchar_t);
+            while (character_count > 0 && processor_name[character_count - 1] == L'\0')
+                --character_count;
+            result.cpu_model = path::to_utf8(std::filesystem::path(
+                std::wstring(processor_name.data(), character_count)));
+            while (!result.cpu_model.empty() &&
+                   std::isspace(static_cast<unsigned char>(result.cpu_model.back())))
+                result.cpu_model.pop_back();
+        }
+        ::RegCloseKey(processor_key);
+    }
+
+    text_buffer.fill(L'\0');
+    text_length = static_cast<DWORD>(text_buffer.size());
+    if (!::GetUserNameW(text_buffer.data(), &text_length)) {
+        return Result<Information>::failure(
+            std::make_error_code(std::errc::io_error), "Cannot query username",
+            "system.get_system_information");
+    }
+    if (text_length > 0 && text_buffer[text_length - 1] == L'\0') --text_length;
+    result.username = path::to_utf8(std::filesystem::path(
+        std::wstring(text_buffer.data(), text_length)));
+
     MEMORYSTATUSEX memory{};
     memory.dwLength = sizeof(memory);
     if (::GlobalMemoryStatusEx(&memory)) {
         result.memory_bytes = memory.ullTotalPhys;
+        result.available_memory_bytes = memory.ullAvailPhys;
     } else {
         return Result<Information>::failure(
             std::make_error_code(std::errc::io_error), "Cannot query physical memory", "system.get_system_information");
     }
 #else
+    struct utsname kernel{};
+    if (::uname(&kernel) != 0) {
+        return Result<Information>::failure(
+            std::make_error_code(std::errc::io_error), "Cannot query OS version",
+            "system.get_system_information");
+    }
+    result.os_version = kernel.release;
+    if (auto os_release = path::read_text("/etc/os-release")) {
+        const auto find_value = [&](std::string_view key) {
+            const std::string prefix = std::string(key) + "=";
+            std::size_t offset = 0;
+            while (offset < os_release.value().size()) {
+                const auto end = os_release.value().find('\n', offset);
+                const auto line_end = end == std::string::npos ? os_release.value().size() : end;
+                if (os_release.value().compare(offset, prefix.size(), prefix) == 0) {
+                    std::string value = os_release.value().substr(offset + prefix.size(), line_end - offset - prefix.size());
+                    if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
+                        value = value.substr(1, value.size() - 2);
+                    return value;
+                }
+                if (end == std::string::npos) break;
+                offset = end + 1;
+            }
+            return std::string{};
+        };
+        const auto pretty_name = find_value("PRETTY_NAME");
+        if (!pretty_name.empty()) result.os_version = pretty_name;
+    }
+
+    if (auto cpu_info = path::read_text("/proc/cpuinfo")) {
+        const auto find_value = [&](std::string_view key) {
+            std::size_t offset = 0;
+            while (offset < cpu_info.value().size()) {
+                const auto end = cpu_info.value().find('\n', offset);
+                const auto line_end = end == std::string::npos ? cpu_info.value().size() : end;
+                const auto separator = cpu_info.value().find(':', offset);
+                auto field_name = cpu_info.value().substr(
+                    offset, separator == std::string::npos || separator > line_end
+                        ? line_end - offset : separator - offset);
+                while (!field_name.empty() &&
+                       std::isspace(static_cast<unsigned char>(field_name.back())))
+                    field_name.pop_back();
+                if (separator != std::string::npos && separator < line_end &&
+                    field_name == key) {
+                    auto value = cpu_info.value().substr(separator + 1, line_end - separator - 1);
+                    const auto first = value.find_first_not_of(" \t");
+                    if (first != std::string::npos) value.erase(0, first);
+                    return value;
+                }
+                if (end == std::string::npos) break;
+                offset = end + 1;
+            }
+            return std::string{};
+        };
+        result.cpu_model = find_value("model name");
+        if (result.cpu_model.empty()) result.cpu_model = find_value("Hardware");
+        if (result.cpu_model.empty()) result.cpu_model = find_value("Processor");
+    }
+    if (result.cpu_model.empty()) result.cpu_model = "unknown";
+
+    std::array<char, 256> text_buffer{};
+    if (::gethostname(text_buffer.data(), text_buffer.size() - 1) != 0) {
+        return Result<Information>::failure(
+            std::make_error_code(std::errc::io_error), "Cannot query hostname",
+            "system.get_system_information");
+    }
+    text_buffer.back() = '\0';
+    result.hostname = text_buffer.data();
+    if (const auto user = ::getpwuid(::getuid())) result.username = user->pw_name;
+    else return Result<Information>::failure(
+        std::make_error_code(std::errc::io_error), "Cannot query username",
+        "system.get_system_information");
+
     const auto pages = ::sysconf(_SC_PHYS_PAGES);
     const auto page_size = ::sysconf(_SC_PAGE_SIZE);
-    if (pages <= 0 || page_size <= 0)
+    const auto available_pages = ::sysconf(_SC_AVPHYS_PAGES);
+    if (pages <= 0 || page_size <= 0 || available_pages < 0)
         return Result<Information>::failure(
             std::make_error_code(std::errc::io_error), "Cannot query physical memory", "system.get_system_information");
     result.memory_bytes = static_cast<std::uint64_t>(pages) * static_cast<std::uint64_t>(page_size);
+    result.available_memory_bytes = static_cast<std::uint64_t>(available_pages) *
+        static_cast<std::uint64_t>(page_size);
+#endif
+
+    std::error_code disk_error;
+    auto disk_path = std::filesystem::current_path(disk_error);
+    if (disk_error) return Result<Information>::failure(
+        disk_error, "Cannot query current disk", "system.get_system_information");
+    if (!disk_path.root_path().empty()) disk_path = disk_path.root_path();
+    const auto disk_space = std::filesystem::space(disk_path, disk_error);
+    if (disk_error) return Result<Information>::failure(
+        disk_error, "Cannot query disk space", "system.get_system_information");
+    result.system_disk.path = disk_path;
+    result.system_disk.total_bytes = disk_space.capacity;
+    result.system_disk.available_bytes = disk_space.available;
+
+#if defined(_WIN32)
+    ULONG address_buffer_size = 15u * 1024u;
+    std::vector<std::uint8_t> address_buffer(address_buffer_size);
+    auto adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(address_buffer.data());
+    constexpr ULONG address_flags = GAA_FLAG_SKIP_ANYCAST |
+        GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    ULONG address_status = ::GetAdaptersAddresses(
+        AF_UNSPEC, address_flags, nullptr, adapters, &address_buffer_size);
+    if (address_status == ERROR_BUFFER_OVERFLOW) {
+        address_buffer.resize(address_buffer_size);
+        adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES *>(address_buffer.data());
+        address_status = ::GetAdaptersAddresses(
+            AF_UNSPEC, address_flags, nullptr, adapters, &address_buffer_size);
+    }
+    if (address_status != NO_ERROR && address_status != ERROR_NO_DATA) {
+        return Result<Information>::failure(
+            std::error_code(static_cast<int>(address_status), std::system_category()),
+            "Cannot query local IP addresses", "system.get_system_information");
+    }
+    for (auto *adapter = adapters; adapter != nullptr; adapter = adapter->Next) {
+        if (adapter->OperStatus != IfOperStatusUp ||
+            adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
+            continue;
+        for (auto *unicast = adapter->FirstUnicastAddress;
+             unicast != nullptr; unicast = unicast->Next) {
+            if (!unicast->Address.lpSockaddr) continue;
+            std::array<wchar_t, INET6_ADDRSTRLEN> address_text{};
+            const auto family = unicast->Address.lpSockaddr->sa_family;
+            const void *address = nullptr;
+            if (family == AF_INET) {
+                address = &reinterpret_cast<sockaddr_in *>(unicast->Address.lpSockaddr)->sin_addr;
+            } else if (family == AF_INET6) {
+                address = &reinterpret_cast<sockaddr_in6 *>(unicast->Address.lpSockaddr)->sin6_addr;
+            } else {
+                continue;
+            }
+            if (!::InetNtopW(family, const_cast<void *>(address), address_text.data(),
+                             static_cast<DWORD>(address_text.size())))
+                continue;
+            const auto ip = path::to_utf8(std::filesystem::path(
+                std::wstring(address_text.data())));
+            if (std::find(result.local_ip_addresses.begin(), result.local_ip_addresses.end(), ip) ==
+                result.local_ip_addresses.end())
+                result.local_ip_addresses.push_back(ip);
+        }
+    }
+#elif defined(__linux__) || defined(__APPLE__)
+    ifaddrs *interfaces = nullptr;
+    if (::getifaddrs(&interfaces) != 0) {
+        return Result<Information>::failure(
+            std::make_error_code(std::errc::io_error), "Cannot query local IP addresses",
+            "system.get_system_information");
+    }
+    for (auto *interface = interfaces; interface != nullptr; interface = interface->ifa_next) {
+        if (!interface->ifa_addr || !(interface->ifa_flags & IFF_UP) ||
+            (interface->ifa_flags & IFF_LOOPBACK))
+            continue;
+        const auto family = interface->ifa_addr->sa_family;
+        std::array<char, INET6_ADDRSTRLEN> address_text{};
+        const void *address = nullptr;
+        if (family == AF_INET) {
+            address = &reinterpret_cast<sockaddr_in *>(interface->ifa_addr)->sin_addr;
+        } else if (family == AF_INET6) {
+            address = &reinterpret_cast<sockaddr_in6 *>(interface->ifa_addr)->sin6_addr;
+        } else {
+            continue;
+        }
+        if (!::inet_ntop(family, address, address_text.data(), address_text.size())) continue;
+        const std::string ip = address_text.data();
+        if (std::find(result.local_ip_addresses.begin(), result.local_ip_addresses.end(), ip) ==
+            result.local_ip_addresses.end())
+            result.local_ip_addresses.push_back(ip);
+    }
+    ::freeifaddrs(interfaces);
+#endif
+
+#if defined(_WIN32)
+    const auto append_gpu = [&](GpuInformation gpu) {
+        if (gpu.name.empty()) return;
+        const auto duplicate = std::find_if(result.gpus.begin(), result.gpus.end(),
+            [&](const GpuInformation &existing) {
+                return existing.name == gpu.name && existing.driver == gpu.driver;
+            });
+        if (duplicate == result.gpus.end()) result.gpus.push_back(std::move(gpu));
+    };
+    for (DWORD index = 0;; ++index) {
+        DISPLAY_DEVICEW device{};
+        device.cb = sizeof(device);
+        if (!::EnumDisplayDevicesW(nullptr, index, &device, 0)) break;
+        if ((device.StateFlags & DISPLAY_DEVICE_MIRRORING_DRIVER) != 0 || device.DeviceString[0] == L'\0')
+            continue;
+        GpuInformation gpu;
+        gpu.name = path::to_utf8(std::filesystem::path(device.DeviceString));
+        append_gpu(std::move(gpu));
+    }
+#elif defined(__linux__)
+    const auto append_gpu = [&](GpuInformation gpu) {
+        if (gpu.name.empty()) return;
+        const auto duplicate = std::find_if(result.gpus.begin(), result.gpus.end(),
+            [&](const GpuInformation &existing) {
+                return existing.name == gpu.name && existing.driver == gpu.driver;
+            });
+        if (duplicate == result.gpus.end()) result.gpus.push_back(std::move(gpu));
+    };
+    const std::filesystem::path drm_path = "/sys/class/drm";
+    std::filesystem::directory_iterator iterator(drm_path, disk_error);
+    if (!disk_error) {
+        for (const auto &entry : iterator) {
+            const auto filename = entry.path().filename().string();
+            if (filename.size() < 5 || filename.compare(0, 4, "card") != 0 ||
+                filename.find_first_not_of("0123456789", 4) != std::string::npos)
+                continue;
+            const auto uevent = path::read_text(entry.path() / "device" / "uevent");
+            if (!uevent) continue;
+            std::string driver;
+            std::string pci_id;
+            std::size_t offset = 0;
+            while (offset < uevent.value().size()) {
+                const auto end = uevent.value().find('\n', offset);
+                const auto line = uevent.value().substr(offset,
+                    (end == std::string::npos ? uevent.value().size() : end) - offset);
+                if (line.rfind("DRIVER=", 0) == 0) driver = line.substr(7);
+                if (line.rfind("PCI_ID=", 0) == 0) pci_id = line.substr(7);
+                if (end == std::string::npos) break;
+                offset = end + 1;
+            }
+            if (!driver.empty() || !pci_id.empty()) {
+                GpuInformation gpu;
+                gpu.driver = std::move(driver);
+                gpu.name = gpu.driver.empty() ? "PCI GPU" : gpu.driver + " GPU";
+                if (!pci_id.empty()) gpu.name += " (" + pci_id + ")";
+                append_gpu(std::move(gpu));
+            }
+        }
+    }
 #endif
     return Result<Information>::success(std::move(result));
 }

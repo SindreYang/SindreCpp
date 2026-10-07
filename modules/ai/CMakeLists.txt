@@ -104,8 +104,24 @@ endif()
 
 if(SINDRE_AI_TRT)
     set(SINDRE_AI_TRT_ENABLED ON)
+    string(TOUPPER "${SINDRE_AI_TRT_RUNTIME}" sindre_ai_trt_runtime)
+    if(NOT sindre_ai_trt_runtime STREQUAL "FULL" AND
+       NOT sindre_ai_trt_runtime STREQUAL "DISPATCH")
+        message(FATAL_ERROR
+            "SINDRE_AI_TRT_RUNTIME must be FULL or DISPATCH")
+    endif()
     find_package(CUDAToolkit ${SINDRE_THIRD_AI_CUDA_MIN_VERSION} REQUIRED)
-    if(TARGET TensorRT::nvinfer AND TARGET TensorRT::nvinfer_plugin AND TARGET TensorRT::nvonnxparser)
+    if(sindre_ai_trt_runtime STREQUAL "DISPATCH")
+        set(sindre_trt_runtime_name nvinfer_dispatch)
+    else()
+        set(sindre_trt_runtime_name nvinfer)
+    endif()
+    if(sindre_ai_trt_runtime STREQUAL "DISPATCH" AND
+       TARGET TensorRT::nvinfer_dispatch AND TARGET TensorRT::nvinfer_plugin)
+        set(sindre_trt_targets TensorRT::nvinfer_dispatch TensorRT::nvinfer_plugin)
+    elseif(sindre_ai_trt_runtime STREQUAL "FULL" AND
+           TARGET TensorRT::nvinfer AND TARGET TensorRT::nvinfer_plugin AND
+           TARGET TensorRT::nvonnxparser)
         set(sindre_trt_targets TensorRT::nvinfer TensorRT::nvinfer_plugin TensorRT::nvonnxparser)
     else()
         find_path(sindre_trt_include NvInfer.h
@@ -113,7 +129,11 @@ if(SINDRE_AI_TRT)
         if(NOT sindre_trt_include)
             message(FATAL_ERROR "Set SINDRE_TENSORRT_ROOT to TensorRT ${SINDRE_THIRD_AI_TENSORRT_MIN_VERSION} or newer")
         endif()
-        foreach(library IN ITEMS nvinfer nvinfer_plugin nvonnxparser)
+        set(sindre_trt_libraries ${sindre_trt_runtime_name} nvinfer_plugin)
+        if(sindre_ai_trt_runtime STREQUAL "FULL")
+            list(APPEND sindre_trt_libraries nvonnxparser)
+        endif()
+        foreach(library IN LISTS sindre_trt_libraries)
             find_library(sindre_${library}_library NAMES ${library} ${library}_10
                 HINTS "${SINDRE_TENSORRT_ROOT}" ENV TENSORRT_ROOT PATH_SUFFIXES lib lib64)
             if(NOT sindre_${library}_library)
@@ -134,12 +154,16 @@ if(SINDRE_AI_TRT)
     target_link_libraries(sindre_ai PUBLIC sindre_ai_tensorrt)
     install(TARGETS sindre_ai_tensorrt EXPORT sindrecppTargets)
     target_compile_definitions(sindre_ai PUBLIC SINDRE_AI_TRT=1)
+    if(sindre_ai_trt_runtime STREQUAL "DISPATCH")
+        target_compile_definitions(sindre_ai PRIVATE SINDRE_AI_TRT_DISPATCH=1)
+    endif()
     list(APPEND sindre_ai_runtime_dirs
         "${SINDRE_TENSORRT_ROOT}/lib" "${CUDAToolkit_BIN_DIR}")
 endif()
 
 set(SINDRE_AI_ONNXRUNTIME_BUNDLED "${SINDRE_AI_ONNXRUNTIME_BUNDLED}" PARENT_SCOPE)
 set(SINDRE_AI_TRT_ENABLED "${SINDRE_AI_TRT_ENABLED}" PARENT_SCOPE)
+set(SINDRE_AI_TRT_RUNTIME_DIRS "${sindre_ai_runtime_dirs}" PARENT_SCOPE)
 
 if(WIN32 AND sindre_ai_runtime_dirs)
     list(REMOVE_DUPLICATES sindre_ai_runtime_dirs)

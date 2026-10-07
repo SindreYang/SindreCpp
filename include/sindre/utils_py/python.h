@@ -5,6 +5,7 @@
 #endif
 
 #include <sindre/general/runtime.h>
+#include <sindre/math.h>
 
 #include <pybind11/embed.h>
 #include <pybind11/numpy.h>
@@ -37,7 +38,6 @@
 
 #if defined(SINDRE_WITH_UTILS_3D)
 #include <sindre/utils_3d/sindremesh.h>
-#include <Eigen/Core>
 #endif
 
 namespace sindre::utils_py {
@@ -188,7 +188,7 @@ template <class T> std::vector<T> vector_from_array(const pybind11::array &input
 // another. Strided, transposed, negative-stride and Fortran arrays are
 // materialized safely.
 template <class Scalar>
-Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>
+sindre::math::Matrix<Scalar>
 matrix_from_array(const pybind11::array &input) {
     if (input.ndim() != 2)
         throw std::invalid_argument("Expected a two-dimensional NumPy array");
@@ -215,8 +215,7 @@ matrix_from_array(const pybind11::array &input) {
     auto array = Array::ensure(input);
     if (!array)
         throw std::invalid_argument("NumPy array conversion failed");
-    Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> result(array.shape(0),
-                                                                                   array.shape(1));
+    sindre::math::Matrix<Scalar> result(array.shape(0), array.shape(1));
     if (array.size())
         std::copy(array.data(), array.data() + array.size(), result.data());
     if constexpr (std::is_floating_point_v<Scalar>)
@@ -227,12 +226,12 @@ matrix_from_array(const pybind11::array &input) {
 
 template <class Derived>
 pybind11::array_t<typename Derived::Scalar>
-array_from_matrix(const Eigen::MatrixBase<Derived> &matrix) {
+array_from_matrix(const sindre::math::eigen::MatrixBase<Derived> &matrix) {
     using T = typename Derived::Scalar;
     pybind11::array_t<T> out({pybind11::ssize_t(matrix.rows()), pybind11::ssize_t(matrix.cols())});
     auto a = out.template mutable_unchecked<2>();
-    for (Eigen::Index i = 0; i < matrix.rows(); ++i)
-        for (Eigen::Index j = 0; j < matrix.cols(); ++j)
+    for (sindre::math::Index i = 0; i < matrix.rows(); ++i)
+        for (sindre::math::Index j = 0; j < matrix.cols(); ++j)
             a(i, j) = matrix(i, j);
     return out;
 }

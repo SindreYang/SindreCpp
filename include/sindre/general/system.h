@@ -127,16 +127,71 @@ private:
 }
 
 namespace sindre::general::system {
+/// @brief Shell backend used by shell_run().
+enum class ShellBackend {
+    platform_default,
+    cmd,
+    powershell,
+    sh,
+    bash
+};
+
+/// @brief Options for executing a trusted command through the platform shell.
+struct ShellOptions {
+    std::filesystem::path working_directory;
+    bool capture_output = true;
+    ShellBackend backend = ShellBackend::platform_default;
+    // Timeout in whole seconds. Zero disables the timeout.
+    int timeout_seconds = 30;
+    CancellationToken token{};
+    std::size_t maximum_output_bytes = 16u * 1024u * 1024u;
+};
+
+/// @brief Result of a completed shell command.
+struct ShellResult {
+    int exit_code = -1;
+    bool signaled = false;
+    std::string stdout_text;
+    std::string stderr_text;
+};
+
+/// @brief Execute a trusted command through the platform shell.
+///
+/// The default backend is `cmd.exe` on Windows and `/bin/bash` on Linux/WSL;
+/// `ShellOptions::backend` can select another supported backend. Do not
+/// concatenate untrusted input into `command`; use a validated argument
+/// strategy for untrusted values. A non-zero exit code is a completed command
+/// and is returned in `ShellResult`; startup, timeout and cancellation failures
+/// are returned as `Result` errors.
+Result<ShellResult> shell_run(std::string command, ShellOptions options = {}) noexcept;
+
 Result<std::string> get_environment_variable(std::string_view name) noexcept;
 Result<void> set_environment_variable(std::string_view name, std::string_view value) noexcept;
 Result<void> unset_environment_variable(std::string_view name) noexcept;
 Result<std::filesystem::path> get_executable_path() noexcept;
+struct DiskInformation {
+    std::filesystem::path path;
+    std::uint64_t total_bytes = 0;
+    std::uint64_t available_bytes = 0;
+};
+struct GpuInformation {
+    std::string name;
+    std::string driver;
+};
 struct Information {
     std::string os;
+    std::string os_version;
     std::string architecture;
     std::string compiler;
+    std::string hostname;
+    std::string username;
+    std::string cpu_model;
     std::uint32_t cpu_count = 0;
     std::uint64_t memory_bytes = 0;
+    std::uint64_t available_memory_bytes = 0;
+    std::vector<std::string> local_ip_addresses;
+    DiskInformation system_disk;
+    std::vector<GpuInformation> gpus;
 };
 Result<Information> get_system_information() noexcept;
 }

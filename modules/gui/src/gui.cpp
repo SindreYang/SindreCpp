@@ -107,19 +107,19 @@ void Context::make_current() const noexcept {
 std::vector<std::filesystem::path> default_font_directories() {
     std::vector<std::filesystem::path> result;
 #if defined(_WIN32)
-    if (auto windows = ::sindre::general::system::environment("WINDIR"))
+    if (auto windows = ::sindre::general::system::get_environment_variable("WINDIR"))
         result.emplace_back(std::filesystem::path(windows.value()) / "Fonts");
-    if (auto local = ::sindre::general::system::environment("LOCALAPPDATA"))
+    if (auto local = ::sindre::general::system::get_environment_variable("LOCALAPPDATA"))
         result.emplace_back(std::filesystem::path(local.value()) / "Microsoft/Windows/Fonts");
 #elif defined(__APPLE__)
     result.emplace_back("/System/Library/Fonts");
     result.emplace_back("/Library/Fonts");
-    if (auto home = ::sindre::general::system::environment("HOME"))
+    if (auto home = ::sindre::general::system::get_environment_variable("HOME"))
         result.emplace_back(std::filesystem::path(home.value()) / "Library/Fonts");
 #else
     result.emplace_back("/usr/share/fonts");
     result.emplace_back("/usr/local/share/fonts");
-    if (auto home = ::sindre::general::system::environment("HOME")) {
+    if (auto home = ::sindre::general::system::get_environment_variable("HOME")) {
         result.emplace_back(std::filesystem::path(home.value()) / ".fonts");
         result.emplace_back(std::filesystem::path(home.value()) / ".local/share/fonts");
     }
@@ -128,7 +128,9 @@ std::vector<std::filesystem::path> default_font_directories() {
 }
 
 ::sindre::general::Result<FontInfo> load_font(const FontConfig &config) noexcept {
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         std::vector<std::filesystem::path> directories = config.search_directories;
         if (directories.empty()) directories = default_font_directories();
         const std::vector<std::string> candidates{
@@ -166,6 +168,7 @@ std::vector<std::filesystem::path> default_font_directories() {
             "No CJK font was found", "gui.font");
         return ::sindre::general::Result<FontInfo>::success(
             {ImGui::GetIO().Fonts->AddFontDefault(), {}, true});
+#if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::exception &error) {
         return ::sindre::general::Result<FontInfo>::failure(
             std::make_error_code(std::errc::io_error), error.what(), "gui.font");
@@ -174,6 +177,7 @@ std::vector<std::filesystem::path> default_font_directories() {
             std::make_error_code(std::errc::io_error),
             "Unknown font loading failure", "gui.font");
     }
+#endif
 }
 
 void apply_dark_theme(float scale) {
@@ -220,7 +224,9 @@ const std::uint8_t *ImageAsset::data() const noexcept {
     if (!decoded) return ::sindre::general::Result<ImageAsset>::failure(
         std::make_error_code(std::errc::invalid_argument),
         stbi_failure_reason() ? stbi_failure_reason() : "Invalid image data", "gui.image");
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         auto release = ::sindre::general::scope_guard([&] { stbi_image_free(decoded); });
         ImageAsset result;
         result.width = width;
@@ -231,6 +237,7 @@ const std::uint8_t *ImageAsset::data() const noexcept {
         release.dismiss();
         stbi_image_free(decoded);
         return ::sindre::general::Result<ImageAsset>::success(std::move(result));
+#if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::exception &error) {
         return ::sindre::general::Result<ImageAsset>::failure(
             std::make_error_code(std::errc::io_error), error.what(), "gui.image");
@@ -239,6 +246,7 @@ const std::uint8_t *ImageAsset::data() const noexcept {
             std::make_error_code(std::errc::io_error),
             "Unknown image decoding failure", "gui.image");
     }
+#endif
 #else
     (void)encoded;
     (void)requested_channels;
@@ -250,13 +258,16 @@ const std::uint8_t *ImageAsset::data() const noexcept {
 
 ::sindre::general::Result<ImageAsset> ImageAsset::load(
     const std::filesystem::path &path, int requested_channels) noexcept {
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         std::ifstream input(path, std::ios::binary);
         if (!input) return ::sindre::general::Result<ImageAsset>::failure(
             std::make_error_code(std::errc::no_such_file_or_directory),
             "Cannot open image file", "gui.image");
         std::vector<std::uint8_t> encoded((std::istreambuf_iterator<char>(input)), {});
         return load_memory(encoded, requested_channels);
+#if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::exception &error) {
         return ::sindre::general::Result<ImageAsset>::failure(
             std::make_error_code(std::errc::io_error), error.what(), "gui.image");
@@ -265,6 +276,7 @@ const std::uint8_t *ImageAsset::data() const noexcept {
             std::make_error_code(std::errc::io_error),
             "Unknown image loading failure", "gui.image");
     }
+#endif
 }
 
 ::sindre::general::Result<ImageAsset> load_image(
@@ -282,8 +294,11 @@ const std::uint8_t *ImageAsset::data() const noexcept {
     if (!upload) return ::sindre::general::Result<TextureHandle>::failure(
         std::make_error_code(std::errc::function_not_supported),
         "No texture uploader is configured", "gui.texture");
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         return upload(image);
+#if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::exception &error) {
         return ::sindre::general::Result<TextureHandle>::failure(
             std::make_error_code(std::errc::io_error), error.what(), "gui.texture");
@@ -292,11 +307,14 @@ const std::uint8_t *ImageAsset::data() const noexcept {
             std::make_error_code(std::errc::io_error),
             "Unknown texture upload failure", "gui.texture");
     }
+#endif
 }
 
 ::sindre::general::Result<std::shared_ptr<const ImageAsset>> ImageCache::load(
     const std::filesystem::path &path) noexcept {
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         const auto key = ::sindre::general::path::to_utf8(path);
         std::lock_guard<std::mutex> lock(mutex_);
         if (auto it = images_.find(key); it != images_.end())
@@ -306,6 +324,7 @@ const std::uint8_t *ImageAsset::data() const noexcept {
         auto stored = std::make_shared<ImageAsset>(std::move(image.value()));
         images_[key] = stored;
         return ::sindre::general::Result<std::shared_ptr<const ImageAsset>>::success(std::move(stored));
+#if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::exception &error) {
         return ::sindre::general::Result<std::shared_ptr<const ImageAsset>>::failure(
             std::make_error_code(std::errc::io_error), error.what(), "gui.image_cache");
@@ -314,6 +333,7 @@ const std::uint8_t *ImageAsset::data() const noexcept {
             std::make_error_code(std::errc::io_error),
             "Unknown image cache failure", "gui.image_cache");
     }
+#endif
 }
 
 void ImageCache::clear() noexcept {
@@ -502,6 +522,134 @@ void GuiApplication::content_scale_callback(GLFWwindow *window, float x, float y
     apply_dark_theme(application->dpi_scale_);
 }
 #endif
+
+namespace {
+
+#if defined(SINDRE_GUI_GLFW_OPENGL3)
+std::shared_ptr<GuiApplication> &global_application() {
+    static std::shared_ptr<GuiApplication> application;
+    return application;
+}
+
+bool &global_frame_active() noexcept {
+    static bool active = false;
+    return active;
+}
+
+std::mutex &global_gui_mutex() noexcept {
+    static std::mutex mutex;
+    return mutex;
+}
+#endif
+
+} // namespace
+
+Frame::Frame(std::shared_ptr<GuiApplication> application) noexcept
+    : application_(std::move(application)), active_(true) {}
+
+Frame::Frame(Frame &&other) noexcept
+    : application_(std::move(other.application_)), active_(other.active_) {
+    other.active_ = false;
+}
+
+Frame &Frame::operator=(Frame &&other) noexcept {
+    if (this != &other) {
+        finish();
+        application_ = std::move(other.application_);
+        active_ = other.active_;
+        other.active_ = false;
+    }
+    return *this;
+}
+
+Frame::~Frame() {
+    finish();
+}
+
+void Frame::finish() noexcept {
+    if (!active_) return;
+#if defined(SINDRE_GUI_GLFW_OPENGL3)
+    if (application_) (void)application_->end_frame();
+    global_frame_active() = false;
+#endif
+    application_.reset();
+    active_ = false;
+}
+
+::sindre::general::Result<void> gui_init(const GuiConfig &config) noexcept {
+#if defined(SINDRE_GUI_GLFW_OPENGL3)
+    std::lock_guard<std::mutex> lock(global_gui_mutex());
+    if (global_application() || global_frame_active()) {
+        return ::sindre::general::Result<void>::failure(
+            std::make_error_code(std::errc::device_or_resource_busy),
+            "GUI is already initialized", "gui.init");
+    }
+    auto created = GuiApplication::create(config);
+    if (!created) return ::sindre::general::Result<void>::failure(created.error());
+    global_application() = std::shared_ptr<GuiApplication>(
+        new GuiApplication(std::move(created.value())));
+    return ::sindre::general::Result<void>::success();
+#else
+    (void)config;
+    return ::sindre::general::Result<void>::failure(
+        std::make_error_code(std::errc::function_not_supported),
+        "GLFW/OpenGL3 GUI backend is disabled", "gui.init");
+#endif
+}
+
+::sindre::general::Result<Frame> gui_begin() noexcept {
+#if defined(SINDRE_GUI_GLFW_OPENGL3)
+    std::lock_guard<std::mutex> lock(global_gui_mutex());
+    if (!global_application()) {
+        return ::sindre::general::Result<Frame>::failure(
+            std::make_error_code(std::errc::operation_not_permitted),
+            "GUI is not initialized", "gui.frame");
+    }
+    if (global_frame_active()) {
+        return ::sindre::general::Result<Frame>::failure(
+            std::make_error_code(std::errc::operation_not_permitted),
+            "The previous GUI frame is still active", "gui.frame");
+    }
+    auto application = global_application();
+    application->poll_events();
+    if (application->should_close()) {
+        return ::sindre::general::Result<Frame>::failure(
+            std::make_error_code(std::errc::operation_canceled),
+            "GUI window is closing", "gui.frame");
+    }
+    auto started = application->begin_frame();
+    if (!started) return ::sindre::general::Result<Frame>::failure(started.error());
+    global_frame_active() = true;
+    return ::sindre::general::Result<Frame>::success(Frame(std::move(application)));
+#else
+    return ::sindre::general::Result<Frame>::failure(
+        std::make_error_code(std::errc::function_not_supported),
+        "GLFW/OpenGL3 GUI backend is disabled", "gui.frame");
+#endif
+}
+
+bool gui_should_close() noexcept {
+#if defined(SINDRE_GUI_GLFW_OPENGL3)
+    std::lock_guard<std::mutex> lock(global_gui_mutex());
+    return !global_application() || global_application()->should_close();
+#else
+    return true;
+#endif
+}
+
+void gui_request_close() noexcept {
+#if defined(SINDRE_GUI_GLFW_OPENGL3)
+    std::lock_guard<std::mutex> lock(global_gui_mutex());
+    if (global_application()) global_application()->request_close();
+#endif
+}
+
+void gui_shutdown() noexcept {
+#if defined(SINDRE_GUI_GLFW_OPENGL3)
+    std::lock_guard<std::mutex> lock(global_gui_mutex());
+    global_application().reset();
+#endif
+}
 
 ScopedId::ScopedId(const char *id) {
     ImGui::PushID(id);

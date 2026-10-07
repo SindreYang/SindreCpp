@@ -82,7 +82,8 @@ using CoreMesh = core::Mesh;
 #define SindreMesh CoreMesh
 // Curves retain vtkPolyData lines rather than being converted to triangle meshes.
 vtkSmartPointer<vtkPolyData>
-slice_plane(const SindreMesh &mesh, const Eigen::Vector3d &origin, const Eigen::Vector3d &normal) {
+slice_plane(const SindreMesh &mesh, const ::sindre::math::Vector3 &origin,
+            const ::sindre::math::Vector3 &normal) {
     if (!origin.allFinite() || !normal.allFinite() || normal.norm() == 0)
         throw std::invalid_argument("Invalid section plane");
     vtkNew<vtkPlane> plane;
@@ -98,8 +99,8 @@ slice_plane(const SindreMesh &mesh, const Eigen::Vector3d &origin, const Eigen::
     result->DeepCopy(lines->GetOutput());
     return result;
 }
-SindreMesh clip_box(const SindreMesh &mesh, const Eigen::Vector3d &lower,
-                           const Eigen::Vector3d &upper, bool inside = true) {
+SindreMesh clip_box(const SindreMesh &mesh, const ::sindre::math::Vector3 &lower,
+                    const ::sindre::math::Vector3 &upper, bool inside = true) {
     if (!lower.allFinite() || !upper.allFinite() || (lower.array() >= upper.array()).any())
         throw std::invalid_argument("Invalid clip bounds");
     vtkNew<vtkBox> box;
@@ -111,8 +112,8 @@ SindreMesh clip_box(const SindreMesh &mesh, const Eigen::Vector3d &lower,
     clip->Update();
     return SindreMesh(clip->GetOutput());
 }
-SindreMesh clip_sphere(const SindreMesh &mesh, const Eigen::Vector3d &center, double radius,
-                              bool inside = true) {
+SindreMesh clip_sphere(const SindreMesh &mesh, const ::sindre::math::Vector3 &center,
+                       double radius, bool inside = true) {
     if (!center.allFinite() || !std::isfinite(radius) || radius <= 0)
         throw std::invalid_argument("Invalid clip sphere");
     vtkNew<vtkSphere> sphere;
@@ -201,8 +202,8 @@ bool backend_available(Backend b) {
 }
 std::vector<Backend> get_available_backends() {
     std::vector<Backend> x;
-    for (auto b : {Backend::meshlib, Backend::cgal, Backend::open3d, Backend::igl, Backend::vcg,
-                   Backend::vtk})
+    for (auto b : {Backend::vtk, Backend::cgal, Backend::meshlib, Backend::open3d, Backend::igl,
+                   Backend::vcg})
         if (backend_available(b))
             x.push_back(b);
     return x;
@@ -211,21 +212,21 @@ std::vector<Backend> get_supported_backends(Operation op) {
     std::vector<Backend> candidates;
     switch (op) {
     case Operation::decimate:
-        candidates = {Backend::meshlib, Backend::cgal, Backend::open3d, Backend::igl, Backend::vtk};
+        candidates = {Backend::vtk, Backend::cgal, Backend::meshlib, Backend::open3d, Backend::igl};
         break;
     case Operation::smooth:
-        candidates = {Backend::meshlib, Backend::open3d, Backend::vtk};
+        candidates = {Backend::vtk, Backend::meshlib, Backend::open3d};
         break;
     case Operation::remesh:
     case Operation::boolean_op:
     case Operation::self_intersections:
-        candidates = {Backend::meshlib, Backend::cgal};
+        candidates = {Backend::cgal, Backend::meshlib};
         break;
     case Operation::fill_holes:
-        candidates = {Backend::meshlib, Backend::cgal, Backend::vtk};
+        candidates = {Backend::vtk, Backend::cgal, Backend::meshlib};
         break;
     case Operation::clean:
-        candidates = {Backend::meshlib, Backend::open3d, Backend::vcg, Backend::vtk};
+        candidates = {Backend::vtk, Backend::meshlib, Backend::open3d, Backend::vcg};
         break;
     case Operation::curvature:
         candidates = {Backend::igl, Backend::vtk};
@@ -725,8 +726,8 @@ SindreMesh subdivide(const SindreMesh &m, int iterations = 1) {
     s->Update();
     return SindreMesh(s->GetOutput());
 }
-SindreMesh cut_plane(const SindreMesh &m, const Eigen::Vector3d &origin,
-                            const Eigen::Vector3d &normal, bool keep_negative = false) {
+SindreMesh cut_plane(const SindreMesh &m, const ::sindre::math::Vector3 &origin,
+                     const ::sindre::math::Vector3 &normal, bool keep_negative = false) {
     detail::require_surface(m);
     if (!origin.allFinite() || !normal.allFinite() || normal.norm() == 0)
         throw std::invalid_argument("Invalid plane");
@@ -773,7 +774,7 @@ Projection project_points(const SindreMesh &m, const Vertices &q) {
     }
     return r;
 }
-Eigen::VectorXd signed_distance(const SindreMesh &m, const Vertices &q) {
+::sindre::math::VectorXd signed_distance(const SindreMesh &m, const Vertices &q) {
     detail::require_surface(m);
     if (!m.is_watertight() || !q.allFinite())
         throw std::invalid_argument(
@@ -814,8 +815,9 @@ Labels vertex_labels_to_face_labels(const Faces &f, const Labels &labels) {
     }
     return out;
 }
-Labels face_labels_to_vertex_labels(const Faces &f, const Labels &labels, Eigen::Index n,
-                                           std::int64_t unused_label = -1) {
+Labels face_labels_to_vertex_labels(const Faces &f, const Labels &labels,
+                                    ::sindre::math::Index n,
+                                    std::int64_t unused_label = -1) {
     if (n < 0 || labels.size() != f.rows())
         throw std::invalid_argument("Label shape mismatch");
     std::vector<std::map<std::int64_t, int>> counts(n);
@@ -867,7 +869,8 @@ Matrix get_gaussian_heatmap(const Vertices &points, const Vertices &keys, double
     }
     return h;
 }
-Eigen::VectorXd get_curvature(const SindreMesh &m, Backend requested = Backend::automatic) {
+::sindre::math::VectorXd get_curvature(const SindreMesh &m,
+                                       Backend requested = Backend::automatic) {
     detail::require_surface(m);
     [[maybe_unused]] const auto b = get_backend(Operation::curvature, requested);
 #if defined(SINDRE_UTILS_3D_IGL)
@@ -920,9 +923,9 @@ struct Registration {
     double rmse;
 };
 Registration register_icp([[maybe_unused]] const Vertices &source,
-                                 [[maybe_unused]] const Vertices &target,
-                                 double max_distance, int iterations = 50,
-                                 const Eigen::Matrix4d &initial = Eigen::Matrix4d::Identity()) {
+                           [[maybe_unused]] const Vertices &target,
+                           double max_distance, int iterations = 50,
+                           const ::sindre::math::Matrix4 &initial) {
     detail::positive(max_distance, "max_distance");
     if (iterations < 1 || !initial.allFinite())
         throw std::invalid_argument("Invalid ICP options");

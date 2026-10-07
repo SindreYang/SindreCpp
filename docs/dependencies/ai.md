@@ -25,6 +25,11 @@ can otherwise be loaded before the package runtime and report an older API.
 TensorRT is intentionally not fetched automatically: it is a large binary SDK
 and must match the host compiler, GPU driver, CUDA and cuDNN.
 The AI module copies discovered Windows runtime DLLs beside its executables.
+For version-compatible plans, TensorRT may embed its lean runtime. To reduce
+deployment duplication, build with `version_compatible` plus
+`exclude_lean_runtime` and load the matching external lean runtime through
+`LoadOptions::lean_runtime_path`; the lean runtime must be deployed and
+version-pinned with the engine package.
 
 AI does not depend on `utils_py`, Python or NumPy. The SDK headers are consumed
 only by `modules/ai/src/*.cpp`; consumers link `sindre::ai` and include only

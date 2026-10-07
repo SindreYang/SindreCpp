@@ -1,7 +1,7 @@
 # sindrecpp 文档
 
 这里是 sindrecpp 的文档入口。sindrecpp 是一个以 C++17 为基础、以 `General`
-为公共基础层的跨平台能力库；其他模块可以依赖或反哺 General，但不会把第三方库
+和 `Math` 为公共基础层的跨平台能力库；其他模块可以依赖或反哺这两个基础模块，但不会把第三方库
 直接暴露成项目的核心概念。
 
 如果你是第一次使用，先看下面的“按目的选择”；如果你已经确定模块，再直接进入
@@ -13,6 +13,7 @@
 | --- | --- |
 | 快速构建、运行示例 | [示例与构建指南](guides/examples.md) |
 | 使用通用能力 | [General 模块](modules/general.md) → [General 依赖](dependencies/general.md) |
+| 使用矩阵、数组或 Eigen 互操作 | [Math 模块](modules/math.md) → [Math 依赖](dependencies/math.md) |
 | 接入 ONNX Runtime / TensorRT | [AI 模块](modules/ai.md) → [推理指南](guides/inference.md) → [AI 依赖](dependencies/ai.md) |
 | 处理图像 | [Utils_2d 模块](modules/utils_2d.md) → [Utils_2d 依赖](dependencies/utils_2d.md) |
 | 处理网格、VTK 或显示 | [Utils_3d 模块](modules/utils_3d.md) → [网格指南](guides/mesh.md) → [VTK 指南](guides/vtk.md) |
@@ -24,13 +25,14 @@
 | CMake 选项 | Target | 公共入口 | 能力范围 |
 | --- | --- | --- | --- |
 | `SINDRE_WITH_GENERAL` | `sindre::general` | `sindre/general.h` | Result/Error、字符串、JSON、配置、文件、网络、运行时和系统能力 |
+| `SINDRE_WITH_MATH` | `sindre::math` | `sindre/math.h` | Eigen 行主序类型、Quaternion、Transform3 和固定 OpenBLAS 后端 |
 | `SINDRE_WITH_UTILS_PY` | `sindre::utils_py` | `sindre/utils_py.h` | Python、NumPy、网格数据交换 |
 | `SINDRE_WITH_GUI` | `sindre::gui` | `sindre/gui.h` | ImGui、GLFW/OpenGL3、字体、图片和 GUI 辅助 |
 | `SINDRE_WITH_UTILS_2D` | `sindre::utils_2d` | `sindre/utils_2d.h` | OpenCV 图像读取、预处理和 Tensor 转换 |
-| `SINDRE_WITH_UTILS_3D` | `sindre::utils_3d` | `sindre/utils_3d.h` | VTK、SindreMesh、Eigen 和几何后端 |
+| `SINDRE_WITH_UTILS_3D` | `sindre::utils_3d` | `sindre/utils_3d.h` | VTK、SindreMesh、Math 和几何后端 |
 | `SINDRE_WITH_AI` | `sindre::ai` | `sindre/ai.h` | Tensor、执行流水线、ONNX Runtime、TensorRT |
 
-General 和 Eigen 数据桥默认启用，其余领域模块默认关闭。各模块的 target、开关、
+General 和 Math 默认启用，其余领域模块默认关闭。各模块的 target、开关、
 公共头文件和测试入口见 [`modules/`](modules/)；第三方 SDK、版本和发现方式见
 [`dependencies.md`](dependencies.md)。
 

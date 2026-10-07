@@ -8,6 +8,7 @@
 #include <vtkTriangleFilter.h>
 
 using namespace sindre::utils_3d;
+namespace math = sindre::math;
 static void check(bool condition, const char *message) {
     if (!condition)
         throw std::runtime_error(message);
@@ -36,10 +37,10 @@ int main() {
         check(fluent.nfaces() == 4 && fluent.vertex_normals().rows() == 4,
               "SindreMesh fluent workflow");
         SindreMesh empty_mesh;
-        empty_mesh.shift_xyz(Eigen::Vector3d::Ones());
+        empty_mesh.shift_xyz(math::Vector3::Ones());
         check(empty_mesh.empty() && empty_mesh.vertex_normals().rows() == 0,
               "Empty mesh transformations must be safe");
-        check(mesh.dimensions().isApprox(Eigen::Vector3d::Ones()), "Mesh bounds");
+        check(mesh.dimensions().isApprox(math::Vector3::Ones()), "Mesh bounds");
         auto movable = mesh.clone();
         auto moved = std::move(movable);
         check(movable.empty() && moved.vertices().isApprox(v),
@@ -67,16 +68,16 @@ int main() {
         auto pipeline = moved.pipeline_source();
         filter->SetInputConnection(pipeline->GetOutputPort());
         filter->Update();
-        moved.shift_xyz(Eigen::Vector3d::Ones());
+        moved.shift_xyz(math::Vector3::Ones());
         check(filter->GetOutput()->GetNumberOfPoints() == 4, "Caller-owned pipeline source");
         check(append_meshes({mesh, mesh}).nfaces() == 8, "Append meshes");
         rejects([&] { (void)append_meshes({mesh}, true, -1); });
-        check(slice_plane(mesh, Eigen::Vector3d(.2, 0, 0), Eigen::Vector3d::UnitX())
+        check(slice_plane(mesh, math::Vector3(.2, 0, 0), math::Vector3::UnitX())
                       ->GetNumberOfLines() > 0,
               "Plane section curves");
-        check(clip_box(mesh, Eigen::Vector3d(-1, -1, -1), Eigen::Vector3d(2, 2, 2)).nfaces() == 4,
+        check(clip_box(mesh, math::Vector3(-1, -1, -1), math::Vector3(2, 2, 2)).nfaces() == 4,
               "Box clipping");
-        check(clip_sphere(mesh, Eigen::Vector3d::Zero(), 2).nfaces() == 4, "Sphere clipping");
+        check(clip_sphere(mesh, math::Vector3::Zero(), 2).nfaces() == 4, "Sphere clipping");
         check(mesh.feature_edges(20)->GetNumberOfLines() > 0, "Sharp feature edges");
         check(mesh.npoints() == 4 && mesh.nfaces() == 4, "Mesh size");
         check(mesh.is_watertight() && mesh.get_boundary().empty(), "Closed tetrahedron");
@@ -84,7 +85,7 @@ int main() {
         check(mesh.get_curvature().allFinite() && mesh.get_curvature(false).allFinite(),
               "Mean/Gaussian curvature");
         check(mesh.get_face_adj_list()[0].size() == 3, "Face adjacency");
-        check((mesh.faces_barycentre().row(0) - Eigen::RowVector3d(1. / 3, 1. / 3, 0)).norm() <
+        check((mesh.faces_barycentre().row(0) - math::eigen::RowVector3d(1. / 3, 1. / 3, 0)).norm() <
                   1e-12,
               "Face center");
         check(std::abs(mesh.faces_area()[0] - .5) < 1e-12, "Area");
@@ -114,7 +115,7 @@ int main() {
         check(mesh.check().edge_closed && mesh.check().unused_vertices == 0, "Geometry report");
         check(std::abs(mesh.signed_volume() - 1. / 6) < 1e-12, "Signed volume");
         auto copy = mesh.clone();
-        copy.shift_xyz(Eigen::Vector3d(2, 3, 4));
+        copy.shift_xyz(math::Vector3(2, 3, 4));
         check(mesh.vertices().isApprox(v), "Clone must not mutate source");
         check(copy.get_vertex_labels() == labels, "Transforms preserve labels");
         auto transform = get_normalize(mesh).transform;
@@ -136,7 +137,7 @@ int main() {
         smoothing.backend = Backend::vtk;
         check(smooth(mesh, smoothing).npoints() == 4, "VTK smoothing");
         check(reverse_faces(mesh).nfaces() == 4, "Reverse winding");
-        check(cut_plane(mesh, Eigen::Vector3d(.2, 0, 0), Eigen::Vector3d::UnitX()).nfaces() > 0,
+        check(cut_plane(mesh, math::Vector3(.2, 0, 0), math::Vector3::UnitX()).nfaces() > 0,
               "Plane clipping");
         Faces open_faces = f.topRows(3);
         SindreMesh open(v, open_faces);
@@ -176,7 +177,7 @@ int main() {
             mesh.save(interchange);
             SindreMesh roundtrip(interchange);
             check(roundtrip.nfaces() == 4 &&
-                      roundtrip.dimensions().isApprox(Eigen::Vector3d::Ones()),
+                      roundtrip.dimensions().isApprox(math::Vector3::Ones()),
                   "Mesh interchange geometry");
             std::filesystem::remove(interchange);
         }
@@ -185,12 +186,26 @@ int main() {
         rejects([&] { SindreMesh x(v, bad); });
         rejects([&] { mesh.set_vertex_labels(Labels(2)); });
         rejects([&] { get_gaussian_heatmap(v, v, 0); });
-        rejects([&] { mesh.apply_inv_transform(Eigen::Matrix4d::Zero()); });
+        rejects([&] { mesh.apply_inv_transform(math::Matrix4::Zero()); });
         rejects([&] {
             SindreMesh x;
             x.center();
         });
         rejects([&] { get_backend(Operation::uv, Backend::vtk); });
+        check(get_backend(Operation::decimate) == Backend::vtk,
+              "Automatic decimation must use the verified VTK baseline");
+        check(get_backend(Operation::smooth) == Backend::vtk,
+              "Automatic smoothing must use the verified VTK baseline");
+        check(get_backend(Operation::fill_holes) == Backend::vtk,
+              "Automatic hole filling must use the verified VTK baseline");
+        check(get_backend(Operation::clean) == Backend::vtk,
+              "Automatic cleaning must use the verified VTK baseline");
+#if defined(SINDRE_UTILS_3D_CGAL)
+        check(get_backend(Operation::boolean_op) == Backend::cgal &&
+                  get_backend(Operation::remesh) == Backend::cgal &&
+                  get_backend(Operation::self_intersections) == Backend::cgal,
+              "Automatic topology operations must use the verified CGAL backend");
+#endif
         for (auto backend : get_supported_backends(Operation::decimate)) {
             DecimateOptions o;
             o.target_faces = 3;
@@ -212,7 +227,7 @@ int main() {
             check(clean(mesh, backend).nfaces() == 4, "Backend clean");
         if (!get_supported_backends(Operation::boolean_op).empty()) {
             auto other = mesh.clone();
-            other.shift_xyz(Eigen::Vector3d(.2, .2, .2));
+            other.shift_xyz(math::Vector3(.2, .2, .2));
             for (auto backend : get_supported_backends(Operation::boolean_op)) {
                 auto result = boolean_mesh(mesh, other, BooleanOperation::intersect, backend);
                 check(result.nfaces() > 0 && result.is_watertight(), "Boolean intersection");
@@ -227,7 +242,7 @@ int main() {
         }
 #if defined(SINDRE_UTILS_3D_OPEN3D)
         auto icp = register_icp(v, v, .5);
-        check(icp.transform.isApprox(Eigen::Matrix4d::Identity(), 1e-6) && icp.fitness > .99,
+        check(icp.transform.isApprox(math::Matrix4::Identity(), 1e-6) && icp.fitness > .99,
               "ICP identity");
         Vertices open3d_vertices(8, 3);
         open3d_vertices << 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0,

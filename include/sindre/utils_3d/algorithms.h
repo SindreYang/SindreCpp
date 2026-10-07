@@ -21,12 +21,13 @@ using Labels = core::Labels;
 using CoreMesh = core::Mesh;
 
 /// @brief 使用平面切割网格并返回 VTK 数据对象。
-vtkSmartPointer<vtkPolyData> slice_plane(const CoreMesh &mesh, const Eigen::Vector3d &origin,
-                                         const Eigen::Vector3d &normal);
+vtkSmartPointer<vtkPolyData> slice_plane(const CoreMesh &mesh,
+                                         const ::sindre::math::Vector3 &origin,
+                                         const ::sindre::math::Vector3 &normal);
 /// @brief 按轴对齐盒裁剪网格。
-CoreMesh clip_box(const CoreMesh &mesh, const Eigen::Vector3d &lower,
-                  const Eigen::Vector3d &upper, bool inside = true);
-CoreMesh clip_sphere(const CoreMesh &mesh, const Eigen::Vector3d &center, double radius,
+CoreMesh clip_box(const CoreMesh &mesh, const ::sindre::math::Vector3 &lower,
+                  const ::sindre::math::Vector3 &upper, bool inside = true);
+CoreMesh clip_sphere(const CoreMesh &mesh, const ::sindre::math::Vector3 &center, double radius,
                      bool inside = true);
 CoreMesh append_meshes(const std::vector<CoreMesh> &meshes, bool merge_points = false,
                        double tolerance = 0);
@@ -84,42 +85,45 @@ CoreMesh clean(const CoreMesh &mesh, Backend requested = Backend::automatic);
 CoreMesh fix_mesh(const CoreMesh &mesh, bool close_holes = true,
                   Backend backend = Backend::automatic);
 CoreMesh subdivide(const CoreMesh &mesh, int iterations = 1);
-CoreMesh cut_plane(const CoreMesh &mesh, const Eigen::Vector3d &origin,
-                   const Eigen::Vector3d &normal, bool keep_negative = false);
+CoreMesh cut_plane(const CoreMesh &mesh, const ::sindre::math::Vector3 &origin,
+                   const ::sindre::math::Vector3 &normal, bool keep_negative = false);
 CoreMesh reverse_faces(const CoreMesh &mesh);
 
 struct Projection {
     Vertices points;
-    Eigen::VectorXd distances;
+    ::sindre::math::VectorXd distances;
     Labels face_ids;
 };
 Projection project_points(const CoreMesh &mesh, const Vertices &query);
-Eigen::VectorXd signed_distance(const CoreMesh &mesh, const Vertices &query);
+::sindre::math::VectorXd signed_distance(const CoreMesh &mesh, const Vertices &query);
 Labels labels_mapping(const Vertices &old_vertices, const Vertices &new_vertices,
                       const Labels &old_labels);
 Labels vertex_labels_to_face_labels(const Faces &faces, const Labels &labels);
-Labels face_labels_to_vertex_labels(const Faces &faces, const Labels &labels, Eigen::Index n,
+Labels face_labels_to_vertex_labels(const Faces &faces, const Labels &labels,
+                                    ::sindre::math::Index n,
                                     std::int64_t unused_label = -1);
 
 struct Normalization {
-    Eigen::Vector3d center;
+    ::sindre::math::Vector3 center;
     double scale;
-    Eigen::Matrix4d transform;
+    ::sindre::math::Matrix4 transform;
 };
 Normalization get_normalize(const CoreMesh &mesh);
 Matrix get_gaussian_heatmap(const Vertices &points, const Vertices &keys, double sigma = .5,
                             bool normalize = false);
-Eigen::VectorXd get_curvature(const CoreMesh &mesh, Backend requested = Backend::automatic);
+::sindre::math::VectorXd get_curvature(const CoreMesh &mesh,
+                                       Backend requested = Backend::automatic);
 Matrix get_uv(const CoreMesh &mesh);
 
 struct Registration {
-    Eigen::Matrix4d transform;
+    ::sindre::math::Matrix4 transform;
     double fitness;
     double rmse;
 };
 Registration register_icp(const Vertices &source, const Vertices &target, double max_distance,
                           int iterations = 50,
-                          const Eigen::Matrix4d &initial = Eigen::Matrix4d::Identity());
+                          const ::sindre::math::Matrix4 &initial =
+                              ::sindre::math::Matrix4::Identity());
 Vertices sample(const CoreMesh &mesh, std::size_t count);
 CoreMesh reconstruct_poisson(const Vertices &points, const Vertices &normals,
                               std::size_t depth = 8);

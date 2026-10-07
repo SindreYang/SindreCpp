@@ -8,7 +8,7 @@
 
 - 公共头文件唯一位置：`include/sindre/`。
 - 模块实现和测试位置：`modules/<module>/{src,tests,CMakeLists.txt}`。
-- 模块公共 target：`sindre::general`、`sindre::utils_py`、`sindre::ai`、
+- 模块公共 target：`sindre::general`、`sindre::math`、`sindre::utils_py`、`sindre::ai`、
   `sindre::gui`、`sindre::utils_2d`、`sindre::utils_3d`。
 - 项目文档唯一位置：`docs/`，分为 `guides/`、`modules/`、`dependencies/`、
   `development/`；代码目录不放 README 或模块文档。
@@ -27,7 +27,9 @@ target 或 catch-all 聚合 target。项目自己的头文件统一使用 `.h`�
 - 可选依赖只通过所属模块的 CMake target 传递。
 - AI、并发和异步接口不得丢失取消、超时/截止时间、重试和进度语义。
 - 公共函数遵循“动词前缀 + 对象”，例如 `get_xxx`、`set_xxx`、`change_xxx`、
-  `try_xxx`；完整前缀表和命名规则见开发指南。
+  `try_xxx`；完整前缀表和命名规则见开发指南。网络入口是简洁例外：统一放在
+  `sindre::general::network`，采用全小写短名称（`parse`、`get`、`post`、
+  `download`、`upload`），失败仍通过 `Result` 表达，不使用 `try_` 前缀。
 
 ## 工作流程
 

@@ -7,7 +7,7 @@
 
 - ai::onnxruntime：ONNX Runtime CPU/CUDA，读取 ONNX。
 - ai::trt：原生 TensorRT，ONNX 转 engine，读取 engine 并直接 enqueueV3。
-- 两者共用 ai::Tensor、ai::Tensors 和 Pipeline，不共享后端运行库依赖。
+- 两者共用 ai::Tensor、ai::TypedTensor、ai::Tensors 和 Pipeline，不共享后端运行库依赖。
 - 不再通过 ORT TensorRT 执行提供器实现 TRT。
 
 仅 general 默认开启。AI 默认关闭；启用 AI 后默认 ONNX Runtime，默认编译和运行 CPU。
@@ -80,7 +80,7 @@ trt::convert_onnx("model.onnx", "model.engine", build);
 
 | 参数 | 意义 |
 | --- | --- |
-| fp16 / tf32 | 内部低精度策略；公共便利接口仍是 float32 I/O |
+| fp16 / tf32 | 内部低精度策略；I/O 精度以 engine 和 `TypedTensor` 为准 |
 | workspace_bytes | builder workspace 上限，不是总显存限制 |
 | optimization_level | 0..5；较高等级增加构建成本，不保证每个模型更快 |
 | max_aux_streams | TensorRT 辅助 stream 上限 |
@@ -131,10 +131,10 @@ Pending 可移动到其他线程，持有共享引擎资源；析构会等待 st
 不是随手销毁就取消任务。引擎不可在工作未完成时被释放。
 
 首版 native TRT 便利接口限制：
-- 线性、device、dense float32 I/O；
+- 线性、device、dense I/O；支持 float32、float16、int8、int32 和 bool8；
 - 不接受 shape tensor 输入；
 - 输出尺寸必须能从输入形状推导，不支持数据依赖输出分配；
-- 标量支持，零元素不支持；INT8/FP16 I/O 等需自定义原生实现；
+- 标量支持，零元素不支持；不支持的 TensorRT 数据类型仍需自定义原生实现；
 - 一个构建 profile，加载可选 engine 中指定 profile。
 - TRT 10.11+ API；TensorRT 11+ 尚未支持，不假设已删除 API 仍可用。
 

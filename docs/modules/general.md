@@ -11,7 +11,7 @@ General 对外只提供七个稳定入口，根聚合头 `sindre/general.h` 会�
 | 头文件 | 能力 |
 | --- | --- |
 | `sindre/general/core.h` | `Result`、`Error`、版本、范围、作用域清理、编码和 RLE |
-| `sindre/general/system.h` | 路径、文件、目录、`glob`、文件监控、临时文件、环境、系统信息、JSON 配置、通知、托盘、剪切板和自启动 |
+| `sindre/general/system.h` | 路径、文件、目录、`glob`、文件监控、临时文件、环境、系统信息、JSON 配置、通知、托盘、对话框、文件选择、剪切板和自启动 |
 | `sindre/general/runtime.h` | 线程池、同步/异步任务、取消、超时、进程和动态库 |
 | `sindre/general/cli.h` | CLI 参数定义、解析和类型化访问 |
 | `sindre/general/string.h` | CsString 编码字符串、转换和正则表达式 |
@@ -155,6 +155,46 @@ auto executable = sindre::general::system::get_executable_path();
 sindre::general::system::unset_environment_variable("OLD_SETTING");
 ```
 
+`get_system_information()` 返回 OS 名称和版本、架构、编译器、主机名、当前用户名、
+CPU 型号、逻辑 CPU 数量、物理内存总量与可用内存、非回环本地 IP 地址，以及当前系统卷的总容量和可用容量。`gpus`
+是最佳努力结果：Windows 使用显示适配器枚举，Linux/WSL 使用 DRM/sysfs；驱动未提供
+可识别信息时可能为空，不会伪造 GPU 数据。
+
+Shell 命令通过 `system::shell_run()` 跨平台执行。默认捕获标准输出和错误输出，
+默认超时为 30 秒；每个输出流默认限制为 16 MiB，可通过
+`ShellOptions::maximum_output_bytes` 调整，设为 `0` 表示不限制。命令退出码非零仍
+属于正常完成，启动失败、超时、取消和输出超限才通过 `Result` 返回错误：
+
+```cpp
+#include <sindre/general/system.h>
+#include <iostream>
+
+sindre::general::system::ShellOptions options;
+options.working_directory = "scripts";
+options.timeout_seconds = 10;
+
+auto result = sindre::general::system::shell_run("python build.py", options);
+if (result) {
+    std::cout << result.value().stdout_text;
+    if (result.value().exit_code != 0) {
+        std::cerr << result.value().stderr_text;
+    }
+}
+```
+
+Windows 默认使用 `cmd.exe`，Linux/WSL 默认使用 `/bin/bash`。可通过
+`ShellOptions::backend` 选择 `cmd`、`powershell`、`sh` 或 `bash`；POSIX 环境的
+PowerShell 后端要求安装 `pwsh`。`timeout_seconds` 是整数秒，默认为 30，设置为 `0`
+表示不限制。该接口接收的是可信 Shell 文本，
+不要把未经校验的用户输入直接拼接到命令中。当前 General 没有公开的 argv 进程接口，
+不可信参数应先严格校验，并尽量避免交给 Shell 解释。
+
+不需要自定义参数时可以直接调用：
+
+```cpp
+auto result = sindre::general::system::shell_run("echo hello");
+```
+
 文本文件使用 `path::read_text()` / `path::write_text()`，二进制文件使用
 `path::read_bytes()` / `path::write_bytes()`；二进制接口不执行 UTF-8 校验，适合模型、
 压缩包和网络下载内容。
@@ -255,8 +295,28 @@ if (loaded) loaded.value().apply_environment_overrides("MY_APP");
 
 General 的核心系统实现以 Windows 和 Linux/WSL 为必需平台。macOS 当前在配置阶段被
 拒绝，不提供未经验证的兼容承诺。Linux 使用用户级 systemd service，Windows 使用用户
-Startup 目录脚本。剪切板、通知、托盘和权限提升属于平台能力适配点，当前后端未启用时
-会返回 `std::errc::function_not_supported`，不会伪装成已完成。
+Startup 目录脚本。
+
+桌面快捷能力统一从 `sindre::general::desktop` 使用：Windows 调用 Win32/COM 原生 API；
+Linux 不新增编译期桌面库，而是安全地调用运行时已安装的 `notify-send`、`zenity`、
+`kdialog`、`wl-copy`、`wl-paste`、`xclip`、`xsel`、`pkexec` 和可选的 `yad`。命令不存
+在或当前会话不支持时返回 `function_not_supported`，参数通过 argv 传递，不经过 shell。
+
+```cpp
+using namespace sindre::general::desktop;
+
+auto notification = send_notification("sindre", "任务已完成");
+auto selected = open_file_dialog({}, true);
+auto directory = select_directory_dialog();
+auto copied = set_clipboard_text("中文文本");
+auto message = show_message_box("sindre", "是否继续？", MessageBoxType::question);
+```
+
+`open_file_dialog()`、`save_file_dialog()` 和 `select_directory_dialog()` 返回 UTF-8 安全的
+`std::filesystem::path`；用户取消返回 `operation_canceled`。Linux 托盘只在安装 `yad`
+时提供最小 `start_tray()`/`stop_tray()` 能力，不支持托盘菜单和事件回调。Linux 桌面命令
+不是构建依赖，部署时应由应用检查并提示用户安装。桌面 API 不使用 GTK、Qt、SDL 或
+shell 拼接命令。
 
 日志、诊断和 Crashpad 统一从 `sindre/general/diag.h` 使用：
 

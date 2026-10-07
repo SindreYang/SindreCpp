@@ -13,11 +13,11 @@ foreach(component IN LISTS SINDRE_THIRD_UTILS_2D_OPENCV_COMPONENTS)
     endif()
 endforeach()
 if(_sindre_opencv_targets)
-    target_link_libraries(sindre_utils_2d PUBLIC sindre::general Eigen3::Eigen
+    target_link_libraries(sindre_utils_2d PUBLIC sindre::general
         ${_sindre_opencv_targets})
 else()
     # Older OpenCV package files expose only the legacy absolute library list.
-    target_link_libraries(sindre_utils_2d PUBLIC sindre::general Eigen3::Eigen ${OpenCV_LIBS})
+    target_link_libraries(sindre_utils_2d PUBLIC sindre::general ${OpenCV_LIBS})
 endif()
 target_include_directories(sindre_utils_2d SYSTEM PUBLIC ${OpenCV_INCLUDE_DIRS})
 

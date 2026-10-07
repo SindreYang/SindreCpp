@@ -6,8 +6,8 @@ set(_sindre_package_prefix_dir "${PACKAGE_PREFIX_DIR}")
 
 include(CMakeFindDependencyMacro)
 find_dependency(Threads)
-if(@SINDRE_WITH_EIGEN@)
-    if(@SINDRE_EIGEN_BUNDLED@)
+if(@SINDRE_WITH_MATH@)
+    if(@SINDRE_MATH_EIGEN_BUNDLED@)
         if(NOT TARGET Eigen3::Eigen)
             add_library(Eigen3::Eigen INTERFACE IMPORTED)
             set_target_properties(Eigen3::Eigen PROPERTIES
@@ -17,19 +17,21 @@ if(@SINDRE_WITH_EIGEN@)
         find_dependency(Eigen3 3.4.1 CONFIG)
     endif()
 endif()
-if(@SINDRE_EIGEN_BLAS_ENABLED@)
-    set(BLA_VENDOR "@SINDRE_EIGEN_BLAS_BACKEND@")
+if(@SINDRE_MATH_BLAS_ENABLED@)
+    set(BLA_VENDOR "@SINDRE_MATH_BLAS_BACKEND@")
     if(BLA_VENDOR STREQUAL "OPENBLAS")
-        find_dependency(OpenBLAS CONFIG)
-        if(DEFINED OpenBLAS_INCLUDE_DIRS AND NOT DEFINED BLAS_LIBRARIES)
-            get_filename_component(_sindre_openblas_root
-                "${OpenBLAS_INCLUDE_DIRS}" DIRECTORY)
-            if(EXISTS "${_sindre_openblas_root}/lib/@SINDRE_THIRD_GENERAL_OPENBLAS_IMPORT_LIBRARY@")
-                set(BLAS_LIBRARIES
-                    "${_sindre_openblas_root}/lib/@SINDRE_THIRD_GENERAL_OPENBLAS_IMPORT_LIBRARY@"
-                    CACHE STRING "OpenBLAS import library" FORCE)
-            endif()
+        find_dependency(OpenBLAS @SINDRE_THIRD_MATH_OPENBLAS_VERSION@ EXACT CONFIG)
+        if(NOT DEFINED OpenBLAS_INCLUDE_DIRS)
+            message(FATAL_ERROR "OpenBLAS package did not provide OpenBLAS_INCLUDE_DIRS")
         endif()
+        get_filename_component(_sindre_openblas_root
+            "${OpenBLAS_INCLUDE_DIRS}" DIRECTORY)
+        if(NOT EXISTS "${_sindre_openblas_root}/lib/@SINDRE_THIRD_MATH_OPENBLAS_IMPORT_LIBRARY@")
+            message(FATAL_ERROR "Fixed OpenBLAS import library is missing")
+        endif()
+        set(BLAS_LIBRARIES
+            "${_sindre_openblas_root}/lib/@SINDRE_THIRD_MATH_OPENBLAS_IMPORT_LIBRARY@"
+            CACHE STRING "OpenBLAS import library" FORCE)
     endif()
     find_dependency(BLAS)
 endif()
@@ -52,7 +54,7 @@ if(@SINDRE_WITH_JSON@)
         find_dependency(simdjson CONFIG)
     endif()
 endif()
-if(@SINDRE_WITH_CLI@ AND NOT @SINDRE_ARGPARSE_BUNDLED@)
+if(@SINDRE_CLI_USE_ARGPARSE@ AND NOT @SINDRE_ARGPARSE_BUNDLED@)
     find_dependency(argparse CONFIG)
 endif()
 if(@SINDRE_WITH_ZLIB@)
@@ -69,7 +71,35 @@ if(@SINDRE_WITH_UTILS_3D@)
         find_dependency(CGAL @SINDRE_THIRD_UTILS_3D_CGAL_MIN_VERSION@ CONFIG)
     endif()
     if(@SINDRE_UTILS_3D_MESHLIB@)
-        find_dependency(meshlib CONFIG)
+        # The official Windows SDK is distributed as headers plus DLL/import
+        # libraries and has no package config. Prefer an installed package, then
+        # reconstruct the imported target from SINDRE_MESHLIB_ROOT.
+        find_package(meshlib CONFIG QUIET)
+        if(NOT TARGET MeshLib::MRMesh AND NOT TARGET MRMesh)
+            find_path(_sindre_meshlib_include
+                MRMesh/MRMesh.h
+                HINTS "${SINDRE_MESHLIB_ROOT}" ENV SINDRE_MESHLIB_ROOT
+                PATH_SUFFIXES include)
+            find_library(_sindre_meshlib_import
+                NAMES MRMesh
+                HINTS "${SINDRE_MESHLIB_ROOT}" ENV SINDRE_MESHLIB_ROOT
+                PATH_SUFFIXES lib/Release lib)
+            find_file(_sindre_meshlib_runtime
+                NAMES MRMesh.dll
+                HINTS "${SINDRE_MESHLIB_ROOT}" ENV SINDRE_MESHLIB_ROOT
+                PATH_SUFFIXES app/Release bin)
+            if(NOT _sindre_meshlib_include OR NOT _sindre_meshlib_import OR
+               NOT _sindre_meshlib_runtime)
+                message(FATAL_ERROR
+                    "sindrecpp MeshLib support requires a MeshLib package target "
+                    "or SINDRE_MESHLIB_ROOT pointing to the official extracted SDK")
+            endif()
+            add_library(MeshLib::MRMesh SHARED IMPORTED)
+            set_target_properties(MeshLib::MRMesh PROPERTIES
+                IMPORTED_IMPLIB "${_sindre_meshlib_import}"
+                IMPORTED_LOCATION "${_sindre_meshlib_runtime}"
+                INTERFACE_INCLUDE_DIRECTORIES "${_sindre_meshlib_include}")
+        endif()
     endif()
     if(@SINDRE_UTILS_3D_OPEN3D@)
         find_dependency(Open3D CONFIG)
@@ -82,7 +112,7 @@ if(@SINDRE_WITH_UTILS_PY@)
     find_dependency(Python3 3.12 COMPONENTS Interpreter Development.Embed)
     find_dependency(pybind11 CONFIG)
 endif()
-if(@SINDRE_AI_ONNXRUNTIME@)
+if(@SINDRE_WITH_AI@ AND @SINDRE_AI_ONNXRUNTIME@)
     if(@SINDRE_AI_ONNXRUNTIME_BUNDLED@)
         add_library(sindre::ai_onnxruntime_native UNKNOWN IMPORTED)
         set_target_properties(sindre::ai_onnxruntime_native PROPERTIES
@@ -104,36 +134,57 @@ if(@SINDRE_AI_ONNXRUNTIME@)
             INTERFACE_LINK_LIBRARIES "${_sindre_onnxruntime_target}")
     endif()
 endif()
-if(@SINDRE_AI_TRT_ENABLED@)
+if(@SINDRE_WITH_AI@ AND @SINDRE_AI_TRT@)
     find_dependency(CUDAToolkit @SINDRE_THIRD_AI_CUDA_MIN_VERSION@)
     add_library(sindre::ai_tensorrt_native INTERFACE IMPORTED)
-    if(TARGET TensorRT::nvinfer AND TARGET TensorRT::nvinfer_plugin AND
-       TARGET TensorRT::nvonnxparser)
-        set_target_properties(sindre::ai_tensorrt_native PROPERTIES
-            INTERFACE_LINK_LIBRARIES
-                "TensorRT::nvinfer;TensorRT::nvinfer_plugin;TensorRT::nvonnxparser;CUDA::cudart")
+    if("@SINDRE_AI_TRT_RUNTIME@" STREQUAL "DISPATCH")
+        set(_sindre_tensorrt_runtime_name nvinfer_dispatch)
+        if(TARGET TensorRT::nvinfer_dispatch AND TARGET TensorRT::nvinfer_plugin)
+            set_target_properties(sindre::ai_tensorrt_native PROPERTIES
+                INTERFACE_LINK_LIBRARIES
+                    "TensorRT::nvinfer_dispatch;TensorRT::nvinfer_plugin;CUDA::cudart")
+        endif()
     else()
+        set(_sindre_tensorrt_runtime_name nvinfer)
+        if(TARGET TensorRT::nvinfer AND TARGET TensorRT::nvinfer_plugin AND
+           TARGET TensorRT::nvonnxparser)
+            set_target_properties(sindre::ai_tensorrt_native PROPERTIES
+                INTERFACE_LINK_LIBRARIES
+                    "TensorRT::nvinfer;TensorRT::nvinfer_plugin;TensorRT::nvonnxparser;CUDA::cudart")
+        endif()
+    endif()
+    if(NOT TARGET TensorRT::nvinfer AND NOT TARGET TensorRT::nvinfer_dispatch)
         find_path(_sindre_tensorrt_include NvInfer.h
             HINTS ENV TENSORRT_ROOT ENV SINDRE_TENSORRT_ROOT
             PATH_SUFFIXES include)
-        find_library(_sindre_nvinfer nvinfer nvinfer_10
+        find_library(_sindre_nvinfer_runtime ${_sindre_tensorrt_runtime_name}
+            ${_sindre_tensorrt_runtime_name}_10
             HINTS ENV TENSORRT_ROOT ENV SINDRE_TENSORRT_ROOT
             PATH_SUFFIXES lib lib64)
         find_library(_sindre_nvinfer_plugin nvinfer_plugin
             HINTS ENV TENSORRT_ROOT ENV SINDRE_TENSORRT_ROOT
             PATH_SUFFIXES lib lib64)
-        find_library(_sindre_nvonnxparser nvonnxparser
-            HINTS ENV TENSORRT_ROOT ENV SINDRE_TENSORRT_ROOT
-            PATH_SUFFIXES lib lib64)
-        if(NOT _sindre_tensorrt_include OR NOT _sindre_nvinfer OR
-           NOT _sindre_nvinfer_plugin OR NOT _sindre_nvonnxparser)
+        if("@SINDRE_AI_TRT_RUNTIME@" STREQUAL "FULL")
+            find_library(_sindre_nvonnxparser nvonnxparser
+                HINTS ENV TENSORRT_ROOT ENV SINDRE_TENSORRT_ROOT
+                PATH_SUFFIXES lib lib64)
+        endif()
+        if(NOT _sindre_tensorrt_include OR NOT _sindre_nvinfer_runtime OR
+           NOT _sindre_nvinfer_plugin OR
+           ("@SINDRE_AI_TRT_RUNTIME@" STREQUAL "FULL" AND NOT _sindre_nvonnxparser))
             message(FATAL_ERROR
                 "sindrecpp TensorRT requires TensorRT:: targets or TENSORRT_ROOT")
         endif()
+        if("@SINDRE_AI_TRT_RUNTIME@" STREQUAL "DISPATCH")
+            set(_sindre_tensorrt_libraries
+                "${_sindre_nvinfer_runtime};${_sindre_nvinfer_plugin};CUDA::cudart")
+        else()
+            set(_sindre_tensorrt_libraries
+                "${_sindre_nvinfer_runtime};${_sindre_nvinfer_plugin};${_sindre_nvonnxparser};CUDA::cudart")
+        endif()
         set_target_properties(sindre::ai_tensorrt_native PROPERTIES
             INTERFACE_INCLUDE_DIRECTORIES "${_sindre_tensorrt_include}"
-            INTERFACE_LINK_LIBRARIES
-                "${_sindre_nvinfer};${_sindre_nvinfer_plugin};${_sindre_nvonnxparser};CUDA::cudart")
+            INTERFACE_LINK_LIBRARIES "${_sindre_tensorrt_libraries}")
     endif()
 endif()
 if(@SINDRE_WITH_RE2@)

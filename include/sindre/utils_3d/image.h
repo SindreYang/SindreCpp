@@ -17,16 +17,17 @@ class Image : public Data {
     explicit Image(vtkImageData *image);
     explicit Image(const Data &data);
     Image(const Matrix &values, std::array<int, 3> dimensions,
-          Eigen::Vector3d spacing = Eigen::Vector3d::Ones(),
-          Eigen::Vector3d origin = Eigen::Vector3d::Zero());
+          ::sindre::math::Vector3 spacing = ::sindre::math::Vector3::Ones(),
+          ::sindre::math::Vector3 origin = ::sindre::math::Vector3::Zero());
 
     vtkImageData *image() const;
     std::array<int, 3> dimensions() const;
     std::array<int, 6> extent() const;
-    Eigen::Vector3d spacing() const;
-    Eigen::Vector3d origin() const;
+    ::sindre::math::Vector3 spacing() const;
+    ::sindre::math::Vector3 origin() const;
     Matrix values() const;
-    Image gaussian(Eigen::Vector3d sigma = Eigen::Vector3d::Ones()) const;
+    Image gaussian(::sindre::math::Vector3 sigma =
+                       ::sindre::math::Vector3::Ones()) const;
     Image median(std::array<int, 3> kernel = {3, 3, 3}) const;
     Image threshold(double lower, double upper, double inside = 1, double outside = 0) const;
     Image shift_scale(double shift, double scale) const;
@@ -35,11 +36,11 @@ class Image : public Data {
     Image crop(std::array<int, 6> box, std::array<int, 3> stride = {1, 1, 1}) const;
     Image pad(std::array<int, 6> box, double value = 0) const;
     Image flip(int axis) const;
-    Image resample(Eigen::Vector3d output_spacing,
+    Image resample(::sindre::math::Vector3 output_spacing,
                    ImageInterpolation interpolation = ImageInterpolation::linear) const;
-    Image reslice(const Eigen::Matrix4d &axes, std::array<int, 3> dimensions,
-                  Eigen::Vector3d spacing = Eigen::Vector3d::Ones(),
-                  Eigen::Vector3d origin = Eigen::Vector3d::Zero(),
+    Image reslice(const ::sindre::math::Matrix4 &axes, std::array<int, 3> dimensions,
+                  ::sindre::math::Vector3 spacing = ::sindre::math::Vector3::Ones(),
+                  ::sindre::math::Vector3 origin = ::sindre::math::Vector3::Zero(),
                   ImageInterpolation interpolation = ImageInterpolation::linear) const;
     Image gradient(bool magnitude = false) const;
     Image laplacian() const;

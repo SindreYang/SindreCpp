@@ -107,9 +107,92 @@ int main() {
     CHECK(environment && environment.value() == "中文");
     CHECK(sindre::general::system::unset_environment_variable("SINDRE_SYSTEM_TEST"));
     CHECK(!sindre::general::system::get_environment_variable("SINDRE_SYSTEM_TEST"));
-    CHECK(sindre::general::system::get_system_information());
+    const auto system_information = sindre::general::system::get_system_information();
+    CHECK(system_information && !system_information.value().os.empty() &&
+          !system_information.value().os_version.empty() &&
+          !system_information.value().hostname.empty() &&
+          !system_information.value().username.empty() &&
+          !system_information.value().cpu_model.empty() &&
+          system_information.value().memory_bytes >= system_information.value().available_memory_bytes &&
+          system_information.value().system_disk.total_bytes >=
+              system_information.value().system_disk.available_bytes &&
+          std::all_of(system_information.value().local_ip_addresses.begin(),
+                      system_information.value().local_ip_addresses.end(),
+                      [](const auto &ip) { return !ip.empty(); }));
     const auto executable = sindre::general::system::get_executable_path();
     CHECK(executable && std::filesystem::is_regular_file(executable.value()));
+
+    sindre::general::system::ShellOptions shell_options;
+    shell_options.capture_output = true;
+    const auto shell_result = sindre::general::system::shell_run(
+#if defined(_WIN32)
+        "echo sindre-shell"
+#else
+        "[[ -n sindre-shell ]] && printf sindre-shell"
+#endif
+        , shell_options);
+    CHECK(shell_result && shell_result.value().exit_code == 0 &&
+          shell_result.value().stdout_text.find("sindre-shell") != std::string::npos);
+
+    const auto default_shell_result = sindre::general::system::shell_run(
+#if defined(_WIN32)
+        "echo sindre-default-shell"
+#else
+        "printf sindre-default-shell"
+#endif
+    );
+    CHECK(default_shell_result && default_shell_result.value().exit_code == 0 &&
+          default_shell_result.value().stdout_text.find("sindre-default-shell") != std::string::npos);
+
+#if defined(_WIN32)
+    shell_options.backend = sindre::general::system::ShellBackend::powershell;
+    const auto powershell_result = sindre::general::system::shell_run(
+        "Write-Output sindre-powershell", shell_options);
+    CHECK(powershell_result && powershell_result.value().exit_code == 0 &&
+          powershell_result.value().stdout_text.find("sindre-powershell") != std::string::npos);
+#else
+    shell_options.backend = sindre::general::system::ShellBackend::sh;
+    const auto sh_result = sindre::general::system::shell_run(
+        "printf sindre-sh", shell_options);
+    CHECK(sh_result && sh_result.value().exit_code == 0 &&
+          sh_result.value().stdout_text.find("sindre-sh") != std::string::npos);
+#endif
+    shell_options.backend = sindre::general::system::ShellBackend::platform_default;
+
+    const auto invalid_shell = sindre::general::system::shell_run("");
+    CHECK(!invalid_shell &&
+          invalid_shell.error().code == std::make_error_code(std::errc::invalid_argument));
+
+    shell_options.timeout_seconds = -1;
+    const auto invalid_timeout_shell = sindre::general::system::shell_run("echo invalid", shell_options);
+    CHECK(!invalid_timeout_shell &&
+          invalid_timeout_shell.error().code == std::make_error_code(std::errc::invalid_argument));
+    shell_options.timeout_seconds = 30;
+
+    sindre::general::CancellationSource shell_source;
+    shell_source.cancel();
+    shell_options.token = shell_source.get_token();
+    const auto cancelled_shell = sindre::general::system::shell_run(
+#if defined(_WIN32)
+        "echo cancelled"
+#else
+        "printf cancelled"
+#endif
+        , shell_options);
+    CHECK(!cancelled_shell &&
+          cancelled_shell.error().code == std::make_error_code(std::errc::operation_canceled));
+
+    shell_options.token = {};
+    shell_options.maximum_output_bytes = 1;
+    const auto oversized_shell = sindre::general::system::shell_run(
+#if defined(_WIN32)
+        "echo oversized"
+#else
+        "printf oversized"
+#endif
+        , shell_options);
+    CHECK(!oversized_shell &&
+          oversized_shell.error().code == std::make_error_code(std::errc::value_too_large));
 
     auto temporary = sindre::general::temp::File::create("sindre-system-");
     CHECK(temporary && std::filesystem::is_regular_file(temporary.value().get_path()));

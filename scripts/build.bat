@@ -1,18 +1,15 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-rem Quick Release configure, build, and test for Windows.
-rem Set OPENBLAS_ROOT when the official OpenBLAS package is not already in
-rem CMAKE_PREFIX_PATH, for example:
-rem   set OPENBLAS_ROOT=C:\sdk\OpenBLAS
+rem Windows Release 配置、编译和测试快捷入口。
+rem 如需使用内置 profile 之外的固定 OpenBLAS SDK，可设置：
+rem   set SINDRE_MATH_OPENBLAS_ROOT=C:\sdk\OpenBLAS
 rem   scripts\build.bat
 
 cd /d "%~dp0.."
 if not defined BUILD_DIR set "BUILD_DIR=build"
 
-rem Prefer Ninja when it is available.  Some Windows developer terminals do
-rem not inherit the user's Ninja installation, so fall back to the MSVC
-rem NMake generator instead of failing at CMake configure time.
+rem 优先使用 Ninja；如果当前 Visual Studio 环境没有继承 Ninja，则回退到 NMake。
 set "SINDRE_GENERATOR="
 where ninja >nul 2>&1
 if not errorlevel 1 set "SINDRE_GENERATOR=Ninja"
@@ -49,10 +46,10 @@ if exist "%BUILD_DIR%\CMakeCache.txt" (
 
 echo [sindre] Using generator: %SINDRE_GENERATOR%
 
-if defined OPENBLAS_ROOT (
+if defined SINDRE_MATH_OPENBLAS_ROOT (
     cmake -S . -B "%BUILD_DIR%" -G "%SINDRE_GENERATOR%" -DCMAKE_BUILD_TYPE=Release ^
         -DSINDRE_BUILD_TESTS=ON -DSINDRE_BUILD_BENCHMARKS=ON ^
-        -DSINDRE_BUILD_EXAMPLES=OFF -DCMAKE_PREFIX_PATH="%OPENBLAS_ROOT%" %*
+        -DSINDRE_BUILD_EXAMPLES=OFF -DSINDRE_MATH_OPENBLAS_ROOT="%SINDRE_MATH_OPENBLAS_ROOT%" %*
 ) else (
     cmake -S . -B "%BUILD_DIR%" -G "%SINDRE_GENERATOR%" -DCMAKE_BUILD_TYPE=Release ^
         -DSINDRE_BUILD_TESTS=ON -DSINDRE_BUILD_BENCHMARKS=ON ^

@@ -10,6 +10,6 @@ set(SINDRE_THIRD_UTILS_3D_LIBIGL_PORT_VERSION
 set(SINDRE_THIRD_UTILS_3D_LIBIGL_PACKAGE_VERSION
     "2.4.0" CACHE STRING "libigl CMake package version reported by the validated SDK")
 set(SINDRE_THIRD_UTILS_3D_OPEN3D_VERSION
-    "0.19.0" CACHE STRING "Validated Open3D SDK version")
+    "0.20.0" CACHE STRING "Validated Open3D SDK version")
 set(SINDRE_THIRD_UTILS_3D_MESHLIB_VERSION
     "3.1.4.297" CACHE STRING "Validated MeshLib SDK version")

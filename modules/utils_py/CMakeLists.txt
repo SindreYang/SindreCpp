@@ -22,7 +22,7 @@ target_compile_definitions(sindre_utils_py
     PUBLIC SINDRE_WITH_UTILS_PY=1 SINDRE_UTILS_PY_SHARED=1
     PRIVATE SINDRE_UTILS_PY_BUILD=1)
 target_link_libraries(sindre_utils_py
-    PUBLIC sindre::general pybind11::embed Python3::Python)
+    PUBLIC sindre::general sindre::math pybind11::embed Python3::Python)
 set_target_properties(sindre_utils_py PROPERTIES EXPORT_NAME utils_py)
 sindre_copy_target_runtime_dlls(sindre_utils_py)
 

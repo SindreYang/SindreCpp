@@ -7,11 +7,6 @@ include(FetchContent)
 set(SINDRE_THIRDS_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE PATH
     "sindre third-party dependency registry")
 
-set(SINDRE_THIRD_EIGEN_REPOSITORY
-    "https://gitlab.com/libeigen/eigen.git" CACHE STRING "Eigen repository")
-set(SINDRE_THIRD_EIGEN_TAG
-    "3.4.1" CACHE STRING "Eigen fixed fallback tag")
-
 function(sindre_thirds_declare_git name repository tag)
     if(NOT repository OR NOT tag)
         message(FATAL_ERROR

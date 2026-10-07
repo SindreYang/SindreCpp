@@ -62,13 +62,13 @@ class SindreMesh : public core::Mesh {
     SindreMesh &load(const std::filesystem::path &path);
     void save(const std::filesystem::path &path) const;
     SindreMesh &compute_normals(const MeshNormals &options = {});
-    SindreMesh &apply_transform(const Eigen::Matrix4d &transform);
-    SindreMesh &apply_transform(const Eigen::Matrix3d &transform);
-    SindreMesh &apply_inv_transform(const Eigen::Matrix4d &transform);
-    SindreMesh &shift_xyz(const Eigen::Vector3d &offset);
-    SindreMesh &scale_xyz(const Eigen::Vector3d &scale);
+    SindreMesh &apply_transform(const ::sindre::math::Matrix4 &transform);
+    SindreMesh &apply_transform(const ::sindre::math::Matrix3 &transform);
+    SindreMesh &apply_inv_transform(const ::sindre::math::Matrix4 &transform);
+    SindreMesh &shift_xyz(const ::sindre::math::Vector3 &offset);
+    SindreMesh &scale_xyz(const ::sindre::math::Vector3 &scale);
     SindreMesh &scale_xyz(double scale);
-    SindreMesh &rotate_xyz(const Eigen::Vector3d &degrees);
+    SindreMesh &rotate_xyz(const ::sindre::math::Vector3 &degrees);
     SindreMesh &clean(double tolerance = 0);
     SindreMesh &smooth(const SmoothOptions &options = {});
     SindreMesh &decimate(const DecimateOptions &options = {});
@@ -76,7 +76,8 @@ class SindreMesh : public core::Mesh {
     SindreMesh &fill_holes(Backend backend = Backend::automatic);
     SindreMesh &fix_mesh(bool close_holes = true, Backend backend = Backend::automatic);
     SindreMesh &subdivide(int iterations = 1);
-    SindreMesh &cut_plane(const Eigen::Vector3d &origin, const Eigen::Vector3d &normal,
+    SindreMesh &cut_plane(const ::sindre::math::Vector3 &origin,
+                          const ::sindre::math::Vector3 &normal,
                           bool keep_negative = false);
     SindreMesh &reverse_faces();
     SindreMesh filtered(vtkPolyDataAlgorithm *filter) const;

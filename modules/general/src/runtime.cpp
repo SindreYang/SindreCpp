@@ -3,6 +3,7 @@
 #include <sindre/general/system.h>
 
 #include <cmath>
+#include <cstring>
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -410,11 +411,26 @@ Error failure(std::errc code, std::string message, std::string context = "proces
     SECURITY_ATTRIBUTES security{};
     security.nLength = sizeof(security);
     security.bInheritHandle = TRUE;
-    HANDLE output_read = nullptr, output_write = nullptr;
-    if (options.capture_output && !::CreatePipe(&output_read, &output_write, &security, 0))
-        return ::sindre::general::Result<Output>::failure(
-            failure(std::errc::io_error, "Cannot create process output pipe"));
-    if (output_read) ::SetHandleInformation(output_read, HANDLE_FLAG_INHERIT, 0);
+    HANDLE stdout_read = nullptr, stdout_write = nullptr;
+    HANDLE stderr_read = nullptr, stderr_write = nullptr;
+    if (options.capture_output) {
+        if (!::CreatePipe(&stdout_read, &stdout_write, &security, 0))
+            return ::sindre::general::Result<Output>::failure(
+                failure(std::errc::io_error, "Cannot create process output pipe"));
+        if (!::CreatePipe(&stderr_read, &stderr_write, &security, 0)) {
+            ::CloseHandle(stdout_read); ::CloseHandle(stdout_write);
+            return ::sindre::general::Result<Output>::failure(
+                failure(std::errc::io_error, "Cannot create process error pipe"));
+        }
+        ::SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
+        ::SetHandleInformation(stderr_read, HANDLE_FLAG_INHERIT, 0);
+    }
+    const auto close_capture_handles = [&]() noexcept {
+        if (stdout_read) { ::CloseHandle(stdout_read); stdout_read = nullptr; }
+        if (stdout_write) { ::CloseHandle(stdout_write); stdout_write = nullptr; }
+        if (stderr_read) { ::CloseHandle(stderr_read); stderr_read = nullptr; }
+        if (stderr_write) { ::CloseHandle(stderr_write); stderr_write = nullptr; }
+    };
     std::wstring wide_command;
 #if !defined(SINDRE_NO_EXCEPTIONS)
     try {
@@ -422,8 +438,7 @@ Error failure(std::errc code, std::string message, std::string context = "proces
         const auto length = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, command.data(),
                                                   static_cast<int>(command.size()), nullptr, 0);
         if (length <= 0) {
-            if (output_read) ::CloseHandle(output_read);
-            if (output_write) ::CloseHandle(output_write);
+            close_capture_handles();
             return ::sindre::general::Result<Output>::failure(
                 failure(std::errc::illegal_byte_sequence, "Command is not valid UTF-8"));
         }
@@ -433,8 +448,7 @@ Error failure(std::errc code, std::string message, std::string context = "proces
         wide_command.push_back(L'\0');
 #if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::exception &error) {
-        if (output_read) ::CloseHandle(output_read);
-        if (output_write) ::CloseHandle(output_write);
+        close_capture_handles();
         return ::sindre::general::Result<Output>::failure(
             failure(std::errc::io_error, error.what(), "process.encoding"));
     }
@@ -443,8 +457,8 @@ Error failure(std::errc code, std::string message, std::string context = "proces
     startup.cb = sizeof(startup);
     if (options.capture_output) {
         startup.dwFlags |= STARTF_USESTDHANDLES;
-        startup.hStdOutput = output_write;
-        startup.hStdError = output_write;
+        startup.hStdOutput = stdout_write;
+        startup.hStdError = stderr_write;
         startup.hStdInput = ::GetStdHandle(STD_INPUT_HANDLE);
     }
     PROCESS_INFORMATION process{};
@@ -453,20 +467,68 @@ Error failure(std::errc code, std::string message, std::string context = "proces
     const BOOL created = ::CreateProcessW(nullptr, wide_command.data(), nullptr, nullptr, options.capture_output,
                                           CREATE_NO_WINDOW, nullptr,
                                           directory.empty() ? nullptr : directory.c_str(), &startup, &process);
-    if (output_write) ::CloseHandle(output_write);
+    if (stdout_write) { ::CloseHandle(stdout_write); stdout_write = nullptr; }
+    if (stderr_write) { ::CloseHandle(stderr_write); stderr_write = nullptr; }
     if (!created) {
-        if (output_read) ::CloseHandle(output_read);
+        close_capture_handles();
         return ::sindre::general::Result<Output>::failure(
             failure(std::errc::no_such_process, "Cannot start process"));
     }
+    // A job object makes timeout/cancellation apply to the shell and its
+    // descendants. Some restricted hosts reject job assignment; in that case
+    // retain direct-process behavior rather than failing a valid command.
+    HANDLE job = ::CreateJobObjectW(nullptr, nullptr);
+    if (job) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!::SetInformationJobObject(job, JobObjectExtendedLimitInformation,
+                                       &limits, sizeof(limits)) ||
+            !::AssignProcessToJobObject(job, process.hProcess)) {
+            ::CloseHandle(job);
+            job = nullptr;
+        }
+    }
     Output result;
+    bool output_overflow = false;
+    const auto read_pipe = [&](HANDLE handle, std::string &target) {
+        if (!handle) return;
+        for (;;) {
+            DWORD available = 0;
+            if (!::PeekNamedPipe(handle, nullptr, 0, nullptr, &available, nullptr) || available == 0)
+                return;
+            char buffer[4096];
+            const DWORD requested = std::min<DWORD>(available, sizeof(buffer));
+            DWORD count = 0;
+            if (!::ReadFile(handle, buffer, requested, &count, nullptr) || count == 0) return;
+            if (options.maximum_output_bytes != 0 &&
+                target.size() + static_cast<std::size_t>(count) > options.maximum_output_bytes) {
+                output_overflow = true;
+                return;
+            }
+            target.append(buffer, buffer + count);
+        }
+    };
     const auto started = std::chrono::steady_clock::now();
     for (;;) {
+        if (options.capture_output) {
+            read_pipe(stdout_read, result.stdout_text);
+            read_pipe(stderr_read, result.stderr_text);
+        }
+        if (output_overflow) {
+            ::TerminateProcess(process.hProcess, static_cast<UINT>(ERROR_NOT_ENOUGH_MEMORY));
+            ::WaitForSingleObject(process.hProcess, INFINITE);
+            ::CloseHandle(process.hThread); ::CloseHandle(process.hProcess);
+            if (job) ::CloseHandle(job);
+            close_capture_handles();
+            return ::sindre::general::Result<Output>::failure(
+                failure(std::errc::value_too_large, "Process output exceeded the configured limit"));
+        }
         if (options.token.is_cancelled()) {
             ::TerminateProcess(process.hProcess, static_cast<UINT>(ERROR_CANCELLED));
             ::WaitForSingleObject(process.hProcess, INFINITE);
             ::CloseHandle(process.hThread); ::CloseHandle(process.hProcess);
-            if (output_read) ::CloseHandle(output_read);
+            if (job) ::CloseHandle(job);
+            close_capture_handles();
             return ::sindre::general::Result<Output>::failure(
                 failure(std::errc::operation_canceled, "Process cancelled"));
         }
@@ -474,7 +536,7 @@ Error failure(std::errc code, std::string message, std::string context = "proces
             ::TerminateProcess(process.hProcess, static_cast<UINT>(WAIT_TIMEOUT));
             ::WaitForSingleObject(process.hProcess, INFINITE);
             ::CloseHandle(process.hThread); ::CloseHandle(process.hProcess);
-            if (output_read) ::CloseHandle(output_read);
+            close_capture_handles();
             return ::sindre::general::Result<Output>::failure(
                 failure(std::errc::timed_out, "Process timed out"));
         }
@@ -482,7 +544,8 @@ Error failure(std::errc code, std::string message, std::string context = "proces
         if (state == WAIT_OBJECT_0) break;
         if (state == WAIT_FAILED) {
             ::CloseHandle(process.hThread); ::CloseHandle(process.hProcess);
-            if (output_read) ::CloseHandle(output_read);
+            if (job) ::CloseHandle(job);
+            close_capture_handles();
             return ::sindre::general::Result<Output>::failure(
                 failure(std::errc::io_error, "Cannot wait for process"));
         }
@@ -490,13 +553,18 @@ Error failure(std::errc code, std::string message, std::string context = "proces
     DWORD exit_code = 1;
     ::GetExitCodeProcess(process.hProcess, &exit_code);
     result.exit_code = static_cast<int>(exit_code);
-    if (output_read) {
-        char buffer[4096]; DWORD count = 0;
-        while (::ReadFile(output_read, buffer, sizeof(buffer), &count, nullptr) && count)
-            result.stdout_text.append(buffer, buffer + count);
-        ::CloseHandle(output_read);
+    if (options.capture_output) {
+        read_pipe(stdout_read, result.stdout_text);
+        read_pipe(stderr_read, result.stderr_text);
     }
     ::CloseHandle(process.hThread); ::CloseHandle(process.hProcess);
+    if (job) ::CloseHandle(job);
+    if (output_overflow) {
+        close_capture_handles();
+        return ::sindre::general::Result<Output>::failure(
+            failure(std::errc::value_too_large, "Process output exceeded the configured limit"));
+    }
+    close_capture_handles();
     return ::sindre::general::Result<Output>::success(std::move(result));
 #else
     int output_pipe[2] = {-1, -1};
@@ -515,6 +583,9 @@ Error failure(std::errc code, std::string message, std::string context = "proces
             failure(std::errc::resource_unavailable_try_again, "Cannot fork process"));
     }
     if (child == 0) {
+        // Keep the shell and its descendants in one process group so timeout
+        // and cancellation do not leave grandchildren running in the host.
+        (void)::setpgid(0, 0);
         if (!options.working_directory.empty() &&
             ::chdir(options.working_directory.c_str()) != 0) {
             // 子进程无法返回 Result；通过标准错误和约定退出码把失败传回父进程。
@@ -529,48 +600,83 @@ Error failure(std::errc code, std::string message, std::string context = "proces
             ::close(output_pipe[0]); ::close(output_pipe[1]);
             ::close(error_pipe[0]); ::close(error_pipe[1]);
         }
-        ::execl("/bin/sh", "sh", "-c", command.c_str(), static_cast<char *>(nullptr));
+        const char *shell = options.shell_executable.empty()
+            ? "/bin/sh" : options.shell_executable.c_str();
+        if (std::strchr(shell, '/') != nullptr) {
+            ::execl(shell, shell, "-c", command.c_str(), static_cast<char *>(nullptr));
+        } else {
+            ::execlp(shell, shell, "-c", command.c_str(), static_cast<char *>(nullptr));
+        }
         ::_exit(127);
     }
+    (void)::setpgid(child, child);
+    const auto terminate_process_group = [&]() noexcept {
+        (void)::kill(-child, SIGKILL);
+        (void)::kill(child, SIGKILL);
+    };
     if (options.capture_output) {
         ::close(output_pipe[1]); ::close(error_pipe[1]);
         ::fcntl(output_pipe[0], F_SETFL, O_NONBLOCK); ::fcntl(error_pipe[0], F_SETFL, O_NONBLOCK);
     }
     Output result;
+    bool output_overflow = false;
+    const auto close_capture_pipes = [&]() noexcept {
+        if (output_pipe[0] >= 0) { ::close(output_pipe[0]); output_pipe[0] = -1; }
+        if (error_pipe[0] >= 0) { ::close(error_pipe[0]); error_pipe[0] = -1; }
+    };
+    const auto read_pipe = [&](int descriptor, std::string &target) {
+        if (descriptor < 0) return;
+        char buffer[4096];
+        for (;;) {
+            const auto count = ::read(descriptor, buffer, sizeof(buffer));
+            if (count <= 0) return;
+            if (options.maximum_output_bytes != 0 &&
+                target.size() + static_cast<std::size_t>(count) > options.maximum_output_bytes) {
+                output_overflow = true;
+                return;
+            }
+            target.append(buffer, static_cast<std::size_t>(count));
+        }
+    };
     int status = 0;
     const auto started = std::chrono::steady_clock::now();
     for (;;) {
         if (options.capture_output) {
-            char buffer[4096]; ssize_t count = ::read(output_pipe[0], buffer, sizeof(buffer));
-            if (count > 0) result.stdout_text.append(buffer, buffer + count);
-            count = ::read(error_pipe[0], buffer, sizeof(buffer));
-            if (count > 0) result.stderr_text.append(buffer, buffer + count);
+            read_pipe(output_pipe[0], result.stdout_text);
+            read_pipe(error_pipe[0], result.stderr_text);
+        }
+        if (output_overflow) {
+            terminate_process_group(); ::waitpid(child, &status, 0);
+            close_capture_pipes();
+            return ::sindre::general::Result<Output>::failure(
+                failure(std::errc::value_too_large, "Process output exceeded the configured limit"));
         }
         const auto waited = ::waitpid(child, &status, WNOHANG);
         if (waited == child) break;
         if (waited < 0) {
-            if (options.capture_output) { ::close(output_pipe[0]); ::close(error_pipe[0]); }
+            close_capture_pipes();
             return ::sindre::general::Result<Output>::failure(failure(std::errc::io_error, "Cannot wait for process"));
         }
         if (options.token.is_cancelled()) {
-            ::kill(child, SIGTERM); ::waitpid(child, &status, 0);
-            if (options.capture_output) { ::close(output_pipe[0]); ::close(error_pipe[0]); }
+            terminate_process_group(); ::waitpid(child, &status, 0);
+            close_capture_pipes();
             return ::sindre::general::Result<Output>::failure(failure(std::errc::operation_canceled, "Process cancelled"));
         }
         if (options.timeout.count() > 0 && std::chrono::steady_clock::now() - started >= options.timeout) {
-            ::kill(child, SIGTERM); ::waitpid(child, &status, 0);
-            if (options.capture_output) ::close(output_pipe[0]);
+            terminate_process_group(); ::waitpid(child, &status, 0);
+            close_capture_pipes();
             return ::sindre::general::Result<Output>::failure(failure(std::errc::timed_out, "Process timed out"));
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     if (options.capture_output) {
-        char buffer[4096]; ssize_t count = 0;
-        while ((count = ::read(output_pipe[0], buffer, sizeof(buffer))) > 0)
-            result.stdout_text.append(buffer, buffer + count);
-        while ((count = ::read(error_pipe[0], buffer, sizeof(buffer))) > 0)
-            result.stderr_text.append(buffer, buffer + count);
-        ::close(output_pipe[0]); ::close(error_pipe[0]);
+        read_pipe(output_pipe[0], result.stdout_text);
+        read_pipe(error_pipe[0], result.stderr_text);
+        close_capture_pipes();
+    }
+    if (output_overflow) {
+        return ::sindre::general::Result<Output>::failure(
+            failure(std::errc::value_too_large, "Process output exceeded the configured limit"));
     }
     if (WIFEXITED(status)) result.exit_code = WEXITSTATUS(status);
     else if (WIFSIGNALED(status)) { result.signaled = true; result.exit_code = 128 + WTERMSIG(status); }

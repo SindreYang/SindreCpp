@@ -72,6 +72,9 @@ option(SINDRE_AI_TRT "Enable TensorRT inside AI" OFF)
 option(SINDRE_AI_CUDA "Compile ONNX Runtime CUDA support" OFF)
 option(SINDRE_BUILD_GPU_TESTS "Run TensorRT tests on a real GPU" OFF)
 set(SINDRE_TENSORRT_ROOT "" CACHE PATH "TensorRT 10.x SDK root")
+set(SINDRE_AI_TRT_RUNTIME "FULL" CACHE STRING
+    "TensorRT runtime link mode: FULL or DISPATCH")
+set_property(CACHE SINDRE_AI_TRT_RUNTIME PROPERTY STRINGS FULL DISPATCH)
 set(SINDRE_ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime C/C++ SDK root")
 set(SINDRE_CUDNN_ROOT "" CACHE PATH "cuDNN runtime root")
 set(sindre_bundled_onnxruntime_root

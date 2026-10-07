@@ -68,7 +68,7 @@ int main() {
         check(utils_py::matrix_from_array<double>(column)(1, 1) == 16);
         utils_3d::Matrix x(2, 3);
         x << 1, 2, 3, 4, 5, 6;
-        Eigen::MatrixXd col = x;
+        sindre::math::MatrixXd col = x;
         auto a = utils_py::array_from_matrix(col.transpose());
         check(a.shape(0) == 3 && a.at(2, 1) == 6);
         rejects([&] {

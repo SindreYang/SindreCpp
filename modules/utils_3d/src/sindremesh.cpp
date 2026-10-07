@@ -121,19 +121,19 @@ void SindreMesh::save(const std::filesystem::path &path) const {
 SindreMesh &SindreMesh::compute_normals(const MeshNormals &options) {
     Base::compute_normals(options); return *this;
 }
-SindreMesh &SindreMesh::apply_transform(const Eigen::Matrix4d &transform) {
+SindreMesh &SindreMesh::apply_transform(const ::sindre::math::Matrix4 &transform) {
     Base::apply_transform(transform); return *this;
 }
-SindreMesh &SindreMesh::apply_transform(const Eigen::Matrix3d &transform) {
+SindreMesh &SindreMesh::apply_transform(const ::sindre::math::Matrix3 &transform) {
     Base::apply_transform(transform); return *this;
 }
-SindreMesh &SindreMesh::apply_inv_transform(const Eigen::Matrix4d &transform) {
+SindreMesh &SindreMesh::apply_inv_transform(const ::sindre::math::Matrix4 &transform) {
     Base::apply_inv_transform(transform); return *this;
 }
-SindreMesh &SindreMesh::shift_xyz(const Eigen::Vector3d &offset) { Base::shift_xyz(offset); return *this; }
-SindreMesh &SindreMesh::scale_xyz(const Eigen::Vector3d &scale) { Base::scale_xyz(scale); return *this; }
+SindreMesh &SindreMesh::shift_xyz(const ::sindre::math::Vector3 &offset) { Base::shift_xyz(offset); return *this; }
+SindreMesh &SindreMesh::scale_xyz(const ::sindre::math::Vector3 &scale) { Base::scale_xyz(scale); return *this; }
 SindreMesh &SindreMesh::scale_xyz(double scale) { Base::scale_xyz(scale); return *this; }
-SindreMesh &SindreMesh::rotate_xyz(const Eigen::Vector3d &degrees) { Base::rotate_xyz(degrees); return *this; }
+SindreMesh &SindreMesh::rotate_xyz(const ::sindre::math::Vector3 &degrees) { Base::rotate_xyz(degrees); return *this; }
 SindreMesh &SindreMesh::clean(double tolerance) { Base::operator=(Base::clean(tolerance)); return *this; }
 SindreMesh &SindreMesh::smooth(const SmoothOptions &options) {
     Base::operator=(utils_3d::smooth(static_cast<const Base &>(*this), options)); return *this;
@@ -153,7 +153,8 @@ SindreMesh &SindreMesh::fix_mesh(bool close_holes, Backend backend) {
 SindreMesh &SindreMesh::subdivide(int iterations) {
     Base::operator=(utils_3d::subdivide(static_cast<const Base &>(*this), iterations)); return *this;
 }
-SindreMesh &SindreMesh::cut_plane(const Eigen::Vector3d &origin, const Eigen::Vector3d &normal,
+SindreMesh &SindreMesh::cut_plane(const ::sindre::math::Vector3 &origin,
+                                  const ::sindre::math::Vector3 &normal,
                                   bool keep_negative) {
     Base::operator=(utils_3d::cut_plane(static_cast<const Base &>(*this), origin, normal, keep_negative));
     return *this;

@@ -16,8 +16,16 @@ DataType get_type(ONNXTensorElementDataType type) {
     switch (type) {
         case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT: return DataType::float32;
         case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16: return DataType::float16;
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16: return DataType::bfloat16;
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE: return DataType::float64;
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8: return DataType::int8;
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16: return DataType::int16;
         case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32: return DataType::int32;
         case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64: return DataType::int64;
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8: return DataType::uint8;
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16: return DataType::uint16;
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32: return DataType::uint32;
+        case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64: return DataType::uint64;
         case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL: return DataType::bool8;
         default: return DataType::other;
     }
@@ -27,8 +35,16 @@ ONNXTensorElementDataType to_ort_type(DataType type) {
     switch (type) {
         case DataType::float32: return ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
         case DataType::float16: return ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16;
+        case DataType::bfloat16: return ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16;
+        case DataType::float64: return ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE;
+        case DataType::int8: return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8;
+        case DataType::int16: return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16;
         case DataType::int32: return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32;
         case DataType::int64: return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64;
+        case DataType::uint8: return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8;
+        case DataType::uint16: return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16;
+        case DataType::uint32: return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32;
+        case DataType::uint64: return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64;
         case DataType::bool8: return ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL;
         default: throw std::invalid_argument("Unsupported typed tensor data type");
     }
@@ -162,6 +178,13 @@ std::vector<std::string> get_available_backends() {
     return Ort::GetAvailableProviders();
 }
 
+::sindre::general::Result<std::vector<std::string>>
+try_get_available_backends() noexcept {
+    return ::sindre::ai::detail::guarded(
+        [] { return get_available_backends(); },
+        "ai.onnxruntime.get_available_backends");
+}
+
 Model::Model(const std::filesystem::path& path, const Options& options)
     : impl_(std::make_unique<Impl>(path, options)) {}
 
@@ -207,15 +230,45 @@ Backend Model::get_backend() const noexcept { return impl_->backend; }
 
 ::sindre::general::Result<std::future<::sindre::general::Result<Tensors>>>
 Model::try_infer_async(Tensors inputs, ::sindre::general::CancellationToken token) noexcept {
+    ::sindre::general::TaskOptions options;
+    options.token = std::move(token);
+    return try_infer_async(std::move(inputs), std::move(options));
+}
+
+::sindre::general::Result<std::future<::sindre::general::Result<Tensors>>>
+Model::try_infer_async(Tensors inputs,
+                       ::sindre::general::TaskOptions options) noexcept {
     return ::sindre::general::try_run_async(
         [this, inputs = std::move(inputs)](::sindre::general::CancellationToken task_token) mutable {
 #if !defined(SINDRE_NO_EXCEPTIONS)
-            if (task_token.cancelled()) throw std::runtime_error("AI inference cancelled");
+            if (task_token.is_cancelled()) throw std::runtime_error("AI inference cancelled");
 #else
             (void)task_token;
 #endif
             return infer(inputs);
-        }, token);
+        }, std::move(options));
+}
+
+::sindre::general::Result<std::future<::sindre::general::Result<TypedTensors>>>
+Model::try_infer_typed_async(TypedTensors inputs,
+                             ::sindre::general::CancellationToken token) noexcept {
+    ::sindre::general::TaskOptions options;
+    options.token = std::move(token);
+    return try_infer_typed_async(std::move(inputs), std::move(options));
+}
+
+::sindre::general::Result<std::future<::sindre::general::Result<TypedTensors>>>
+Model::try_infer_typed_async(TypedTensors inputs,
+                             ::sindre::general::TaskOptions options) noexcept {
+    return ::sindre::general::try_run_async(
+        [this, inputs = std::move(inputs)](::sindre::general::CancellationToken task_token) mutable {
+#if !defined(SINDRE_NO_EXCEPTIONS)
+            if (task_token.is_cancelled()) throw std::runtime_error("AI inference cancelled");
+#else
+            (void)task_token;
+#endif
+            return infer_typed(inputs);
+        }, std::move(options));
 }
 
 Tensors Model::infer(const Tensors& inputs) {
@@ -281,6 +334,11 @@ void Model::infer_into(const Tensors& inputs, Tensors& outputs) {
 
 std::future<Tensors> Model::infer_async(Tensors inputs) {
     return impl_->executor.submit([this, inputs = std::move(inputs)] { return infer(inputs); });
+}
+
+std::future<TypedTensors> Model::infer_typed_async(TypedTensors inputs) {
+    return impl_->executor.submit(
+        [this, inputs = std::move(inputs)] { return infer_typed(inputs); });
 }
 
 void Model::warm_up(const Tensors& inputs, int iterations) {

@@ -6,6 +6,9 @@
 #if defined(SINDRE_WITH_GENERAL)
 #include <sindre/general.h>
 #endif
+#if defined(SINDRE_WITH_MATH)
+#include <sindre/math.h>
+#endif
 #if defined(SINDRE_WITH_UTILS_PY)
 #include <sindre/utils_py.h>
 #endif

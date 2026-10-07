@@ -1,5 +1,7 @@
 #include <sindre/ai.h>
 #include <cmath>
+#include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -11,12 +13,47 @@ int main(int argc, char** argv) {
     using namespace sindre::ai::onnxruntime;
     if (argc != 2) return 1;
     try {
+        Tensor reshape_tensor{{2, 3}, {1.f, 2.f, 3.f, 4.f, 5.f, 6.f}};
+        if (!reshape_tensor.try_reshape({3, 2}) ||
+            reshape_tensor.shape != std::vector<std::int64_t>{3, 2}) return 24;
+        if (!reshape_tensor.try_reshape({-1, 2}) ||
+            reshape_tensor.shape != std::vector<std::int64_t>{3, 2}) return 29;
+        if (reshape_tensor.try_reshape({4, 2})) return 25;
+        const auto typed_double = TypedTensor::try_from<double>(
+            {2, 2}, std::vector<double>{1.0, 2.0, 3.0, 4.0});
+        if (!typed_double || typed_double.value().type != DataType::float64 ||
+            !typed_double.value().try_validate()) return 26;
+        const auto typed_int16 = TypedTensor::try_from<std::int16_t>(
+            {2}, std::vector<std::int16_t>{-2, 7});
+        if (!typed_int16 || typed_int16.value().type != DataType::int16 ||
+            typed_int16.value().data.size() != sizeof(std::int16_t) * 2) return 27;
+        auto typed_uint16 = TypedTensor::try_from<std::uint16_t>(
+            {2, 2}, std::vector<std::uint16_t>{1, 2, 3, 4}, DataType::uint16);
+        if (!typed_uint16 || !typed_uint16.value().try_reshape({4}) ||
+            typed_uint16.value().type != DataType::uint16) return 28;
+
         Options options;
         options.backend = Backend::cpu;
         options.cpu_threads = 1;
         Model default_model(argv[1]);
         if (default_model.get_backend() != Backend::cpu) return 16;
         Model model(argv[1], options);
+        auto providers_result = try_get_available_backends();
+        if (!providers_result) return 30;
+        auto safe_missing = Model::try_create("not-a-model.onnx", options);
+        if (safe_missing || safe_missing.error().context != "ai.onnxruntime.create") return 31;
+        auto safe_invalid = model.try_infer({Tensor{{1, 4}, std::vector<float>(4)}});
+        if (safe_invalid || safe_invalid.error().code !=
+                                std::make_error_code(std::errc::invalid_argument) ||
+            safe_invalid.error().context != "ai.onnxruntime.infer") return 32;
+        ::sindre::general::TaskOptions expired_options;
+        expired_options.deadline = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+        auto expired_async = model.try_infer_async(
+            {Tensor{{2, 3}, std::vector<float>(6, 1.f)}}, expired_options);
+        if (!expired_async) return 33;
+        auto expired_result = expired_async.value().get();
+        if (expired_result || expired_result.error().code !=
+                                  std::make_error_code(std::errc::timed_out)) return 34;
         const auto chinese_model = std::filesystem::temp_directory_path() / "sindre-模型-中文.onnx";
         std::filesystem::copy_file(argv[1], chinese_model,
                                    std::filesystem::copy_options::overwrite_existing);

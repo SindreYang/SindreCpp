@@ -3,6 +3,7 @@
 #include <iostream>
 
 using namespace sindre::utils_3d;
+namespace math = sindre::math;
 static void check(bool value, const char *message) {
     if (!value)
         throw std::runtime_error(message);
@@ -58,12 +59,12 @@ int main() {
         check(image.pad({-1, 8, -1, 8, -1, 8}).dimensions() == std::array<int, 3>{10, 10, 10},
               "Image padding");
         check(std::abs(image.flip(0).values()(0, 0) - 7) < 1e-12, "Image flip values");
-        check(image.resample(Eigen::Vector3d::Constant(.5)).npoints() > 512, "Image resampling");
-        check(image.reslice(Eigen::Matrix4d::Identity(), dims).values().isApprox(values),
+        check(image.resample(math::Vector3::Constant(.5)).npoints() > 512, "Image resampling");
+        check(image.reslice(math::Matrix4::Identity(), dims).values().isApprox(values),
               "Identity reslice");
         auto gradient = image.gradient();
         check(gradient.values().cols() == 3 &&
-                  gradient.values().row(3 + 8 * (3 + 8 * 3)).isApprox(Eigen::RowVector3d::Ones()),
+                  gradient.values().row(3 + 8 * (3 + 8 * 3)).isApprox(math::eigen::RowVector3d::Ones()),
               "Image interior gradient");
         check(image.gradient(true).values().cols() == 1, "Gradient magnitude");
         check(std::abs(image.laplacian().values()(3 + 8 * (3 + 8 * 3), 0)) < 1e-12,
@@ -80,16 +81,16 @@ int main() {
               "Constant field curl");
         check(structured.contour("q", {6.5}).ncells() > 0, "Scientific contour");
         check(structured.threshold("q", 0, 6).ncells() > 0, "Scientific threshold");
-        check(structured.clip_plane(Eigen::Vector3d(3, 0, 0), Eigen::Vector3d::UnitX()).ncells() >
+        check(structured.clip_plane(math::Vector3(3, 0, 0), math::Vector3::UnitX()).ncells() >
                   0,
               "Dataset clipping");
         check(structured.surface().nfaces() > 0, "Dataset surface extraction");
         check(structured.warp_vector("velocity", 2)
                   .points()
                   .row(0)
-                  .isApprox(Eigen::RowVector3d(2, 0, 0)),
+                  .isApprox(math::eigen::RowVector3d(2, 0, 0)),
               "Vector warp");
-        check(structured.warp_scalar("q", 2).points().row(1).isApprox(Eigen::RowVector3d(1, 0, 2)),
+        check(structured.warp_scalar("q", 2).points().row(1).isApprox(math::eigen::RowVector3d(1, 0, 2)),
               "Scalar warp");
         auto cells = structured.point_to_cell_data();
         check(cells.get_data("q", false).rows() == structured.ncells(), "Point-to-cell averaging");
@@ -109,7 +110,7 @@ int main() {
               "Point dataset");
         Vertices tetra(4, 3);
         tetra << 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1;
-        Eigen::Matrix<std::int64_t, Eigen::Dynamic, 4, Eigen::RowMajor> tc(1, 4);
+        math::Matrix<std::int64_t, math::eigen::Dynamic, 4> tc(1, 4);
         tc << 0, 1, 2, 3;
         auto unstructured = SindreData::tetrahedra(tetra, tc);
         check(unstructured.ncells() == 1, "Tetrahedral dataset");
@@ -121,10 +122,10 @@ int main() {
         check(curve.tube().ncells() > 0, "Tube generation");
         auto glyph_points = SindreData::point_cloud(tetra);
         Matrix gv(4, 3);
-        gv.rowwise() = Eigen::RowVector3d(1, 0, 0);
+        gv.rowwise() = math::eigen::RowVector3d(1, 0, 0);
         glyph_points.set_data("v", gv);
         check(glyph_points.glyph_vectors("v").ncells() > 0, "Vector arrow glyphs");
-        Eigen::VectorXd axis = Eigen::VectorXd::LinSpaced(3, 0, 2);
+        math::VectorXd axis = math::VectorXd::LinSpaced(3, 0, 2);
         auto rectilinear = SindreData::rectilinear_grid(axis, axis, axis);
         check(rectilinear.npoints() == 27 && rectilinear.ncells() == 8, "Rectilinear grid");
         auto group = SindreData::blocks({image, structured, unstructured, rectilinear});

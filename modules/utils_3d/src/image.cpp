@@ -19,8 +19,8 @@ vtkSmartPointer<vtkImageData> make_image(const Matrix &values, std::array<int, 3
 
 Image::Image(vtkImageData *image) : Data(image) {}
 Image::Image(const Data &data) : Data(data.get_native()) { (void)this->image(); }
-Image::Image(const Matrix &values, std::array<int, 3> dimensions, Eigen::Vector3d spacing,
-             Eigen::Vector3d origin)
+Image::Image(const Matrix &values, std::array<int, 3> dimensions,
+             ::sindre::math::Vector3 spacing, ::sindre::math::Vector3 origin)
     : Data(make_image(values, dimensions, spacing, origin)) {}
 
 vtkImageData *Image::image() const {
@@ -31,10 +31,12 @@ vtkImageData *Image::image() const {
 }
 std::array<int, 3> Image::dimensions() const { return detail::legacy::Image(image()).dimensions(); }
 std::array<int, 6> Image::extent() const { return detail::legacy::Image(image()).extent(); }
-Eigen::Vector3d Image::spacing() const { return detail::legacy::Image(image()).spacing(); }
-Eigen::Vector3d Image::origin() const { return detail::legacy::Image(image()).origin(); }
+::sindre::math::Vector3 Image::spacing() const { return detail::legacy::Image(image()).spacing(); }
+::sindre::math::Vector3 Image::origin() const { return detail::legacy::Image(image()).origin(); }
 Matrix Image::values() const { return detail::legacy::Image(image()).values(); }
-Image Image::gaussian(Eigen::Vector3d sigma) const { return wrap(detail::legacy::Image(image()).gaussian(sigma)); }
+Image Image::gaussian(::sindre::math::Vector3 sigma) const {
+    return wrap(detail::legacy::Image(image()).gaussian(sigma));
+}
 Image Image::median(std::array<int, 3> kernel) const { return wrap(detail::legacy::Image(image()).median(kernel)); }
 Image Image::threshold(double lower, double upper, double inside, double outside) const {
     return wrap(detail::legacy::Image(image()).threshold(lower, upper, inside, outside));
@@ -55,12 +57,13 @@ Image Image::pad(std::array<int, 6> box, double value) const {
     return wrap(detail::legacy::Image(image()).pad(box, value));
 }
 Image Image::flip(int axis) const { return wrap(detail::legacy::Image(image()).flip(axis)); }
-Image Image::resample(Eigen::Vector3d output_spacing, ImageInterpolation interpolation) const {
+Image Image::resample(::sindre::math::Vector3 output_spacing,
+                      ImageInterpolation interpolation) const {
     return wrap(detail::legacy::Image(image()).resample(output_spacing,
                                                          static_cast<detail::legacy::ImageInterpolation>(interpolation)));
 }
-Image Image::reslice(const Eigen::Matrix4d &axes, std::array<int, 3> dimensions,
-                     Eigen::Vector3d spacing, Eigen::Vector3d origin,
+Image Image::reslice(const ::sindre::math::Matrix4 &axes, std::array<int, 3> dimensions,
+                     ::sindre::math::Vector3 spacing, ::sindre::math::Vector3 origin,
                      ImageInterpolation interpolation) const {
     return wrap(detail::legacy::Image(image()).reslice(
         axes, dimensions, spacing, origin, static_cast<detail::legacy::ImageInterpolation>(interpolation)));

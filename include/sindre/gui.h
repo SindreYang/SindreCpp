@@ -117,7 +117,6 @@ private:
     std::unordered_map<std::string, std::shared_ptr<const ImageAsset>> images_;
 };
 
-#if defined(SINDRE_GUI_GLFW_OPENGL3)
 /// @brief GLFW/OpenGL3 窗口和 ImGui 帧循环配置。
 struct GuiConfig {
     std::string title = "sindre";
@@ -133,6 +132,7 @@ struct GuiConfig {
     ImVec4 clear_color = ImVec4(0.08f, 0.08f, 0.10f, 1.0f);
 };
 
+#if defined(SINDRE_GUI_GLFW_OPENGL3)
 class GuiApplication {
 public:
     /// @brief 创建窗口、ImGui 上下文并按配置初始化字体和主题。
@@ -172,6 +172,38 @@ private:
     bool glfw_runtime_acquired_ = false;
 };
 #endif
+
+class GuiApplication;
+
+/// @brief 全局简化 GUI 生命周期的帧对象，析构时自动提交当前帧。
+class Frame {
+public:
+    Frame(const Frame &) = delete;
+    Frame &operator=(const Frame &) = delete;
+    Frame(Frame &&other) noexcept;
+    Frame &operator=(Frame &&other) noexcept;
+    ~Frame();
+
+private:
+    explicit Frame(std::shared_ptr<GuiApplication> application) noexcept;
+    void finish() noexcept;
+    friend ::sindre::general::Result<Frame> gui_begin() noexcept;
+
+    std::shared_ptr<GuiApplication> application_;
+    bool active_ = false;
+};
+
+/// @brief 使用默认配置初始化全局 GUI；默认配置适合快速创建单窗口应用。
+::sindre::general::Result<void> gui_init(
+    const GuiConfig &config = {}) noexcept;
+/// @brief 轮询事件并开始一帧；返回对象离开作用域时自动结束并提交帧。
+::sindre::general::Result<Frame> gui_begin() noexcept;
+/// @brief 查询全局 GUI 窗口是否收到关闭请求。
+bool gui_should_close() noexcept;
+/// @brief 请求关闭全局 GUI 窗口。
+void gui_request_close() noexcept;
+/// @brief 销毁全局 GUI；可以重复调用。
+void gui_shutdown() noexcept;
 
 class ScopedId {
 public:

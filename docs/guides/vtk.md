@@ -40,10 +40,10 @@ target_link_libraries(my_app PRIVATE sindre::utils_3d)
 namespace u3 = sindre::utils_3d;
 u3::Matrix voxels = u3::Matrix::Zero(64*64*64, 1); // 换为实际体数据
 // x 最快：x + nx*(y + ny*z)，列是通道；spacing/origin 为物理坐标。
-u3::Image image(voxels, {64,64,64}, Eigen::Vector3d(.5,.5,1));
+u3::Image image(voxels, {64,64,64}, sindre::math::Vector3(.5,.5,1));
 auto filtered = image.gaussian().normalize();
 auto mask = filtered.threshold(.3,1).morphology();
-auto section = image.reslice(Eigen::Matrix4d::Identity(), {64,64,1});
+auto section = image.reslice(sindre::math::Matrix4::Identity(), {64,64,1});
 image.save("volume.vti");
 auto loaded = u3::Image(u3::Data::load("volume.vti"));
 

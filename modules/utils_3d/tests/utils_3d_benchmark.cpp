@@ -1,4 +1,4 @@
-#include <Eigen/Core>
+#include <sindre/math.h>
 
 #include <algorithm>
 #include <chrono>
@@ -20,7 +20,9 @@ extern "C" void dgemm_(const char* transa, const char* transb,
 
 namespace {
 using Clock = std::chrono::steady_clock;
-using Matrix = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::ColMajor>;
+using Matrix = sindre::math::eigen::Matrix<double, sindre::math::eigen::Dynamic,
+                                            sindre::math::eigen::Dynamic,
+                                            sindre::math::eigen::ColMajor>;
 
 template<class Function>
 double benchmark_ms(Function&& function, int repetitions) {
@@ -37,12 +39,12 @@ double benchmark_ms(Function&& function, int repetitions) {
 int main(int argc, char** argv) {
     const int size = argc > 1 ? std::max(64, std::atoi(argv[1])) : 1024;
     const int repetitions = argc > 2 ? std::max(1, std::atoi(argv[2])) : 5;
-    Eigen::setNbThreads(1);
+    sindre::math::eigen::setNbThreads(1);
 
     Matrix a(size, size), b(size, size), eigen_result(size, size), blas_result(size, size);
     std::mt19937_64 random(20260914);
     std::uniform_real_distribution<double> values(-1.0, 1.0);
-    for (Eigen::Index i = 0; i < a.size(); ++i) {
+    for (sindre::math::Index i = 0; i < a.size(); ++i) {
         a.data()[i] = values(random);
         b.data()[i] = values(random);
     }

@@ -15,6 +15,34 @@ The complete Dear ImGui API is also exposed as `sindre::gui::imgui`; for example
 applications can call `sindre::gui::imgui::Begin(...)` and use the regular ImGui
 types directly. `sindre::gui::native` remains as a compatibility alias.
 
+For a single-window application, the short lifecycle API is usually enough:
+
+```cpp
+sindre::gui::GuiConfig config;
+config.title = "sindre";
+config.width = 1280;
+config.height = 720;
+
+auto initialized = sindre::gui::gui_init(config);
+if (!initialized) return 1;
+
+while (auto frame = sindre::gui::gui_begin()) {
+    ImGui::Begin("Main");
+    ImGui::Text("Hello Sindre");
+    if (ImGui::Button("Exit")) sindre::gui::gui_request_close();
+    ImGui::End();
+}
+
+sindre::gui::gui_shutdown();
+```
+
+`gui_begin()` polls events and starts a frame. Its returned RAII object renders and
+submits the frame when it leaves scope. Closing the window is reported as a failed
+frame with `operation_canceled`; other failures retain their `Result` error. The
+configuration fields have usable defaults, so an application can simply call
+`gui_init()` for the default window. `GuiApplication` remains available when an
+application needs manual frame control or multiple independent contexts.
+
 Configure with `SINDRE_WITH_GUI=ON`. Dear ImGui is fetched unless
 `SINDRE_IMGUI_SOURCE_DIR` points at an existing source tree. Image decoding is
 controlled independently by `SINDRE_GUI_STB_IMAGE` (and can use

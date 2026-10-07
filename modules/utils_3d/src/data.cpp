@@ -44,13 +44,14 @@ Data Data::polyline(const Vertices &points, bool closed) { return wrap(detail::l
 Data Data::structured_grid(const Vertices &points, std::array<int, 3> dimensions) {
     return wrap(detail::legacy::Data::structured_grid(points, dimensions));
 }
-Data Data::rectilinear_grid(const Eigen::VectorXd &x, const Eigen::VectorXd &y,
-                            const Eigen::VectorXd &z) {
+Data Data::rectilinear_grid(const ::sindre::math::VectorXd &x,
+                            const ::sindre::math::VectorXd &y,
+                            const ::sindre::math::VectorXd &z) {
     return wrap(detail::legacy::Data::rectilinear_grid(x, y, z));
 }
 Data Data::tetrahedra(
     const Vertices &points,
-    const Eigen::Matrix<std::int64_t, Eigen::Dynamic, 4, Eigen::RowMajor> &cells) {
+    const ::sindre::math::Matrix<std::int64_t, ::sindre::math::eigen::Dynamic, 4> &cells) {
     return wrap(detail::legacy::Data::tetrahedra(points, cells));
 }
 Data Data::blocks(const std::vector<Data> &items) {
@@ -76,14 +77,16 @@ Data Data::contour(const std::string &scalar, const std::vector<double> &levels)
 Data Data::threshold(const std::string &scalar, double lower, double upper, bool point) const {
     return wrap(impl_->value.threshold(scalar, lower, upper, point));
 }
-Data Data::clip_plane(const Eigen::Vector3d &origin, const Eigen::Vector3d &normal, bool inside) const {
+Data Data::clip_plane(const ::sindre::math::Vector3 &origin,
+                      const ::sindre::math::Vector3 &normal, bool inside) const {
     return wrap(impl_->value.clip_plane(origin, normal, inside));
 }
 Data Data::gradient(const std::string &name, bool point, bool vorticity, bool divergence) const {
     return wrap(impl_->value.gradient(name, point, vorticity, divergence));
 }
 Data Data::warp_vector(const std::string &name, double scale) const { return wrap(impl_->value.warp_vector(name, scale)); }
-Data Data::warp_scalar(const std::string &name, double scale, Eigen::Vector3d normal) const {
+Data Data::warp_scalar(const std::string &name, double scale,
+                       ::sindre::math::Vector3 normal) const {
     return wrap(impl_->value.warp_scalar(name, scale, normal));
 }
 Data Data::point_to_cell_data() const { return wrap(impl_->value.point_to_cell_data()); }

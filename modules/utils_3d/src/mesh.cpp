@@ -62,15 +62,15 @@ Mesh::~Mesh() = default;
 
 Mesh Mesh::clone() const { return Mesh(*this); }
 vtkPolyData *Mesh::get_native() const noexcept { return impl_ ? impl_->value.get_native() : nullptr; }
-Eigen::Index Mesh::npoints() const { return impl_->value.npoints(); }
-Eigen::Index Mesh::nfaces() const { return impl_->value.nfaces(); }
+::sindre::math::Index Mesh::npoints() const { return impl_->value.npoints(); }
+::sindre::math::Index Mesh::nfaces() const { return impl_->value.nfaces(); }
 bool Mesh::empty() const { return impl_->value.empty(); }
 #if defined(SINDRE_UTILS_3D_SHOW)
 ShowMesh Mesh::show() const { return show_mesh(get_native(), {}); }
 ShowMesh Mesh::show(const ShowOptions &options) const { return show_mesh(get_native(), options); }
 #endif
-Eigen::Matrix<double, 2, 3, Eigen::RowMajor> Mesh::bounds() const { return impl_->value.bounds(); }
-Eigen::Vector3d Mesh::dimensions() const { return impl_->value.dimensions(); }
+::sindre::math::Matrix<double, 2, 3> Mesh::bounds() const { return impl_->value.bounds(); }
+::sindre::math::Vector3 Mesh::dimensions() const { return impl_->value.dimensions(); }
 Mesh Mesh::filtered(vtkPolyDataAlgorithm *filter) const { return wrap(impl_->value.filtered(filter)); }
 vtkSmartPointer<vtkTrivialProducer> Mesh::pipeline_source() const { return impl_->value.pipeline_source(); }
 Vertices Mesh::vertices() const { return impl_->value.vertices(); }
@@ -119,23 +119,23 @@ void Mesh::set_vertex_labels(const Labels &labels) { impl_->value.set_vertex_lab
 void Mesh::set_faces_labels(const Labels &labels) { impl_->value.set_faces_labels(labels); }
 Labels Mesh::get_vertex_labels() const { return impl_->value.get_vertex_labels(); }
 Labels Mesh::get_faces_labels() const { return impl_->value.get_faces_labels(); }
-Mesh &Mesh::apply_transform(const Eigen::Matrix4d &transform) {
+Mesh &Mesh::apply_transform(const ::sindre::math::Matrix4 &transform) {
     impl_->value.apply_transform(transform);
     return *this;
 }
-Mesh &Mesh::apply_transform(const Eigen::Matrix3d &transform) {
+Mesh &Mesh::apply_transform(const ::sindre::math::Matrix3 &transform) {
     impl_->value.apply_transform(transform);
     return *this;
 }
-Mesh &Mesh::apply_inv_transform(const Eigen::Matrix4d &transform) {
+Mesh &Mesh::apply_inv_transform(const ::sindre::math::Matrix4 &transform) {
     impl_->value.apply_inv_transform(transform);
     return *this;
 }
-Mesh &Mesh::shift_xyz(const Eigen::Vector3d &offset) {
+Mesh &Mesh::shift_xyz(const ::sindre::math::Vector3 &offset) {
     impl_->value.shift_xyz(offset);
     return *this;
 }
-Mesh &Mesh::scale_xyz(const Eigen::Vector3d &scale) {
+Mesh &Mesh::scale_xyz(const ::sindre::math::Vector3 &scale) {
     impl_->value.scale_xyz(scale);
     return *this;
 }
@@ -143,14 +143,14 @@ Mesh &Mesh::scale_xyz(double scale) {
     impl_->value.scale_xyz(scale);
     return *this;
 }
-Mesh &Mesh::rotate_xyz(const Eigen::Vector3d &degrees) {
+Mesh &Mesh::rotate_xyz(const ::sindre::math::Vector3 &degrees) {
     impl_->value.rotate_xyz(degrees);
     return *this;
 }
-Eigen::Vector3d Mesh::center() const { return impl_->value.center(); }
+::sindre::math::Vector3 Mesh::center() const { return impl_->value.center(); }
 double Mesh::radius() const { return impl_->value.radius(); }
 Vertices Mesh::faces_barycentre() const { return impl_->value.faces_barycentre(); }
-Eigen::VectorXd Mesh::faces_area() const { return impl_->value.faces_area(); }
+::sindre::math::VectorXd Mesh::faces_area() const { return impl_->value.faces_area(); }
 std::map<Mesh::Edge, std::vector<std::int64_t>> Mesh::edges_face() const { return impl_->value.edges_face(); }
 std::vector<Mesh::Edge> Mesh::get_edges() const { return impl_->value.get_edges(); }
 std::vector<Mesh::Edge> Mesh::get_boundary() const { return impl_->value.get_boundary(); }
@@ -169,6 +169,8 @@ std::vector<Mesh> Mesh::split_component_by_faces() const {
         result.emplace_back(part.get_native());
     return result;
 }
-Eigen::VectorXd Mesh::get_curvature(bool mean) const { return impl_->value.get_curvature(mean); }
+::sindre::math::VectorXd Mesh::get_curvature(bool mean) const {
+    return impl_->value.get_curvature(mean);
+}
 
 } // namespace sindre::utils_3d::core

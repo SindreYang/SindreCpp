@@ -74,6 +74,23 @@ int main() {
     ImGui::End();
     CHECK(application.value().end_frame());
     application.value().request_close();
+
+    GuiConfig simple_config;
+    simple_config.title = "sindre short lifecycle";
+    simple_config.width = 320;
+    simple_config.height = 240;
+    simple_config.load_cjk_font = false;
+    auto simple_initialized = gui_init(simple_config);
+    CHECK(simple_initialized);
+    {
+        auto simple_frame = gui_begin();
+        CHECK(simple_frame);
+        ImGui::Begin("short lifecycle");
+        ImGui::Text("RAII frame");
+        ImGui::End();
+    }
+    gui_request_close();
+    gui_shutdown();
 #endif
     return EXIT_SUCCESS;
 }

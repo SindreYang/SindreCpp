@@ -1,10 +1,9 @@
 #!/usr/bin/env sh
 set -eu
 
-# Quick Release configure, build, and test for Linux, macOS, and Git Bash.
-# Set OPENBLAS_ROOT when the official OpenBLAS package is not already in
-# CMAKE_PREFIX_PATH, for example:
-#   OPENBLAS_ROOT=/opt/OpenBLAS ./scripts/build.sh
+# Linux/WSL Release 配置、编译和测试快捷入口；macOS 当前不受支持。
+# 如需使用内置 profile 之外的固定 OpenBLAS SDK，可设置：
+#   SINDRE_MATH_OPENBLAS_ROOT=/opt/OpenBLAS ./scripts/build.sh
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BUILD_DIR=${BUILD_DIR:-build}
@@ -20,8 +19,8 @@ set -- \
     -DSINDRE_BUILD_EXAMPLES=OFF \
     "$@"
 
-if [ -n "${OPENBLAS_ROOT:-}" ]; then
-    set -- "$@" "-DCMAKE_PREFIX_PATH=$OPENBLAS_ROOT"
+if [ -n "${SINDRE_MATH_OPENBLAS_ROOT:-}" ]; then
+    set -- "$@" "-DSINDRE_MATH_OPENBLAS_ROOT=$SINDRE_MATH_OPENBLAS_ROOT"
 fi
 
 cmake "$@"

@@ -50,3 +50,20 @@ build_general_basics/bin/sindre_example_general_basics.exe
 
 JSON 和 utils_3d 示例也可以用相同方式从自己的目录配置；它们会自动启用
 需要的 sindrecpp 模块，并在依赖缺失时由 CMake 给出明确错误。
+
+## TensorRT 生产路径
+
+`examples/ai_tensorrt_segmentation` 是需要真实 CUDA/TensorRT SDK 的独立示例，
+展示 ONNX 构建、engine 复用、`Result` 错误处理、固定 profile、分割后处理以及
+Windows DLL 部署。完整的模型来源、下载脚本和兼容性选项见其
+[README](../../examples/ai_tensorrt_segmentation/README.md)。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\examples\ai_tensorrt_segmentation\download_model.ps1
+cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg -G Ninja `
+  -DSINDRE_TENSORRT_ROOT=C:/TensorRT
+cmake --build build_ai_seg --parallel
+```
+
+该示例不能在没有 CUDA、TensorRT、Ninja 和 C++ 编译器的机器上完成运行验证；
+配置成功也不等于目标 GPU 上的 engine 和 DLL 已通过 smoke test。

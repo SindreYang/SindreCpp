@@ -28,6 +28,9 @@ struct Options {
 
 /// @brief 返回当前构建可用的执行后端名称。
 std::vector<std::string> get_available_backends();
+/// @brief 返回当前构建可用的执行后端名称，并把 SDK 错误转换为 Result。
+::sindre::general::Result<std::vector<std::string>>
+try_get_available_backends() noexcept;
 
 /// @brief 线程安全边界内的 ONNX Runtime 模型句柄。
 ///
@@ -70,6 +73,18 @@ public:
     /// @brief 提交可取消的异步推理任务。
     ::sindre::general::Result<std::future<::sindre::general::Result<Tensors>>>
     try_infer_async(Tensors inputs, ::sindre::general::CancellationToken token = {}) noexcept;
+    /// @brief 提交带取消、截止时间和进度选项的异步推理任务。
+    ::sindre::general::Result<std::future<::sindre::general::Result<Tensors>>>
+    try_infer_async(Tensors inputs,
+                    ::sindre::general::TaskOptions options) noexcept;
+    /// @brief 提交可取消的异步类型化推理任务。
+    ::sindre::general::Result<std::future<::sindre::general::Result<TypedTensors>>>
+    try_infer_typed_async(TypedTensors inputs,
+                          ::sindre::general::CancellationToken token = {}) noexcept;
+    /// @brief 提交带取消、截止时间和进度选项的异步类型化推理任务。
+    ::sindre::general::Result<std::future<::sindre::general::Result<TypedTensors>>>
+    try_infer_typed_async(TypedTensors inputs,
+                          ::sindre::general::TaskOptions options) noexcept;
 
     /// @brief 抛异常执行 float32 推理。
     Tensors infer(const Tensors& inputs);
@@ -78,6 +93,7 @@ public:
     void infer_into(const Tensors& inputs, Tensors& outputs);
     void infer_typed_into(const TypedTensors& inputs, TypedTensors& outputs);
     std::future<Tensors> infer_async(Tensors inputs);
+    std::future<TypedTensors> infer_typed_async(TypedTensors inputs);
     void warm_up(const Tensors& inputs, int iterations = 1);
     void close() noexcept;
 

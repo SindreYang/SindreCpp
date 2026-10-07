@@ -36,11 +36,12 @@ class Data {
     static Data point_cloud(const Vertices &points);
     static Data polyline(const Vertices &points, bool closed = false);
     static Data structured_grid(const Vertices &points, std::array<int, 3> dimensions);
-    static Data rectilinear_grid(const Eigen::VectorXd &x, const Eigen::VectorXd &y,
-                                 const Eigen::VectorXd &z);
+    static Data rectilinear_grid(const ::sindre::math::VectorXd &x,
+                                 const ::sindre::math::VectorXd &y,
+                                 const ::sindre::math::VectorXd &z);
     static Data tetrahedra(const Vertices &points,
-                           const Eigen::Matrix<std::int64_t, Eigen::Dynamic, 4, Eigen::RowMajor>
-                               &cells);
+                           const ::sindre::math::Matrix<std::int64_t,
+                               ::sindre::math::eigen::Dynamic, 4> &cells);
     static Data blocks(const std::vector<Data> &items);
     unsigned nblocks() const;
     Data block(unsigned index) const;
@@ -52,13 +53,15 @@ class Data {
     Data contour(const std::string &scalar, const std::vector<double> &levels) const;
     Data threshold(const std::string &scalar, double lower, double upper,
                    bool point = true) const;
-    Data clip_plane(const Eigen::Vector3d &origin, const Eigen::Vector3d &normal,
+    Data clip_plane(const ::sindre::math::Vector3 &origin,
+                    const ::sindre::math::Vector3 &normal,
                     bool inside = false) const;
     Data gradient(const std::string &name, bool point = true, bool vorticity = false,
                   bool divergence = false) const;
     Data warp_vector(const std::string &name, double scale = 1) const;
     Data warp_scalar(const std::string &name, double scale = 1,
-                     Eigen::Vector3d normal = Eigen::Vector3d::UnitZ()) const;
+                     ::sindre::math::Vector3 normal =
+                         ::sindre::math::Vector3::UnitZ()) const;
     Data point_to_cell_data() const;
     Data cell_to_point_data() const;
     Data probe(const Data &source) const;

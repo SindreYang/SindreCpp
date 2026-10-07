@@ -1,9 +1,9 @@
 # SindreMesh 与几何算法
 
-本文面向需要网格读写、几何算法、Eigen/NumPy 交换或可选显示能力的 3D 使用者。
+本文面向需要网格读写、几何算法、Math/NumPy 交换或可选显示能力的 3D 使用者。
 先确认已阅读 [Utils_3d 模块说明](../modules/utils_3d.md)，再按需启用 VTK 功能。
 
-`utils_3d` 开启后以 VTK 9 为网格基础，Eigen 为数组交换基础。不开启时不查找任何 3D SDK。
+`utils_3d` 开启后以 VTK 9 为网格基础，`sindre::math` 为数组交换基础。不开启时不查找任何 3D SDK。
 计算接口不创建渲染窗口。当前算法路径为 CPU；AI 的 CUDA 默认不影响此模块。
 `SindreMesh` 是面向用户的聚合平台；`core` 只提供独立底层包装，由 `SindreMesh` 统一调用。
 显示独立放在 `sindre/utils_3d/show.h`，由 `SindreMesh::show()` 调用，按需开启。
@@ -30,7 +30,7 @@
 ```cmake
 set(SINDRE_WITH_UTILS_3D ON CACHE BOOL "")
 set(SINDRE_UTILS_3D_SHOW ON CACHE BOOL "") # 可选：显示、交互和截图；默认 OFF
-# 默认仅 VTK + Eigen；以下均默认 OFF，按需求开启。
+# 默认仅 VTK + Math；以下均默认 OFF，按需求开启。
 set(SINDRE_UTILS_3D_MESHLIB ON CACHE BOOL "")
 set(SINDRE_UTILS_3D_CGAL ON CACHE BOOL "")
 set(SINDRE_UTILS_3D_OPEN3D ON CACHE BOOL "")
@@ -52,8 +52,9 @@ MeshLib 优先使用 `find_package(meshlib CONFIG)`，链接 `MeshLib::MRMesh` �
 ```
 
 该目录需要包含 `include/MRMesh` 和 `lib/Debug|Release/MRMesh`。sindrecpp 会自动建立导入 target，并隔离 SDK 自带的 Boost/Eigen/pybind11 头目录，避免覆盖父项目依赖。
-其他接口要求 C++17。CI 使用 MeshLib v3.1.4.297、libigl v2.5.0、固定 VCGlib 提交，
-以及 Ubuntu 24.04 的 VTK/CGAL SDK、Open3D 0.19.0 官方 C++11-ABI SDK。升级 SDK 后应重新运行后端测试。
+其他接口要求 C++17。本机验证使用 MeshLib v3.1.4.297、libigl v2.5.0、
+VTK 9.7.1、CGAL 5.6.1 和 Open3D 0.20.0 官方 SDK；VCG 仍需调用方提供
+`SINDRE_VCG_ROOT`，不属于固定二进制验证组合。升级 SDK 后应重新运行后端测试。
 Open3D 的 Linux 预编译 SDK 还需要 libc++/libc++abi 运行库；与 MeshLib 共用时需检查 TBB 版本。
 MeshLib 与 Utils_Py 同时开启时，CMake 将独立 pybind11 的头文件放到隔离的构建目录，
 避免 MeshLib SDK 内修改版 pybind11 抢占 NumPy 转换的头文件。
@@ -68,7 +69,7 @@ u3::SindreMesh mesh("scan.ply");
 // 所有常用操作返回 SindreMesh&，可以连续调用。
 mesh.clean().compute_normals().smooth();
 auto copy = mesh.clone();
-copy.shift_xyz(Eigen::Vector3d(1, 2, 3)).scale_xyz(2.0);
+copy.shift_xyz(sindre::math::Vector3(1, 2, 3)).scale_xyz(2.0);
 auto v = copy.vertices(); // N×3 float64 独立副本
 auto f = copy.faces();    // M×3 int64 独立副本
 auto centers = copy.faces_barycentre();
@@ -152,7 +153,8 @@ VTK 功能扩展；原生可访问性不计为高层功能已封装。截图为 
 ## 算法与选择顺序
 
 每种操作通常只执行一个后端；`automatic` 在已开启且有实现的后端中按下表选第一个。
-用户指定的 MeshLib → CGAL → Open3D → 其他，是选择优先级，不是已通过实验的稳定性排名。
+默认顺序按本项目已验证的稳定性和通用性排列：VTK 负责常用基础操作，CGAL
+负责可靠的拓扑/布尔操作，MeshLib/Open3D/libigl 作为显式或专用能力后端。
 不适合该操作/没有该封装的后端不会为了优先级强行使用。Open3D Windows SDK 在部分合法小网格上
 可能出现内存分配失败；此时 `decimate/smooth/clean` 会回退到 VTK 的稳定实现，以保持常用流程可用。
 如果业务必须严格验证指定后端，应使用该后端的原生 API 或自行记录实际执行路径。
@@ -160,13 +162,13 @@ VTK 功能扩展；原生可访问性不计为高层功能已封装。截图为 
 
 | 算法 | 接口 | 后端顺序 |
 | --- | --- | --- |
-| 网格简化 | `decimate` | MeshLib → CGAL → Open3D → libigl → VTK |
-| 平滑 | `smooth` | MeshLib → Open3D → VTK |
-| 各向同性重网格 | `remesh` | MeshLib → CGAL |
-| 并/交/差 | `boolean_mesh` | MeshLib → CGAL |
-| 自相交检测 | `has_self_intersections` | MeshLib → CGAL |
-| 补洞 | `fill_holes` | MeshLib → CGAL → VTK |
-| 清理 | `clean` | MeshLib → Open3D → VCG → VTK |
+| 网格简化 | `decimate` | VTK → CGAL → MeshLib → Open3D → libigl |
+| 平滑 | `smooth` | VTK → MeshLib → Open3D |
+| 各向同性重网格 | `remesh` | CGAL → MeshLib |
+| 并/交/差 | `boolean_mesh` | CGAL → MeshLib |
+| 自相交检测 | `has_self_intersections` | CGAL → MeshLib |
+| 补洞 | `fill_holes` | VTK → CGAL → MeshLib |
+| 清理 | `clean` | VTK → MeshLib → Open3D → VCG |
 | 清理+补洞+法线 | `fix_mesh` | 按各步骤选后端；不是任意缺陷的全自动修复保证 |
 | 平均曲率 | `get_curvature` | libigl → VTK |
 | 圆边界调和 UV | `get_uv` | libigl；要求一个边界环，调用方需保证盘拓扑 |
@@ -199,11 +201,11 @@ CGAL 布尔路径检查自相交，但仍应验证输入是方向正确的有效
 补洞默认尝试所有边界，可能封闭本来有意保留的开口；切平面不自动封口。
 Poisson/采样/配准目前为 Open3D legacy CPU 路径，不承诺 CUDA。
 
-Windows 下固定验证组合为 MSVC + CGAL 5.6.1 + libigl vcpkg port 2.5.0，完整
-`sindre.mesh` 后端循环已通过。当前固定 vcpkg CGAL 头文件在 clang-cl 下会在
-CGAL 自身的迭代器代码中失败，CMake 会在配置期给出明确提示；因此不能把
-clang-cl 的 CGAL 构建宣称为已支持。MeshLib/Open3D 只有在提供对应官方 SDK
-后才会配置和运行测试，未安装时不会自动编译或下载。
+Windows 下固定验证组合包括 MSVC + CGAL 5.6.1 + libigl vcpkg port 2.5.0、
+官方 Open3D 0.20.0 和官方 MeshLib 3.1.4.297；`sindre.mesh` 的对应后端
+循环均已通过。当前固定 vcpkg CGAL 头文件在 clang-cl 下会在 CGAL 自身的
+迭代器代码中失败，CMake 会在配置期给出明确提示；因此不能把 clang-cl 的
+CGAL 构建宣称为已支持。MeshLib/Open3D 未安装时不会自动编译或下载。
 
 ### 属性与标签
 

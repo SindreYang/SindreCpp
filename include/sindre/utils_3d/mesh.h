@@ -4,8 +4,7 @@
 #error "Enable SINDRE_WITH_UTILS_3D and link sindre::utils_3d."
 #endif
 
-#include <Eigen/Core>
-#include <Eigen/Geometry>
+#include <sindre/math.h>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -23,11 +22,12 @@
 namespace sindre::utils_3d::core {
 
 /// @brief 以行主序保存顶点坐标，形状为 N×3。
-using Vertices = Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>;
+using Vertices = ::sindre::math::Matrix<double, ::sindre::math::eigen::Dynamic, 3>;
 /// @brief 以行主序保存三角形索引，形状为 M×3。
-using Faces = Eigen::Matrix<std::int64_t, Eigen::Dynamic, 3, Eigen::RowMajor>;
-using Matrix = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-using Labels = Eigen::Matrix<std::int64_t, Eigen::Dynamic, 1>;
+using Faces = ::sindre::math::Matrix<std::int64_t, ::sindre::math::eigen::Dynamic, 3>;
+using Matrix = ::sindre::math::Matrix<double>;
+using Labels = ::sindre::math::Vector<std::int64_t>;
+using Index = ::sindre::math::Index;
 
 std::string path_to_utf8(const std::filesystem::path &path);
 
@@ -67,16 +67,16 @@ class Mesh {
     /// @brief 返回底层 vtkPolyData；仅在 Mesh 仍存活时有效。
     vtkPolyData *get_native() const noexcept;
     /// @brief 返回顶点数量。
-    Eigen::Index npoints() const;
+    Index npoints() const;
     /// @brief 返回三角形数量。
-    Eigen::Index nfaces() const;
+    Index nfaces() const;
     bool empty() const;
 #if defined(SINDRE_UTILS_3D_SHOW)
     ShowMesh show() const;
     ShowMesh show(const ShowOptions &options) const;
 #endif
-    Eigen::Matrix<double, 2, 3, Eigen::RowMajor> bounds() const;
-    Eigen::Vector3d dimensions() const;
+    ::sindre::math::Matrix<double, 2, 3> bounds() const;
+    ::sindre::math::Vector3 dimensions() const;
     Mesh filtered(vtkPolyDataAlgorithm *filter) const;
     vtkSmartPointer<vtkTrivialProducer> pipeline_source() const;
 
@@ -130,17 +130,17 @@ class Mesh {
     Labels get_faces_labels() const;
 
     /// @brief 原地应用齐次变换并返回自身，便于链式调用。
-    Mesh &apply_transform(const Eigen::Matrix4d &transform);
-    Mesh &apply_transform(const Eigen::Matrix3d &transform);
-    Mesh &apply_inv_transform(const Eigen::Matrix4d &transform);
-    Mesh &shift_xyz(const Eigen::Vector3d &offset);
-    Mesh &scale_xyz(const Eigen::Vector3d &scale);
+    Mesh &apply_transform(const ::sindre::math::Matrix4 &transform);
+    Mesh &apply_transform(const ::sindre::math::Matrix3 &transform);
+    Mesh &apply_inv_transform(const ::sindre::math::Matrix4 &transform);
+    Mesh &shift_xyz(const ::sindre::math::Vector3 &offset);
+    Mesh &scale_xyz(const ::sindre::math::Vector3 &scale);
     Mesh &scale_xyz(double scale);
-    Mesh &rotate_xyz(const Eigen::Vector3d &degrees);
-    Eigen::Vector3d center() const;
+    Mesh &rotate_xyz(const ::sindre::math::Vector3 &degrees);
+    ::sindre::math::Vector3 center() const;
     double radius() const;
     Vertices faces_barycentre() const;
-    Eigen::VectorXd faces_area() const;
+    ::sindre::math::VectorXd faces_area() const;
     std::map<Edge, std::vector<std::int64_t>> edges_face() const;
     std::vector<Edge> get_edges() const;
     std::vector<Edge> get_boundary() const;
@@ -154,7 +154,7 @@ class Mesh {
     Mesh clean(double tolerance = 0) const;
     Mesh largest_component() const;
     std::vector<Mesh> split_component_by_faces() const;
-    Eigen::VectorXd get_curvature(bool mean = true) const;
+    ::sindre::math::VectorXd get_curvature(bool mean = true) const;
 };
 
 } // namespace sindre::utils_3d::core

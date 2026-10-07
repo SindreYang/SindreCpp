@@ -125,6 +125,6 @@ The public CMake target is `sindre::utils_py`, enabled with
 `SINDRE_WITH_UTILS_PY=ON`. The namespace is `sindre::utils_py`, matching the
 module directory and public include path.
 
-NumPy is imported by the caller's Python environment at runtime. Mesh/Eigen
+NumPy is imported by the caller's Python environment at runtime. Mesh/Math
 conversion helpers are available when `SINDRE_WITH_UTILS_3D=ON` is enabled
 for the consuming target as well.

@@ -10,6 +10,7 @@ CMakeUserPresets.json
 *.vcxproj.user
 
 /tests/models/*.onnx
+/examples/ai_tensorrt_segmentation/models/*.onnx
 
 # Local build reports
 /build-*.log

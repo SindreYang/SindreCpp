@@ -7,20 +7,21 @@
 `thirds/` 是 sindrecpp 的第三方依赖登记区。每个公共模块在这里维护自己的
 依赖来源、版本和接入方式；模块实现只负责选择功能，不再散落 Git 地址和版本号。
 
-General 的固定源码、OpenBLAS 二进制包和 General 所需的固定 vcpkg 二进制包已经登记在
-`thirds/general/`，配置时强制使用这些版本。其他模块的可选依赖仍可由 CMake
+General 的固定源码和固定 vcpkg 二进制包已经登记在 `thirds/general/`；Math 的
+Eigen/OpenBLAS 固定依赖登记在 `thirds/math/`，配置时强制使用这些版本。其他模块的可选依赖仍可由 CMake
 FetchContent 下载到构建目录 `_deps/`；宿主项目也可以按模块规则显式提供 SDK/target。
 
 ## 目录
 
 | 目录 | 依赖范围 |
 | --- | --- |
-| [general](dependencies/general.md) | Eigen、CsString、spdlog、cpp-httplib、simdjson、argparse、RE2、Crashpad、zlib、OpenSSL |
+| [general](dependencies/general.md) | CsString、spdlog、cpp-httplib、simdjson、argparse、RE2、Crashpad、zlib、OpenSSL |
+| [math](dependencies/math.md) | Eigen 3.4.1、OpenBLAS 0.3.34 |
 | [utils_py](dependencies/utils_py.md) | pybind11、Python 3 development files、NumPy |
 | [ai](dependencies/ai.md) | ONNX Runtime、TensorRT、CUDA、cuDNN |
 | [gui](dependencies/gui.md) | Dear ImGui、GLFW、OpenGL |
 | [utils_2d](dependencies/utils_2d.md) | OpenCV |
-| [utils_3d](dependencies/utils_3d.md) | General 提供的 Eigen、VTK，以及可选几何后端 |
+| [utils_3d](dependencies/utils_3d.md) | Math 提供的 Eigen/OpenBLAS、VTK，以及可选几何后端 |
 
 ## 来源规则
 
@@ -46,5 +47,5 @@ add_subdirectory(sindrecpp)
 ```
 
 对于 OpenCV、VTK、GLFW 和 TensorRT，应使用对应 SDK 的 CMake package；不要把大型 SDK
-二进制提交到本仓库。General 的 OpenBLAS、RE2、Crashpad、zlib、OpenSSL 固定包必须由
-`thirds/general` 的固定依赖配置提供。
+二进制提交到本仓库。Math 的 OpenBLAS，以及 General 的 RE2、Crashpad、zlib、OpenSSL
+固定包必须由各自模块的固定依赖配置提供。

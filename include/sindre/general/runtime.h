@@ -823,6 +823,11 @@ struct Options {
     bool capture_output = false;
     std::chrono::milliseconds timeout{0};
     CancellationToken token{};
+    // POSIX shell executable. Empty uses /bin/sh. Ignored on Windows.
+    std::filesystem::path shell_executable;
+    // Zero disables the limit. The default prevents an unbounded child output
+    // stream from exhausting the host process memory.
+    std::size_t maximum_output_bytes = 16u * 1024u * 1024u;
 };
 
 struct Output {
