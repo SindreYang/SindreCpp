@@ -14,7 +14,8 @@ option(SINDRE_NO_EXCEPTIONS "Build sindre core with compiler exception support d
 # control the common warning and runtime policy applied to sindre targets.
 option(SINDRE_ENABLE_WARNINGS "Enable sindre compiler warnings" ON)
 option(SINDRE_WARNINGS_AS_ERRORS "Treat sindre warnings as errors" OFF)
-option(SINDRE_MSVC_STATIC_RUNTIME "Use the static MSVC runtime" OFF)
+# The fixed Windows General package profile uses the dynamic MSVC runtime.
+set(SINDRE_MSVC_STATIC_RUNTIME OFF)
 
 # General is the mandatory foundation. Its public integrations and dependency
 # profile are fixed; they are deliberately not user-selectable feature flags.
@@ -22,9 +23,7 @@ set(SINDRE_WITH_GENERAL ON)
 set(SINDRE_WITH_EIGEN ON)
 option(SINDRE_GENERAL_BUILD_LIBRARY "Build the compiled General runtime library" ON)
 option(SINDRE_GENERAL_SHARED "Build General as a shared library" OFF)
-set(SINDRE_EIGEN_BLAS_BACKEND "OPENBLAS" CACHE STRING
-    "Eigen BLAS backend: AUTO, MKL, OPENBLAS, BLAS, or EIGEN")
-set_property(CACHE SINDRE_EIGEN_BLAS_BACKEND PROPERTY STRINGS AUTO MKL OPENBLAS BLAS EIGEN)
+set(SINDRE_EIGEN_BLAS_BACKEND "OPENBLAS")
 option(SINDRE_EIGEN_NATIVE_ARCH "Optimize Eigen for the local CPU" ON)
 set(SINDRE_OPENBLAS_ROOT "${SINDRE_THIRDS_DIR}/general/openblas")
 if(NOT IS_DIRECTORY "${SINDRE_OPENBLAS_ROOT}")
