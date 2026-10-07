@@ -13,9 +13,12 @@ static int report_failure(std::string_view operation, const general::Error &erro
 }
 
 int main() {
-    const auto title = general::string::String("  sindre  ")
-                           .trim()
-                           .replace("Cpp", "Toolkit");
+    general::string::String title("  sindre  ");
+    if (const auto trimmed = title.try_trim(); !trimmed)
+        return report_failure("trim string", trimmed.error());
+    if (const auto replaced = title.try_replace_all(
+            general::string::String("Cpp"), general::string::String("Toolkit")); !replaced)
+        return report_failure("replace string", replaced.error());
     const auto number = general::string::parse_int(" 42 ");
     const auto ratio = general::string::parse_float(" 3.14 ");
     if (!number) return report_failure("parse integer", number.error());
@@ -46,7 +49,7 @@ int main() {
     const auto read = general::path::read_text(temporary.value().path());
     if (!read) return report_failure("read UTF-8 text", read.error());
 
-    std::cout << "title: " << title.str() << '\n'
+    std::cout << "title: " << title.to_utf8() << '\n'
               << "number: " << number.value() << '\n'
               << "ratio: " << ratio.value() << '\n'
               << "version: " << general::versioning::to_string(version.value()) << '\n'

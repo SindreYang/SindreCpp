@@ -2,10 +2,8 @@ sindre_add_interface_target(general "${SINDRE_SOURCE_DIR}/include")
 target_include_directories(sindre_general INTERFACE
     $<INSTALL_INTERFACE:include>)
 target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_GENERAL=1)
-if(SINDRE_WITH_EIGEN)
-    target_link_libraries(sindre_general INTERFACE Eigen3::Eigen)
-    target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_EIGEN=1)
-endif()
+target_link_libraries(sindre_general INTERFACE Eigen3::Eigen)
+target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_EIGEN=1)
 
 if(SINDRE_GENERAL_BUILD_LIBRARY)
     set(SINDRE_GENERAL_SOURCES
@@ -34,7 +32,7 @@ if(SINDRE_GENERAL_BUILD_LIBRARY)
         "${SINDRE_THIRDS_DIR}/general/sources/cs_string/string-1.4.1/cs_string-string-1.4.1/src")
     target_link_libraries(sindre_general_runtime PUBLIC sindre_base)
     target_compile_definitions(sindre_general_runtime PRIVATE SINDRE_GENERAL_BUILDING_LIBRARY=1)
-    foreach(feature IN ITEMS STRING LOG HTTP JSON CLI RE2 CRASHPAD ZLIB)
+    foreach(feature IN ITEMS LOG HTTP JSON CLI RE2 CRASHPAD ZLIB)
         if(SINDRE_WITH_${feature})
             target_compile_definitions(sindre_general_runtime PRIVATE
                 SINDRE_WITH_${feature}=1)
@@ -48,40 +46,38 @@ if(SINDRE_GENERAL_BUILD_LIBRARY)
 endif()
 include("${SINDRE_THIRDS_DIR}/general/Dependencies.cmake")
 
-if(SINDRE_WITH_STRING)
-    sindre_thirds_declare_local(csstring
-        "${SINDRE_THIRDS_DIR}/general/sources/cs_string/string-1.4.1/cs_string-string-1.4.1")
-    FetchContent_GetProperties(csstring)
-    if(NOT csstring_POPULATED)
-        FetchContent_Populate(csstring)
-    endif()
-    # CsString exposes most declarations through headers, but its upstream
-    # package also contains a compiled implementation. Keep that implementation
-    # in a Sindre static dependency so installed consumers do not need the
-    # FetchContent source tree.
-    add_library(sindre_cs_string STATIC
-        "${csstring_SOURCE_DIR}/src/cs_string.cpp")
-    target_compile_features(sindre_cs_string PUBLIC cxx_std_17)
-    target_include_directories(sindre_cs_string PUBLIC
-        $<BUILD_INTERFACE:${csstring_SOURCE_DIR}/src>
-        $<INSTALL_INTERFACE:include/cs_string>)
-    target_compile_definitions(sindre_cs_string PRIVATE BUILDING_LIB_CS_STRING)
-    target_link_libraries(sindre_general INTERFACE sindre_cs_string)
-    target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_STRING=1)
-    install(TARGETS sindre_cs_string EXPORT sindrecppTargets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-    install(DIRECTORY "${csstring_SOURCE_DIR}/src/"
-        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/cs_string"
-        FILES_MATCHING PATTERN "*.h")
+# CsString is the fixed C++17 backend of General's public string abstraction.
+# It is intentionally not an optional integration: every General consumer gets
+# the same encoding policy and the same compiled implementation.
+sindre_thirds_declare_local(csstring
+    "${SINDRE_THIRDS_DIR}/general/sources/cs_string/string-1.4.1/cs_string-string-1.4.1")
+FetchContent_GetProperties(csstring)
+if(NOT csstring_POPULATED)
+    FetchContent_Populate(csstring)
 endif()
+add_library(sindre_cs_string STATIC
+    "${csstring_SOURCE_DIR}/src/cs_string.cpp")
+target_compile_features(sindre_cs_string PUBLIC cxx_std_17)
+target_include_directories(sindre_cs_string PUBLIC
+    $<BUILD_INTERFACE:${csstring_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:include/cs_string>)
+# The upstream export macro otherwise marks static-library symbols as
+# __declspec(dllimport) for consumers on Windows.
+target_compile_definitions(sindre_cs_string PUBLIC BUILDING_LIB_CS_STRING)
+target_link_libraries(sindre_general INTERFACE sindre_cs_string)
+if(TARGET sindre_general_runtime)
+    target_link_libraries(sindre_general_runtime PRIVATE sindre_cs_string)
+endif()
+install(TARGETS sindre_cs_string EXPORT sindrecppTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY "${csstring_SOURCE_DIR}/src/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/cs_string"
+    FILES_MATCHING PATTERN "*.h")
 
 if(SINDRE_WITH_LOG)
     set(SINDRE_SPDLOG_BUNDLED OFF)
-    if(SINDRE_GENERAL_USE_EXTERNAL_DEPS AND NOT TARGET spdlog::spdlog)
-        find_package(spdlog CONFIG QUIET)
-    endif()
     if(NOT TARGET spdlog::spdlog)
         sindre_thirds_declare_local(spdlog
             "${SINDRE_THIRDS_DIR}/general/sources/spdlog/v1.17.0/spdlog-1.17.0")
@@ -109,10 +105,8 @@ endif()
 if(SINDRE_WITH_HTTP)
     set(SINDRE_HTTPLIB_BUNDLED OFF)
     if(SINDRE_HTTP_OPENSSL)
-        find_package(OpenSSL CONFIG REQUIRED COMPONENTS SSL Crypto)
-    endif()
-    if(SINDRE_GENERAL_USE_EXTERNAL_DEPS AND NOT TARGET httplib::httplib)
-        find_package(httplib CONFIG QUIET)
+        find_package(OpenSSL 3.3.0 EXACT CONFIG REQUIRED COMPONENTS SSL Crypto
+            PATHS "${SINDRE_GENERAL_PACKAGE_ROOT}" NO_DEFAULT_PATH)
     endif()
     if(NOT TARGET httplib::httplib)
         sindre_thirds_declare_local(cpp_httplib
@@ -173,13 +167,6 @@ if(SINDRE_WITH_JSON)
     set(SINDRE_SIMDJSON_BUNDLED OFF)
     if(TARGET simdjson)
         set(SINDRE_SIMDJSON_BUNDLED ON)
-    elseif(SINDRE_GENERAL_USE_EXTERNAL_DEPS AND NOT TARGET simdjson::simdjson)
-        sindre_thirds_declare_local(simdjson
-            "${SINDRE_THIRDS_DIR}/general/sources/simdjson/v4.6.11/simdjson-4.6.11")
-        sindre_make_available(simdjson SIMDJSON_DEVELOPER_MODE=OFF)
-        if(TARGET simdjson)
-            set(SINDRE_SIMDJSON_BUNDLED ON)
-        endif()
     endif()
     if(NOT TARGET simdjson::simdjson)
         sindre_thirds_declare_local(simdjson
@@ -242,9 +229,6 @@ endif()
 
 if(SINDRE_WITH_CLI)
     set(SINDRE_ARGPARSE_BUNDLED OFF)
-    if(SINDRE_GENERAL_USE_EXTERNAL_DEPS AND NOT TARGET argparse::argparse)
-        find_package(argparse CONFIG QUIET)
-    endif()
     if(NOT TARGET argparse::argparse)
         sindre_thirds_declare_local(argparse
             "${SINDRE_THIRDS_DIR}/general/sources/argparse/v3.2/argparse-3.2")
@@ -271,7 +255,8 @@ if(SINDRE_WITH_CLI)
 endif()
 
 if(SINDRE_WITH_RE2)
-    find_package(re2 CONFIG QUIET)
+    find_package(re2 11.0.0 EXACT CONFIG REQUIRED
+        PATHS "${SINDRE_GENERAL_PACKAGE_ROOT}" NO_DEFAULT_PATH)
     if(TARGET re2::re2)
         target_link_libraries(sindre_general INTERFACE re2::re2)
         if(TARGET sindre_general_runtime)
@@ -283,7 +268,7 @@ if(SINDRE_WITH_RE2)
             target_link_libraries(sindre_general_runtime PRIVATE re2)
         endif()
     else()
-        message(FATAL_ERROR "SINDRE_WITH_RE2 requires a re2 CMake package")
+        message(FATAL_ERROR "Fixed General dependency profile has no re2 target")
     endif()
     target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_RE2=1)
     if(TARGET sindre_general_runtime)
@@ -292,16 +277,27 @@ if(SINDRE_WITH_RE2)
 endif()
 
 if(SINDRE_WITH_CRASHPAD)
-    if(NOT SINDRE_CRASHPAD_TARGET OR NOT TARGET ${SINDRE_CRASHPAD_TARGET})
-        find_package(crashpad CONFIG REQUIRED)
-        if(TARGET crashpad)
-            set(SINDRE_CRASHPAD_TARGET crashpad)
-        elseif(TARGET crashpad::crashpad)
-            set(SINDRE_CRASHPAD_TARGET crashpad::crashpad)
-        endif()
+    set(_sindre_crashpad_metadata
+        "${SINDRE_GENERAL_PACKAGE_ROOT}/share/crashpad/vcpkg.spdx.json")
+    if(NOT EXISTS "${_sindre_crashpad_metadata}")
+        message(FATAL_ERROR "Fixed Crashpad package metadata is missing")
     endif()
-    if(NOT SINDRE_CRASHPAD_TARGET OR NOT TARGET ${SINDRE_CRASHPAD_TARGET})
-        message(FATAL_ERROR "SINDRE_WITH_CRASHPAD requires SINDRE_CRASHPAD_TARGET")
+    file(READ "${_sindre_crashpad_metadata}" _sindre_crashpad_metadata_text)
+    string(FIND "${_sindre_crashpad_metadata_text}"
+        "crashpad:x64-windows@${SINDRE_THIRD_GENERAL_CRASHPAD_VERSION}"
+        _sindre_crashpad_version_position)
+    if(_sindre_crashpad_version_position EQUAL -1)
+        message(FATAL_ERROR
+            "Fixed Crashpad package version ${SINDRE_THIRD_GENERAL_CRASHPAD_VERSION} was not found")
+    endif()
+    find_package(crashpad CONFIG REQUIRED
+        PATHS "${SINDRE_GENERAL_PACKAGE_ROOT}" NO_DEFAULT_PATH)
+    if(TARGET crashpad)
+        set(SINDRE_CRASHPAD_FIXED_TARGET crashpad)
+    elseif(TARGET crashpad::crashpad)
+        set(SINDRE_CRASHPAD_FIXED_TARGET crashpad::crashpad)
+    else()
+        message(FATAL_ERROR "Fixed General dependency profile has no Crashpad target")
     endif()
     # Keep the external package behind an exported wrapper. Exporting the
     # vcpkg interface target itself would bake absolute build-machine library
@@ -309,7 +305,7 @@ if(SINDRE_WITH_CRASHPAD)
     add_library(sindre_general_crashpad INTERFACE)
     set_target_properties(sindre_general_crashpad PROPERTIES EXPORT_NAME general_crashpad)
     target_link_libraries(sindre_general_crashpad INTERFACE
-        $<BUILD_INTERFACE:${SINDRE_CRASHPAD_TARGET}>)
+        $<BUILD_INTERFACE:${SINDRE_CRASHPAD_FIXED_TARGET}>)
     target_link_libraries(sindre_general INTERFACE sindre_general_crashpad)
     target_compile_definitions(sindre_general INTERFACE
         SINDRE_WITH_CRASHPAD=1 SINDRE_CRASHPAD_READY=1)
@@ -321,7 +317,11 @@ if(SINDRE_WITH_CRASHPAD)
 endif()
 
 if(SINDRE_WITH_ZLIB)
-    find_package(ZLIB REQUIRED)
+    find_package(ZLIB REQUIRED MODULE)
+    if(NOT ZLIB_VERSION_STRING STREQUAL "1.3.1")
+        message(FATAL_ERROR
+            "Fixed General dependency requires zlib 1.3.1, found ${ZLIB_VERSION_STRING}")
+    endif()
     target_link_libraries(sindre_general INTERFACE ZLIB::ZLIB)
     target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_ZLIB=1)
     if(TARGET sindre_general_runtime)

@@ -233,43 +233,9 @@ std::string join(const std::vector<std::string> &parts, std::string_view separat
     return result;
 }
 
-String::String() = default;
-String::String(const char *text) : value_(text ? text : "") {}
-String::String(std::string text) : value_(std::move(text)) {}
-String::String(std::string_view text) : value_(text) {}
-const std::string &String::str() const noexcept { return value_; }
-std::string_view String::view() const noexcept { return value_; }
-const char *String::c_str() const noexcept { return value_.c_str(); }
-const char *String::data() const noexcept { return value_.data(); }
-bool String::empty() const noexcept { return value_.empty(); }
-std::size_t String::size() const noexcept { return value_.size(); }
-std::size_t String::size_bytes() const noexcept { return value_.size(); }
-String String::trim() const { return String(trim_copy(value_)); }
-String String::lstrip() const { return String(string::lstrip(value_)); }
-String String::rstrip() const { return String(string::rstrip(value_)); }
-String String::strip(std::string_view chars) const { return String(string::strip(value_, chars)); }
-String String::lower() const { return String(lower_ascii(value_)); }
-String String::upper() const { return String(upper_ascii(value_)); }
-bool String::starts_with(std::string_view prefix) const noexcept { return string::starts_with(value_, prefix); }
-bool String::ends_with(std::string_view suffix) const noexcept { return string::ends_with(value_, suffix); }
-bool String::contains(std::string_view needle) const noexcept { return string::contains(value_, needle); }
-std::size_t String::count(std::string_view needle) const noexcept { return string::count(value_, needle); }
-String String::replace(std::string_view from, std::string_view to) const { return String(replace_all(value_, from, to)); }
-std::vector<std::string> String::split(std::string_view delimiter, bool keep_empty) const {
-    return string::split(value_, delimiter, keep_empty);
-}
-std::vector<std::string> String::rsplit(std::string_view delimiter, std::size_t max_splits, bool keep_empty) const {
-    return string::rsplit(value_, delimiter, max_splits, keep_empty);
-}
-String String::repeat(std::size_t times) const { return String(string::repeat(value_, times)); }
-bool String::is_valid_utf8() const noexcept { return valid_utf8(value_); }
-Result<std::size_t> String::size_code_points() const { return count_code_points(value_); }
-Result<std::int64_t> String::to_int(int base) const { return parse_int(value_, base); }
-Result<double> String::to_float() const { return parse_float(value_); }
-String::operator std::string_view() const noexcept { return value_; }
-
 } // namespace sindre::general::string
 
+#if defined(SINDRE_WITH_RE2)
 namespace sindre::general::regex {
 
 Result<Regex> Regex::compile(std::string pattern) noexcept {
@@ -322,8 +288,6 @@ Result<std::string> Regex::replace(std::string_view text, std::string_view repla
 }
 
 } // namespace sindre::general::regex
-#if defined(SINDRE_WITH_RE2)
-
 #endif
 
 // String implementation boundary.  concat and other constrained templates

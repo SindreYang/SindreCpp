@@ -16,64 +16,59 @@ option(SINDRE_ENABLE_WARNINGS "Enable sindre compiler warnings" ON)
 option(SINDRE_WARNINGS_AS_ERRORS "Treat sindre warnings as errors" OFF)
 option(SINDRE_MSVC_STATIC_RUNTIME "Use the static MSVC runtime" OFF)
 
-option(SINDRE_WITH_GENERAL "Build the General module" ON)
-option(SINDRE_WITH_EIGEN "Enable the project-wide Eigen data bridge" ON)
+# General is the mandatory foundation. Its public integrations and dependency
+# profile are fixed; they are deliberately not user-selectable feature flags.
+set(SINDRE_WITH_GENERAL ON)
+set(SINDRE_WITH_EIGEN ON)
 option(SINDRE_GENERAL_BUILD_LIBRARY "Build the compiled General runtime library" ON)
 option(SINDRE_GENERAL_SHARED "Build General as a shared library" OFF)
 set(SINDRE_EIGEN_BLAS_BACKEND "OPENBLAS" CACHE STRING
     "Eigen BLAS backend: AUTO, MKL, OPENBLAS, BLAS, or EIGEN")
 set_property(CACHE SINDRE_EIGEN_BLAS_BACKEND PROPERTY STRINGS AUTO MKL OPENBLAS BLAS EIGEN)
 option(SINDRE_EIGEN_NATIVE_ARCH "Optimize Eigen for the local CPU" ON)
-set(SINDRE_OPENBLAS_ROOT "" CACHE PATH "Fixed OpenBLAS package root")
-set(sindre_bundled_openblas_root "${SINDRE_THIRDS_DIR}/general/openblas")
-if(NOT SINDRE_OPENBLAS_ROOT
-   AND EXISTS "${sindre_bundled_openblas_root}/lib/cmake/openblas")
-    set(SINDRE_OPENBLAS_ROOT "${sindre_bundled_openblas_root}" CACHE PATH
-        "Fixed OpenBLAS package root" FORCE)
+set(SINDRE_OPENBLAS_ROOT "${SINDRE_THIRDS_DIR}/general/openblas")
+if(NOT IS_DIRECTORY "${SINDRE_OPENBLAS_ROOT}")
+    message(FATAL_ERROR
+        "Fixed General dependency is missing: OpenBLAS at ${SINDRE_OPENBLAS_ROOT}")
 endif()
-if(SINDRE_OPENBLAS_ROOT)
-    list(PREPEND CMAKE_PREFIX_PATH "${SINDRE_OPENBLAS_ROOT}")
-    if(EXISTS "${SINDRE_OPENBLAS_ROOT}/bin")
-        set(SINDRE_OPENBLAS_RUNTIME_DIR "${SINDRE_OPENBLAS_ROOT}/bin"
-            CACHE INTERNAL "OpenBLAS runtime directory for Windows test targets")
-    endif()
-    if(EXISTS "${SINDRE_OPENBLAS_ROOT}/lib/cmake/openblas")
-        set(OpenBLAS_DIR "${SINDRE_OPENBLAS_ROOT}/lib/cmake/openblas"
-            CACHE PATH "OpenBLAS CMake package directory" FORCE)
-    endif()
+list(PREPEND CMAKE_PREFIX_PATH "${SINDRE_OPENBLAS_ROOT}")
+if(EXISTS "${SINDRE_OPENBLAS_ROOT}/bin")
+    set(SINDRE_OPENBLAS_RUNTIME_DIR "${SINDRE_OPENBLAS_ROOT}/bin"
+        CACHE INTERNAL "OpenBLAS runtime directory for Windows test targets")
 endif()
-set(SINDRE_GENERAL_PACKAGE_ROOT "" CACHE PATH
-    "Fixed General binary package root")
-set(sindre_bundled_general_package_root
+if(EXISTS "${SINDRE_OPENBLAS_ROOT}/lib/cmake/openblas")
+    set(OpenBLAS_DIR "${SINDRE_OPENBLAS_ROOT}/lib/cmake/openblas"
+        CACHE PATH "OpenBLAS CMake package directory" FORCE)
+endif()
+set(SINDRE_GENERAL_PACKAGE_ROOT
     "${SINDRE_THIRDS_DIR}/general/packages/general-x64-windows/installed/x64-windows")
-if(NOT SINDRE_GENERAL_PACKAGE_ROOT
-   AND EXISTS "${sindre_bundled_general_package_root}/share")
-    set(SINDRE_GENERAL_PACKAGE_ROOT "${sindre_bundled_general_package_root}" CACHE PATH
-        "Fixed General binary package root" FORCE)
+if(NOT IS_DIRECTORY "${SINDRE_GENERAL_PACKAGE_ROOT}/share")
+    message(FATAL_ERROR
+        "Fixed General dependency profile is missing: ${SINDRE_GENERAL_PACKAGE_ROOT}")
 endif()
-if(SINDRE_GENERAL_PACKAGE_ROOT)
-    list(PREPEND CMAKE_PREFIX_PATH "${SINDRE_GENERAL_PACKAGE_ROOT}")
+list(PREPEND CMAKE_PREFIX_PATH "${SINDRE_GENERAL_PACKAGE_ROOT}")
+# The fixed Windows Crashpad profile is built with the release STL iterator
+# ABI. Apply the same ABI to every project and bundled dependency target so
+# Debug builds do not mix iterator-debug levels at link time.
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+    add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
 endif()
 option(SINDRE_WITH_AI "Build the AI module" OFF)
 option(SINDRE_WITH_GUI "Build the GUI module" OFF)
 option(SINDRE_WITH_UTILS_2D "Build OpenCV 2D utilities" OFF)
 option(SINDRE_WITH_UTILS_3D "Build VTK 3D utilities" OFF)
 
-# General integrations. They remain implementation options of sindre::general.
-option(SINDRE_WITH_STRING "Enable the CsString integration" ON)
-option(SINDRE_WITH_LOG "Enable the spdlog integration" ON)
-option(SINDRE_WITH_HTTP "Enable the cpp-httplib integration" ON)
-option(SINDRE_HTTP_OPENSSL "Enable HTTPS support in cpp-httplib when OpenSSL is available" ON)
-option(SINDRE_WITH_JSON "Enable the simdjson integration" ON)
-option(SINDRE_WITH_CLI "Enable the argparse integration" ON)
-option(SINDRE_WITH_RE2 "Enable the RE2 regular-expression integration" ON)
-# Crashpad is part of the fixed General package profile. Applications that do
-# not ship the package can explicitly disable it or provide a compatible target.
-option(SINDRE_WITH_CRASHPAD "Enable the Crashpad integration" ON)
-option(SINDRE_WITH_ZLIB "Enable zlib compression helpers" ON)
-set(SINDRE_CRASHPAD_TARGET "" CACHE STRING "Existing Crashpad client target")
-option(SINDRE_GENERAL_USE_EXTERNAL_DEPS
-    "Prefer host CMake packages over the fixed General sources in thirds" OFF)
+# All General integrations are mandatory and come from the fixed dependency
+# profile declared in thirds/general/Dependencies.cmake.
+set(SINDRE_WITH_LOG ON)
+set(SINDRE_WITH_HTTP ON)
+set(SINDRE_HTTP_OPENSSL ON)
+set(SINDRE_WITH_JSON ON)
+set(SINDRE_WITH_CLI ON)
+set(SINDRE_WITH_RE2 ON)
+set(SINDRE_WITH_CRASHPAD ON)
+set(SINDRE_WITH_ZLIB ON)
 
 # Python/NumPy utilities. This is a standalone module because it has a
 # separate interpreter/extension dependency profile from General.
@@ -133,28 +128,6 @@ set(SINDRE_UTILS_3D_BLAS_BACKEND "AUTO" CACHE STRING "utils_3d BLAS backend: AUT
 set_property(CACHE SINDRE_UTILS_3D_BLAS_BACKEND PROPERTY STRINGS AUTO EIGEN BLAS)
 option(SINDRE_BUILD_UTILS_3D_BENCHMARKS "Build the utils_3d benchmark" OFF)
 
-if(NOT SINDRE_WITH_GENERAL)
-    foreach(module IN ITEMS STRING LOG HTTP JSON CLI RE2 CRASHPAD ZLIB)
-        if(SINDRE_WITH_${module})
-            message(FATAL_ERROR "${module} requires SINDRE_WITH_GENERAL=ON")
-        endif()
-    endforeach()
-    if(SINDRE_WITH_GUI)
-        message(FATAL_ERROR "SINDRE_WITH_GUI requires SINDRE_WITH_GENERAL=ON")
-    endif()
-    if(SINDRE_WITH_AI)
-        message(FATAL_ERROR "SINDRE_WITH_AI requires SINDRE_WITH_GENERAL=ON")
-    endif()
-    if(SINDRE_WITH_UTILS_PY)
-        message(FATAL_ERROR "SINDRE_WITH_UTILS_PY requires SINDRE_WITH_GENERAL=ON")
-    endif()
-    if(SINDRE_WITH_UTILS_2D OR SINDRE_WITH_UTILS_3D)
-        message(FATAL_ERROR "SINDRE_WITH_UTILS_2D/3D requires SINDRE_WITH_GENERAL=ON")
-    endif()
-endif()
-
-if((SINDRE_WITH_GENERAL OR SINDRE_WITH_UTILS_2D OR SINDRE_WITH_UTILS_3D OR SINDRE_WITH_UTILS_PY)
-   AND NOT SINDRE_WITH_EIGEN)
-    message(FATAL_ERROR
-        "General, 2D, 3D, and Python require SINDRE_WITH_EIGEN for the project data bridge")
+if(SINDRE_WITH_UTILS_2D OR SINDRE_WITH_UTILS_3D OR SINDRE_WITH_UTILS_PY)
+    message(STATUS "General and Eigen are mandatory foundations for all utility modules")
 endif()

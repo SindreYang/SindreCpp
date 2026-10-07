@@ -127,7 +127,7 @@ AI 的安装消费者测试会真实加载并运行固定版本的 ONNX Runtime�
 ```text
 项目名：sindrecpp
 目标名：sindre::general 或 sindre::utils_3d
-选项名：SINDRE_WITH_STRING 或 SINDRE_WITH_UTILS_3D
+选项名：SINDRE_WITH_UTILS_3D；CsString 是 General 的固定依赖，不提供独立开关
 ```
 
 ### C++
@@ -235,12 +235,12 @@ if (!result) {
 ## 依赖管理
 
 - 第三方依赖登记在 `thirds/<module>/`，包括来源、固定版本、许可证/SDK 说明和 CMake cache 覆盖点；
-- General 的固定源码和固定二进制包必须放在 `thirds/general/`，默认直接使用这些版本；其余可选模块可通过 `thirds/Dependencies.cmake` 接入固定 Git/URL 依赖，下载源码只进入构建目录 `_deps/`；
+- General 的全部依赖和版本必须固定在 `thirds/general/`，配置时只允许使用固定源码和固定二进制包；其余模块才可以按需接入固定 Git/URL 依赖；
 - 优先复用父项目中已经存在的 CMake target；
 - 没有现成 target 时才使用 FetchContent；
 - 第三方库的测试、示例和文档默认关闭；
 - 每个依赖必须固定版本；
-- General 默认不接受宿主环境中同名 target 覆盖固定版本；确需复用宿主包时显式打开 `SINDRE_GENERAL_USE_EXTERNAL_DEPS=ON`，并自行承担 ABI/运行时一致性；
+- General 不接受宿主环境中同名 target 或系统包覆盖固定版本；缺少固定依赖必须修复依赖配置，不能通过外部包绕过；
 - 不把第三方头文件复制进 sindrecpp；
 - 不通过全局宏污染宿主项目。
 

@@ -8,7 +8,7 @@
 依赖来源、版本和接入方式；模块实现只负责选择功能，不再散落 Git 地址和版本号。
 
 General 的固定源码、OpenBLAS 二进制包和 General 所需的固定 vcpkg 二进制包已经登记在
-`thirds/general/`，默认直接使用这些版本。其他模块的可选依赖仍可由 CMake
+`thirds/general/`，配置时强制使用这些版本。其他模块的可选依赖仍可由 CMake
 FetchContent 下载到构建目录 `_deps/`；宿主项目也可以按模块规则显式提供 SDK/target。
 
 ## 目录
@@ -29,15 +29,15 @@ FetchContent 下载到构建目录 `_deps/`；宿主项目也可以按模块规�
   待生态和 ABI 验证完成后再升级。
 - URL 下载必须填写固定版本和校验值；当前仓库暂未需要二进制 URL 依赖。
 - 大型 SDK、商业/系统库和 GPU 运行时不自动下载，使用现有的 `*_ROOT`、
-  `CMAKE_PREFIX_PATH` 或 CMake package target。
-- General 默认优先使用 `thirds/general` 中的固定版本；只有显式设置
-  `SINDRE_GENERAL_USE_EXTERNAL_DEPS=ON` 才优先使用宿主 target。其他模块仍优先复用宿主 target。
+  `CMAKE_PREFIX_PATH` 或 CMake package target；General 不适用该替换规则。
+- General 只接受 `thirds/general` 中登记的固定版本和固定包路径，禁止宿主 target、
+  系统包或用户 cache 覆盖；缺少固定依赖时配置直接失败。
 - 第三方测试、示例和文档默认关闭，避免污染 sindrecpp 的构建目标。
 - 不把第三方头文件复制到 `include/`，对外只暴露 sindrecpp 的模块头文件。
 
 ## 在宿主项目中替换依赖
 
-依赖登记文件中的仓库和版本都可以通过同名 CMake cache 变量覆盖。例如：
+非 General 模块的依赖登记文件中的仓库和版本可以通过同名 CMake cache 变量覆盖。例如：
 
 ```cmake
 set(SINDRE_THIRD_GENERAL_SIMDJSON_TAG v4.6.11 CACHE STRING "")
@@ -46,5 +46,5 @@ add_subdirectory(sindrecpp)
 ```
 
 对于 OpenCV、VTK、GLFW 和 TensorRT，应使用对应 SDK 的 CMake package；不要把大型 SDK
-二进制提交到本仓库。General 的 OpenBLAS、RE2、Crashpad、zlib、OpenSSL 固定包例外，
-已放入 `thirds/general` 供本地可复现构建使用。
+二进制提交到本仓库。General 的 OpenBLAS、RE2、Crashpad、zlib、OpenSSL 固定包必须由
+`thirds/general` 的固定依赖配置提供。

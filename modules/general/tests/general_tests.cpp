@@ -89,11 +89,24 @@ int main() {
     CHECK(!sindre::general::string::parse_float("nan"));
     CHECK(sindre::general::string::join({"中文", "sindre"}, "/") == "中文/sindre");
     CHECK(sindre::general::string::concat("Sindre", "Cpp", 17) == "SindreCpp17");
-    const sindre::general::string::String python_text("  A,b,中文  ");
-    CHECK(python_text.trim().lower().str() == "a,b,中文");
-    CHECK(python_text.split(",").size() == 3);
-    CHECK(python_text.contains("中文"));
-    CHECK(python_text.size_code_points() && python_text.size_code_points().value() == 10);
+    sindre::general::string::String python_text("  A,b,中文  ");
+    CHECK(python_text.try_trim());
+    CHECK(python_text.try_lower_ascii());
+    CHECK(python_text.to_utf8() == "a,b,中文");
+    const auto python_parts = python_text.try_split(",");
+    CHECK(python_parts && python_parts.value().size() == 3);
+    CHECK(python_text.find(sindre::general::string::String("中文")) !=
+          sindre::general::string::String::npos);
+    CHECK(python_text.size() == 6 && python_text.size_storage() > python_text.size());
+    const auto first_code_point = python_text.get_code_point(0);
+    CHECK(first_code_point && first_code_point.value().unicode() == 'a');
+    const auto converted_utf16 = python_text.try_convert<CsString::utf16>();
+    CHECK(converted_utf16);
+    const auto converted_utf8 = converted_utf16.value().try_convert<CsString::utf8>();
+    CHECK(converted_utf8 && converted_utf8.value().to_utf8() == "a,b,中文");
+    const sindre::general::string::String invalid_utf8(std::string("\xE4", 1));
+    CHECK(invalid_utf8.size() == 1 && invalid_utf8.get_code_point(0) &&
+          invalid_utf8.get_code_point(0).value().unicode() == 0xFFFD);
     CHECK(!sindre::general::string::normalize_utf8(std::string("\xE4", 1)));
 
     sindre::general::CancellationSource source;
@@ -279,12 +292,13 @@ int main() {
     CHECK(sindre::general::startup::location("sindre-test"));
     CHECK(!sindre::general::desktop::notify("title", "body"));
 
-#if defined(SINDRE_WITH_STRING)
     sindre::general::string::Utf8String utf8_text("中文字符串");
     sindre::general::string::Utf16String utf16_text(u"中文字符串");
     CHECK(utf8_text == "中文字符串");
     CHECK(utf16_text == u"中文字符串");
-#endif
+    sindre::general::string::String16 string16_text(u"中文字符串");
+    const auto string16_roundtrip = string16_text.try_convert<CsString::utf8>();
+    CHECK(string16_roundtrip && string16_roundtrip.value().to_utf8() == "中文字符串");
 
 #if defined(SINDRE_WITH_JSON)
     const auto document = sindre::general::json::try_parse(R"({"名字":"中文"})");

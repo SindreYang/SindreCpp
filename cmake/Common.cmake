@@ -33,16 +33,13 @@ set(SINDRE_EIGEN_BLAS_ENABLED OFF)
 
 if(SINDRE_WITH_EIGEN AND (SINDRE_WITH_GENERAL OR SINDRE_WITH_UTILS_2D OR
                           SINDRE_WITH_UTILS_3D OR SINDRE_WITH_UTILS_PY))
-    if(NOT TARGET Eigen3::Eigen)
-        find_package(Eigen3 3.4.1 CONFIG QUIET NO_MODULE)
-    endif()
-    if(NOT TARGET Eigen3::Eigen)
-        sindre_thirds_declare_local(eigen
-            "${SINDRE_THIRDS_DIR}/general/sources/eigen/3.4.1/eigen-3.4.1")
-        set(EIGEN_BUILD_DOC OFF)
-        set(EIGEN_BUILD_PKGCONFIG OFF)
-        FetchContent_MakeAvailable(eigen)
-    endif()
+    # Eigen is part of the fixed General dependency profile. Never accept a
+    # host-installed Eigen target because that can silently change the ABI.
+    sindre_thirds_declare_local(eigen
+        "${SINDRE_THIRDS_DIR}/general/sources/eigen/3.4.1/eigen-3.4.1")
+    set(EIGEN_BUILD_DOC OFF)
+    set(EIGEN_BUILD_PKGCONFIG OFF)
+    FetchContent_MakeAvailable(eigen)
     if(NOT TARGET Eigen3::Eigen)
         message(FATAL_ERROR "SINDRE_WITH_EIGEN requires an Eigen3::Eigen target")
     endif()
