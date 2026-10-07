@@ -3,6 +3,17 @@ target_include_directories(sindre_general INTERFACE
     $<INSTALL_INTERFACE:include>)
 target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_GENERAL=1)
 
+# General 的默认产物是静态库，并且在 Windows 上固定使用静态 CRT 与
+# `_ITERATOR_DEBUG_LEVEL=0`。这些设置必须通过已安装的聚合 target 传递给
+# 外部消费者，否则消费者会用 `/MD` 或 STL 调试 ABI 编译自己的目标，最终
+# 在链接阶段出现 LNK2038/LNK4098。共享库由 DLL 自己拥有 CRT，不应继承该
+# 静态库约束。
+if(MSVC AND NOT SINDRE_GENERAL_SHARED)
+    target_compile_definitions(sindre_general INTERFACE
+        _ITERATOR_DEBUG_LEVEL=0)
+    target_compile_options(sindre_general INTERFACE /MT)
+endif()
+
 if(SINDRE_GENERAL_BUILD_LIBRARY)
     set(SINDRE_GENERAL_SOURCES
         src/core.cpp

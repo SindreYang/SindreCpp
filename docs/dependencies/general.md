@@ -61,6 +61,12 @@ The fixed Windows package profile uses static libraries and the static MSVC
 runtime with `_ITERATOR_DEBUG_LEVEL=0`. General applies the same ABI to Debug
 and Release consumers.
 
+The installed Windows static package exports the `/MT` and iterator settings
+through `sindre::general`. It also maps Debug, RelWithDebInfo, and MinSizeRel
+dependency configurations to the shipped Release profile, because the fixed
+third-party archives are distributed as one consistent static ABI. A consumer
+does not need to repeat these ABI flags manually.
+
 安装后的 CMake consumer 仍需要让 OpenSSL、RE2、Crashpad、zlib
 对应的固定包可被发现；Math consumer 还需要固定 OpenBLAS 的 CMake package；Windows 运行时还需要把
 固定 vcpkg 包的 `bin` 加入 DLL 搜索路径。静态链接 sindrecpp 本身不等于把这些

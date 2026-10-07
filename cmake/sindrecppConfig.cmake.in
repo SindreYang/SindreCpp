@@ -5,6 +5,28 @@
 set(_sindre_package_prefix_dir "${PACKAGE_PREFIX_DIR}")
 
 include(CMakeFindDependencyMacro)
+
+# Windows static General packages are built and shipped as one Release ABI:
+# static CRT and `_ITERATOR_DEBUG_LEVEL=0`.  A Visual Studio consumer often
+# configures as Debug by default, which would otherwise select the Debug
+# vcpkg libraries (`/MTd`, iterator level 2) while the installed General
+# archive remains the Release static build.  Map every non-Release consumer
+# configuration to the shipped Release dependency set while importing the
+# package targets, then restore the caller's global mapping variables.
+if(WIN32 AND "@SINDRE_GENERAL_SHARED@" STREQUAL "OFF")
+    foreach(_sindre_config IN ITEMS DEBUG RELWITHDEBINFO MINSIZEREL)
+        string(TOLOWER "${_sindre_config}" _sindre_config_lower)
+        set(_sindre_map_var "CMAKE_MAP_IMPORTED_CONFIG_${_sindre_config}")
+        if(DEFINED ${_sindre_map_var})
+            set(_sindre_saved_map_${_sindre_config_lower} "${${_sindre_map_var}}")
+            set(_sindre_saved_map_defined_${_sindre_config_lower} TRUE)
+        else()
+            set(_sindre_saved_map_defined_${_sindre_config_lower} FALSE)
+        endif()
+        set(${_sindre_map_var} Release)
+    endforeach()
+endif()
+
 find_dependency(Threads)
 if(@SINDRE_WITH_MATH@)
     if(@SINDRE_MATH_EIGEN_BUNDLED@)
@@ -20,7 +42,11 @@ endif()
 if(@SINDRE_MATH_BLAS_ENABLED@)
     set(BLA_VENDOR "@SINDRE_MATH_BLAS_BACKEND@")
     if(BLA_VENDOR STREQUAL "OPENBLAS")
-        find_dependency(OpenBLAS @SINDRE_THIRD_MATH_OPENBLAS_VERSION@ EXACT CONFIG)
+        if("@SINDRE_THIRD_MATH_OPENBLAS_VERSION@" STREQUAL "")
+            find_dependency(OpenBLAS CONFIG)
+        else()
+            find_dependency(OpenBLAS @SINDRE_THIRD_MATH_OPENBLAS_VERSION@ EXACT CONFIG)
+        endif()
         if(NOT DEFINED OpenBLAS_INCLUDE_DIRS)
             message(FATAL_ERROR "OpenBLAS package did not provide OpenBLAS_INCLUDE_DIRS")
         endif()
@@ -199,6 +225,18 @@ if(@SINDRE_WITH_GUI@ AND @SINDRE_GUI_GLFW_OPENGL3@)
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/sindrecppTargets.cmake")
+
+if(WIN32 AND "@SINDRE_GENERAL_SHARED@" STREQUAL "OFF")
+    foreach(_sindre_config IN ITEMS DEBUG RELWITHDEBINFO MINSIZEREL)
+        string(TOLOWER "${_sindre_config}" _sindre_config_lower)
+        set(_sindre_map_var "CMAKE_MAP_IMPORTED_CONFIG_${_sindre_config}")
+        if(_sindre_saved_map_defined_${_sindre_config_lower})
+            set(${_sindre_map_var} "${_sindre_saved_map_${_sindre_config_lower}}")
+        else()
+            unset(${_sindre_map_var})
+        endif()
+    endforeach()
+endif()
 
 if(@SINDRE_WITH_CRASHPAD@ AND TARGET sindre::general_crashpad)
     # The build-time Crashpad target may contain absolute package paths and is

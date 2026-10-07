@@ -23,7 +23,10 @@
 #include <windows.h>
 #endif
 
-namespace sindre::general::codec {
+// 密码学实现集中在本翻译单元内，避免把 OpenSSL 类型和内部格式暴露到公共头。
+// 字节编码与文件加密共用同一套容器格式、密钥派生和 AES-GCM 初始化流程，
+// 这样可以保证两条公共 API 路径的安全参数和错误语义始终一致。
+namespace sindre::general::crypto_detail {
 namespace {
 
 constexpr std::array<std::uint8_t, 8> kMagic{
@@ -128,23 +131,24 @@ Header make_header(const Salt &salt, const Nonce &nonce,
 }
 
 Result<std::pair<Salt, Nonce>> parse_header(const Header &header,
-                                             std::uint64_t payload_size) {
+                                             std::uint64_t payload_size,
+                                             const char *context) {
     if (!std::equal(kMagic.begin(), kMagic.end(), header.begin()) ||
         header[8] != kVersion || header[9] != kAlgorithmAes256Gcm)
         return failure<std::pair<Salt, Nonce>>(std::errc::invalid_argument,
                                                "Unsupported encrypted data format",
-                                               "codec.decrypt");
+                                               context);
     const auto iterations = read_u32(header, 10);
     if (iterations < 100000 || iterations > 10000000)
         return failure<std::pair<Salt, Nonce>>(std::errc::invalid_argument,
                                                "Invalid encryption parameters",
-                                               "codec.decrypt");
+                                               context);
     const auto plaintext_size = read_u64(header, 42);
     if (payload_size < kHeaderSize + kTagSize ||
         plaintext_size != payload_size - kHeaderSize - kTagSize)
         return failure<std::pair<Salt, Nonce>>(std::errc::invalid_argument,
                                                "Encrypted data size is invalid",
-                                               "codec.decrypt");
+                                               context);
     Salt salt{};
     Nonce nonce{};
     std::copy_n(header.begin() + 14, salt.size(), salt.begin());
@@ -261,7 +265,7 @@ Result<std::vector<Byte>> decrypt_bytes_impl(const std::vector<Byte> &data,
                                           "Encrypted data is too small", "codec.decrypt");
     Header header{};
     std::copy_n(data.begin(), header.size(), header.begin());
-    const auto parsed = parse_header(header, data.size());
+    const auto parsed = parse_header(header, data.size(), "codec.decrypt");
     if (!parsed) return Result<std::vector<Byte>>::failure(parsed.error());
     const auto iterations = read_u32(header, 10);
     auto key = derive_key(password, parsed.value().first, iterations, "codec.decrypt");
@@ -311,6 +315,10 @@ Result<std::vector<Byte>> decrypt_bytes_impl(const std::vector<Byte> &data,
 }
 
 } // namespace
+} // namespace sindre::general::crypto_detail
+
+namespace sindre::general::codec {
+using namespace crypto_detail;
 
 Result<std::vector<std::uint8_t>> encrypt_bytes(
     const std::vector<std::uint8_t> &data, std::string_view password) noexcept {
@@ -352,65 +360,8 @@ Result<std::string> decrypt(std::string_view ciphertext,
 } // namespace sindre::general::codec
 
 namespace sindre::general::file {
+using namespace crypto_detail;
 namespace {
-
-using Byte = std::uint8_t;
-using Key = std::array<Byte, 32>;
-using Salt = std::array<Byte, 16>;
-using Nonce = std::array<Byte, 12>;
-using Tag = std::array<Byte, 16>;
-using Header = std::array<Byte, 50>;
-
-constexpr std::array<Byte, 8> kMagic{
-    {'S', 'I', 'N', 'D', 'R', 'E', 'C', 'R'}};
-constexpr Byte kVersion = 1;
-constexpr Byte kAlgorithmAes256Gcm = 1;
-constexpr std::uint32_t kPbkdf2Iterations = 600000;
-constexpr std::size_t kHeaderSize = 50;
-constexpr std::size_t kTagSize = 16;
-constexpr std::size_t kMaximumChunkSize = 64 * 1024 * 1024;
-
-struct CipherContext {
-    EVP_CIPHER_CTX *value = nullptr;
-    CipherContext() noexcept = default;
-    ~CipherContext() { if (value) EVP_CIPHER_CTX_free(value); }
-    CipherContext(const CipherContext &) = delete;
-    CipherContext &operator=(const CipherContext &) = delete;
-    CipherContext(CipherContext &&other) noexcept
-        : value(std::exchange(other.value, nullptr)) {}
-    CipherContext &operator=(CipherContext &&other) noexcept {
-        if (this == &other) return *this;
-        if (value) EVP_CIPHER_CTX_free(value);
-        value = std::exchange(other.value, nullptr);
-        return *this;
-    }
-};
-
-template <class T, class Function>
-Result<T> boundary(const char *context, Function &&function) noexcept {
-#if !defined(SINDRE_NO_EXCEPTIONS)
-    try {
-        return std::forward<Function>(function)();
-    } catch (const std::bad_alloc &) {
-        return Result<T>::failure(std::make_error_code(std::errc::not_enough_memory),
-                                  "Not enough memory", context);
-    } catch (const std::exception &error) {
-        return Result<T>::failure(std::make_error_code(std::errc::io_error),
-                                  error.what(), context);
-    } catch (...) {
-        return Result<T>::failure(std::make_error_code(std::errc::io_error),
-                                  "Unknown file crypto failure", context);
-    }
-#else
-    static_cast<void>(context);
-    return std::forward<Function>(function)();
-#endif
-}
-
-template <class T>
-Result<T> failure(std::errc code, const char *message, const char *context) {
-    return Result<T>::failure(std::make_error_code(code), message, context);
-}
 
 Result<std::filesystem::path> make_temp_path(
     const std::filesystem::path &destination, const char *context) {
@@ -447,70 +398,6 @@ Result<void> validate_options(const CryptoOptions &options, const char *context)
         return failure<void>(std::errc::invalid_argument,
                              "Invalid crypto buffer size", context);
     return Result<void>::success();
-}
-
-void write_u32(Header &header, std::size_t offset, std::uint32_t value) noexcept {
-    header[offset] = static_cast<Byte>((value >> 24) & 0xff);
-    header[offset + 1] = static_cast<Byte>((value >> 16) & 0xff);
-    header[offset + 2] = static_cast<Byte>((value >> 8) & 0xff);
-    header[offset + 3] = static_cast<Byte>(value & 0xff);
-}
-
-void write_u64(Header &header, std::size_t offset, std::uint64_t value) noexcept {
-    for (int index = 7; index >= 0; --index)
-        header[offset + static_cast<std::size_t>(7 - index)] =
-            static_cast<Byte>((value >> (index * 8)) & 0xff);
-}
-
-std::uint32_t read_u32(const Header &header, std::size_t offset) noexcept {
-    return (static_cast<std::uint32_t>(header[offset]) << 24) |
-           (static_cast<std::uint32_t>(header[offset + 1]) << 16) |
-           (static_cast<std::uint32_t>(header[offset + 2]) << 8) |
-           static_cast<std::uint32_t>(header[offset + 3]);
-}
-
-std::uint64_t read_u64(const Header &header, std::size_t offset) noexcept {
-    std::uint64_t value = 0;
-    for (int index = 0; index < 8; ++index)
-        value = (value << 8) | header[offset + static_cast<std::size_t>(index)];
-    return value;
-}
-
-Header make_header(const Salt &salt, const Nonce &nonce,
-                   std::uint64_t plaintext_size) noexcept {
-    Header header{};
-    std::copy(kMagic.begin(), kMagic.end(), header.begin());
-    header[8] = kVersion;
-    header[9] = kAlgorithmAes256Gcm;
-    write_u32(header, 10, kPbkdf2Iterations);
-    std::copy(salt.begin(), salt.end(), header.begin() + 14);
-    std::copy(nonce.begin(), nonce.end(), header.begin() + 30);
-    write_u64(header, 42, plaintext_size);
-    return header;
-}
-
-Result<std::pair<Salt, Nonce>> parse_header(const Header &header,
-                                             std::uint64_t file_size) {
-    if (!std::equal(kMagic.begin(), kMagic.end(), header.begin()) ||
-        header[8] != kVersion || header[9] != kAlgorithmAes256Gcm)
-        return failure<std::pair<Salt, Nonce>>(std::errc::invalid_argument,
-                                               "Unsupported encrypted file format",
-                                               "file.decrypt");
-    const auto iterations = read_u32(header, 10);
-    if (iterations < 100000 || iterations > 10000000)
-        return failure<std::pair<Salt, Nonce>>(std::errc::invalid_argument,
-                                               "Invalid encryption parameters",
-                                               "file.decrypt");
-    if (file_size < kHeaderSize + kTagSize ||
-        read_u64(header, 42) != file_size - kHeaderSize - kTagSize)
-        return failure<std::pair<Salt, Nonce>>(std::errc::invalid_argument,
-                                               "Encrypted file size is invalid",
-                                               "file.decrypt");
-    Salt salt{};
-    Nonce nonce{};
-    std::copy_n(header.begin() + 14, salt.size(), salt.begin());
-    std::copy_n(header.begin() + 30, nonce.size(), nonce.begin());
-    return Result<std::pair<Salt, Nonce>>::success({salt, nonce});
 }
 
 Result<void> report_progress(const CryptoOptions &options,
@@ -596,47 +483,6 @@ Result<void> validate_paths(const std::filesystem::path &source,
                              "Destination file already exists", context);
     if (error) return Result<void>::failure(error, "Cannot inspect destination file", context);
     return Result<void>::success();
-}
-
-Result<CipherContext> create_context(const Key &key, const Nonce &nonce,
-                                     const Header &header, bool encrypting,
-                                     const char *context) {
-    CipherContext result;
-    result.value = EVP_CIPHER_CTX_new();
-    if (!result.value) return failure<CipherContext>(std::errc::not_enough_memory,
-                                                     "Cannot allocate cipher context", context);
-    int length = 0;
-    const auto initialized = encrypting
-        ? EVP_EncryptInit_ex(result.value, EVP_aes_256_gcm(), nullptr, nullptr, nullptr)
-        : EVP_DecryptInit_ex(result.value, EVP_aes_256_gcm(), nullptr, nullptr, nullptr);
-    if (initialized != 1 || EVP_CIPHER_CTX_ctrl(result.value, EVP_CTRL_GCM_SET_IVLEN,
-                                                 static_cast<int>(nonce.size()), nullptr) != 1)
-        return failure<CipherContext>(std::errc::io_error, "Cannot initialize cipher", context);
-    const auto keyed = encrypting
-        ? EVP_EncryptInit_ex(result.value, nullptr, nullptr, key.data(), nonce.data())
-        : EVP_DecryptInit_ex(result.value, nullptr, nullptr, key.data(), nonce.data());
-    const auto authenticated = encrypting
-        ? EVP_EncryptUpdate(result.value, nullptr, &length, header.data(), static_cast<int>(header.size()))
-        : EVP_DecryptUpdate(result.value, nullptr, &length, header.data(), static_cast<int>(header.size()));
-    if (keyed != 1 || authenticated != 1)
-        return failure<CipherContext>(std::errc::io_error,
-                                      "Cannot initialize authenticated cipher", context);
-    return Result<CipherContext>::success(std::move(result));
-}
-
-Result<Key> derive_key(std::string_view password, const Salt &salt,
-                       std::uint32_t iterations, const char *context) {
-    if (password.empty()) return failure<Key>(std::errc::invalid_argument,
-                                              "Password is empty", context);
-    if (password.size() > static_cast<std::size_t>(INT_MAX))
-        return failure<Key>(std::errc::value_too_large, "Password is too large", context);
-    Key key{};
-    if (PKCS5_PBKDF2_HMAC(password.data(), static_cast<int>(password.size()),
-                          salt.data(), static_cast<int>(salt.size()),
-                          static_cast<int>(iterations), EVP_sha256(),
-                          static_cast<int>(key.size()), key.data()) != 1)
-        return failure<Key>(std::errc::io_error, "Key derivation failed", context);
-    return Result<Key>::success(key);
 }
 
 Result<void> encrypt_file_impl(const std::filesystem::path &source,
@@ -738,7 +584,7 @@ Result<void> decrypt_file_impl(const std::filesystem::path &source,
                static_cast<std::streamsize>(header.size()));
     if (input.gcount() != static_cast<std::streamsize>(header.size()))
         return failure<void>(std::errc::io_error, "Cannot read encrypted file header", "file.decrypt");
-    const auto parsed = parse_header(header, source_size);
+    const auto parsed = parse_header(header, source_size, "file.decrypt");
     if (!parsed) return Result<void>::failure(parsed.error());
 
     const auto plaintext_size = read_u64(header, 42);
