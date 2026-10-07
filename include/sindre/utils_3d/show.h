@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief VTK/ImGui 网格显示、交互和拾取接口。
+
 #include "mesh.h"
 #include <array>
 #include <cstddef>

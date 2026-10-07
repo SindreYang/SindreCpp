@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief 命令行参数解析和当前进程参数接口。
+
 #include <sindre/general/core.h>
 #include <cstddef>
 #include <cstdint>

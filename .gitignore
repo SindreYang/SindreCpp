@@ -27,4 +27,5 @@ CMakeUserPresets.json
 /thirds/general/sources/
 /thirds/math/eigen/
 /thirds/math/openblas/
+/thirds/math/openblas-linux/
 /thirds/math/*.zip

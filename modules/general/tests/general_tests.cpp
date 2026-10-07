@@ -290,12 +290,12 @@ int main() {
     const auto decrypted_bytes = sindre::general::codec::decrypt_bytes(
         encrypted_bytes.value(), "binary password");
     CHECK(decrypted_bytes && decrypted_bytes.value() == bytes);
-    const auto compressed = sindre::general::codec::simple_compress(
+    const auto compressed = sindre::general::codec::rle_compress(
         std::vector<std::uint8_t>{1, 1, 1, 2, 3, 3, 3, 3});
     CHECK(compressed && compressed.value().size() < 8 &&
-          sindre::general::codec::simple_decompress(compressed.value()).value() ==
+          sindre::general::codec::rle_decompress(compressed.value()).value() ==
               std::vector<std::uint8_t>({1, 1, 1, 2, 3, 3, 3, 3}));
-    CHECK(!sindre::general::codec::simple_decompress(std::vector<std::uint8_t>{1}));
+    CHECK(!sindre::general::codec::rle_decompress(std::vector<std::uint8_t>{1}));
     const auto unicode_path = sindre::general::path::from_utf8(
         sindre::general::path::to_utf8(std::filesystem::temp_directory_path() / L"sindre-监控.txt"));
     const auto path_text = sindre::general::string::String::from(unicode_path);

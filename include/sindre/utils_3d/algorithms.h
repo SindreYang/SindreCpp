@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief 网格几何、布尔、采样、配准和参数化算法接口。
+
 #include "mesh.h"
 #include <cstddef>
 #include <cstdint>

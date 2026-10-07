@@ -11,9 +11,9 @@
 ## 根工程构建
 
 ```bash
-cmake -S . -B build -G Ninja -DSINDRE_BUILD_EXAMPLES=ON
-cmake --build build --target sindre_example_general_basics
-build/bin/sindre_example_general_basics.exe
+cmake -S . -B build/windows -G Ninja -DSINDRE_BUILD_EXAMPLES=ON
+cmake --build build/windows --target sindre_example_general_basics
+build/windows/bin/sindre_example_general_basics.exe
 ```
 
 默认构建的 `general_basics` 展示字符串、Result、版本、Base64、scope guard、
@@ -22,18 +22,18 @@ build/bin/sindre_example_general_basics.exe
 启用 JSON 示例：
 
 ```bash
-cmake -S . -B build -G Ninja -DSINDRE_BUILD_EXAMPLES=ON -DSINDRE_WITH_JSON=ON
-cmake --build build --target sindre_example_general_json_config
+cmake -S . -B build/windows -G Ninja -DSINDRE_BUILD_EXAMPLES=ON
+cmake --build build/windows --target sindre_example_general_json_config
 ```
 
 启用 utils_3d 示例时需要本机可用的 VTK 9.7.1 或兼容的 VTK 9 SDK；官方
 SDK 的 `VTK_DIR` 应指向包含 `vtk-config.cmake` 的 `cmake` 目录：
 
 ```bash
-cmake -S . -B build -G Ninja \
+cmake -S . -B build/windows -G Ninja \
   -DVTK_DIR="D:/software/VTK/vtk_sdk-9.7.1-cp312/vtk_sdk/cmake" \
   -DSINDRE_BUILD_EXAMPLES=ON -DSINDRE_WITH_UTILS_3D=ON
-cmake --build build --target sindre_example_utils_3d_mesh
+cmake --build build/windows --target sindre_example_utils_3d_mesh
 ```
 
 Windows 运行时还需要把 VTK `content/bin`、OpenBLAS `bin` 和 General
@@ -56,7 +56,21 @@ JSON 和 utils_3d 示例也可以用相同方式从自己的目录配置；它�
 `examples/ai_tensorrt_segmentation` 是需要真实 CUDA/TensorRT SDK 的独立示例，
 展示 ONNX 构建、engine 复用、`Result` 错误处理、固定 profile、分割后处理以及
 Windows DLL 部署。完整的模型来源、下载脚本和兼容性选项见其
-[README](../../examples/ai_tensorrt_segmentation/README.md)。
+[TensorRT 语义分割示例](ai_tensorrt_segmentation.md)。
+
+从仓库根目录可以使用预设快速生成两种构建：
+
+```powershell
+$env:SINDRE_TENSORRT_ROOT = "C:\Program Files\NVIDIA\TensorRT-10.11.0.33"
+$env:CUDAToolkit_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
+cmake --preset ai-trt-full
+cmake --build --preset ai-trt-full
+cmake --preset ai-trt-dispatch
+cmake --build --preset ai-trt-dispatch
+```
+
+`ai-trt-full` 用于构建 engine，`ai-trt-dispatch` 用于部署已有 engine。也可以
+继续使用下面的独立示例命令；独立示例不会使用根目录 preset。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\examples\ai_tensorrt_segmentation\download_model.ps1

@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief AI 推理执行器和可取消流水线接口。
+
 #include <condition_variable>
 #include <cstddef>
 #include <functional>

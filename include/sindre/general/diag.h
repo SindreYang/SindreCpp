@@ -1,4 +1,7 @@
 #pragma once
+
+/// @file
+/// @brief 日志、诊断上下文和结构化运行记录接口。
 #include <sindre/general/core.h>
 #include <chrono>
 #include <string_view>

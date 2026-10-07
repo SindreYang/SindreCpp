@@ -111,11 +111,6 @@ std::vector<std::filesystem::path> default_font_directories() {
         result.emplace_back(std::filesystem::path(windows.value()) / "Fonts");
     if (auto local = ::sindre::general::system::get_environment_variable("LOCALAPPDATA"))
         result.emplace_back(std::filesystem::path(local.value()) / "Microsoft/Windows/Fonts");
-#elif defined(__APPLE__)
-    result.emplace_back("/System/Library/Fonts");
-    result.emplace_back("/Library/Fonts");
-    if (auto home = ::sindre::general::system::get_environment_variable("HOME"))
-        result.emplace_back(std::filesystem::path(home.value()) / "Library/Fonts");
 #else
     result.emplace_back("/usr/share/fonts");
     result.emplace_back("/usr/local/share/fonts");

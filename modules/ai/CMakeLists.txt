@@ -224,12 +224,17 @@ if(SINDRE_BUILD_TESTS)
         endif()
     endif()
 
-    if(SINDRE_AI_TRT AND SINDRE_BUILD_GPU_TESTS)
+    if(SINDRE_AI_TRT AND SINDRE_BUILD_GPU_TESTS AND
+       NOT SINDRE_AI_TRT_RUNTIME STREQUAL "DISPATCH")
         add_executable(sindre_ai_trt_tests tests/trt_tests.cpp)
         target_link_libraries(sindre_ai_trt_tests PRIVATE sindre::ai)
         sindre_copy_target_runtime_dlls(sindre_ai_trt_tests)
         add_test(NAME sindre.ai.tensorrt COMMAND sindre_ai_trt_tests
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/models/identity.onnx")
         set_tests_properties(sindre.ai.tensorrt PROPERTIES TIMEOUT 120)
+    elseif(SINDRE_AI_TRT AND SINDRE_BUILD_GPU_TESTS AND
+           SINDRE_AI_TRT_RUNTIME STREQUAL "DISPATCH")
+        message(STATUS
+            "Skipping sindre.ai.tensorrt builder test: DISPATCH is load-only; use a prebuilt engine smoke test")
     endif()
 endif()

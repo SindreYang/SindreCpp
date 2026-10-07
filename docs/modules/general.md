@@ -293,8 +293,8 @@ if (loaded) loaded.value().apply_environment_overrides("MY_APP");
 文件监控事件通过 `file_watch::EventType::created`、`modified` 和 `removed` 区分。
 当前实现是跨平台轮询，不承诺原生文件通知的低延迟语义。
 
-General 的核心系统实现以 Windows 和 Linux/WSL 为必需平台。macOS 当前在配置阶段被
-拒绝，不提供未经验证的兼容承诺。Linux 使用用户级 systemd service，Windows 使用用户
+General 的核心系统实现只支持 Windows 和 Linux/WSL；其他平台在配置阶段被拒绝。Linux
+使用用户级 systemd service，Windows 使用用户
 Startup 目录脚本。
 
 桌面快捷能力统一从 `sindre::general::desktop` 使用：Windows 调用 Win32/COM 原生 API；
@@ -414,7 +414,7 @@ if (arguments && arguments.value().wants_help()) {
 
 `has()` 表示解析后存在有效值，默认值也算存在；`is_set()` 只表示用户是否显式传入。
 支持 `--option value`、`--option=value`、短别名、位置参数和 `--` 终止符。重复选项、
-未知选项、缺少值和位置参数数量错误都会返回 `Result` 错误。Windows、Linux 和 macOS
+未知选项、缺少值和位置参数数量错误都会返回 `Result` 错误。Windows 和 Linux
 的当前进程参数会转换为 UTF-8，帮助和版本请求只返回状态，不会输出或退出宿主进程。
 
 在编译器启用异常的正常构建中，CLI 的私有实现使用固定版本 argparse；启用
@@ -605,7 +605,7 @@ General 的全部依赖由 `thirds/general/Dependencies.cmake` 固定，不能�
 默认构建：
 
 ```powershell
-cmake -S . -B build -G Ninja -DSINDRE_BUILD_TESTS=ON
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
+cmake -S . -B build/windows -G Ninja -DCMAKE_BUILD_TYPE=Release -DSINDRE_BUILD_TESTS=ON
+cmake --build build/windows --parallel
+ctest --test-dir build/windows --output-on-failure
 ```

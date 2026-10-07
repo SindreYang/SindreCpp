@@ -5,10 +5,11 @@
       "name": "windows-clang",
       "displayName": "Windows clang-cl",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build",
+      "binaryDir": "${sourceDir}/build/windows-clang",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang-cl",
         "CMAKE_CXX_COMPILER": "clang-cl",
+        "CMAKE_BUILD_TYPE": "Release",
         "SINDRE_BUILD_TESTS": "ON",
         "SINDRE_BUILD_EXAMPLES": "ON"
       }
@@ -17,13 +18,64 @@
       "name": "linux-clang",
       "displayName": "Linux Clang",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build",
+      "binaryDir": "${sourceDir}/build/linux",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_BUILD_TYPE": "Release",
         "SINDRE_BUILD_TESTS": "ON",
         "SINDRE_BUILD_EXAMPLES": "ON"
       }
+    },
+    {
+      "name": "ai-trt-full",
+      "displayName": "AI TensorRT Full builder",
+      "inherits": "windows-clang",
+      "binaryDir": "${sourceDir}/build/ai-trt-full",
+      "cacheVariables": {
+        "SINDRE_BUILD_TESTS": "OFF",
+        "SINDRE_BUILD_EXAMPLES": "ON",
+        "SINDRE_WITH_AI": "ON",
+        "SINDRE_AI_ONNXRUNTIME": "OFF",
+        "SINDRE_AI_TRT": "ON",
+        "SINDRE_AI_TRT_RUNTIME": "FULL",
+        "SINDRE_TENSORRT_ROOT": "$env{SINDRE_TENSORRT_ROOT}",
+        "CUDAToolkit_ROOT": "$env{CUDAToolkit_ROOT}"
+      }
+    },
+    {
+      "name": "ai-trt-dispatch",
+      "displayName": "AI TensorRT Dispatch runtime",
+      "inherits": "windows-clang",
+      "binaryDir": "${sourceDir}/build/ai-trt-dispatch",
+      "cacheVariables": {
+        "SINDRE_BUILD_TESTS": "OFF",
+        "SINDRE_BUILD_EXAMPLES": "ON",
+        "SINDRE_WITH_AI": "ON",
+        "SINDRE_AI_ONNXRUNTIME": "OFF",
+        "SINDRE_AI_TRT": "ON",
+        "SINDRE_AI_TRT_RUNTIME": "DISPATCH",
+        "SINDRE_TENSORRT_ROOT": "$env{SINDRE_TENSORRT_ROOT}",
+        "CUDAToolkit_ROOT": "$env{CUDAToolkit_ROOT}"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-clang",
+      "configurePreset": "windows-clang"
+    },
+    {
+      "name": "linux-clang",
+      "configurePreset": "linux-clang"
+    },
+    {
+      "name": "ai-trt-full",
+      "configurePreset": "ai-trt-full"
+    },
+    {
+      "name": "ai-trt-dispatch",
+      "configurePreset": "ai-trt-dispatch"
     }
   ]
 }

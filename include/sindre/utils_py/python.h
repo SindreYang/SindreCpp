@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief Python/NumPy 运行时初始化和数据交换接口。
+
 #if !defined(SINDRE_WITH_UTILS_PY)
 #error "Enable SINDRE_WITH_UTILS_PY and link sindre::utils_py before including this header."
 #endif

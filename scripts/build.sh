@@ -1,34 +1,28 @@
-#!/usr/bin/env sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Linux/WSL Release 配置、编译和测试快捷入口；macOS 当前不受支持。
-# 如需使用内置 profile 之外的固定 OpenBLAS SDK，可设置：
-#   SINDRE_MATH_OPENBLAS_ROOT=/opt/OpenBLAS ./scripts/build.sh
+# 统一的 Linux/WSL Release 构建入口；所有产物位于 build/linux/bin。
+case "$(uname -s)" in
+    Linux*) ;;
+    *) echo "sindrecpp supports Linux/WSL only from build.sh" >&2; exit 2 ;;
+esac
 
-ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-BUILD_DIR=${BUILD_DIR:-build}
-BUILD_PATH="$ROOT_DIR/$BUILD_DIR"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BUILD_DIR="${ROOT}/build/linux"
 
-set -- \
-    -S "$ROOT_DIR" \
-    -B "$BUILD_PATH" \
-    -G Ninja \
+command -v ninja >/dev/null 2>&1 || {
+    echo "Ninja is required. Install Ninja and make it available on PATH." >&2
+    exit 2
+}
+
+OPENBLAS_ARGS=()
+if [[ -n "${SINDRE_MATH_OPENBLAS_ROOT:-}" ]]; then
+    OPENBLAS_ARGS+=("-DSINDRE_MATH_OPENBLAS_ROOT=${SINDRE_MATH_OPENBLAS_ROOT}")
+fi
+
+cmake -S "${ROOT}" -B "${BUILD_DIR}" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DSINDRE_BUILD_TESTS=ON \
-    -DSINDRE_BUILD_BENCHMARKS=ON \
-    -DSINDRE_BUILD_EXAMPLES=OFF \
-    "$@"
-
-if [ -n "${SINDRE_MATH_OPENBLAS_ROOT:-}" ]; then
-    set -- "$@" "-DSINDRE_MATH_OPENBLAS_ROOT=$SINDRE_MATH_OPENBLAS_ROOT"
-fi
-
-cmake "$@"
-
-if [ -n "${CMAKE_BUILD_PARALLEL_LEVEL:-}" ]; then
-    cmake --build "$BUILD_PATH" --parallel "$CMAKE_BUILD_PARALLEL_LEVEL"
-else
-    cmake --build "$BUILD_PATH" --parallel
-fi
-
-cmake --build "$BUILD_PATH" --target test
+    -DSINDRE_BUILD_EXAMPLES=ON "${OPENBLAS_ARGS[@]}" "$@"
+cmake --build "${BUILD_DIR}" --parallel
+ctest --test-dir "${BUILD_DIR}" --output-on-failure

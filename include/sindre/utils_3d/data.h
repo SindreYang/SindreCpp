@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief VTK 数据集、数组和常用滤波操作接口。
+
 #include "mesh.h"
 #include <array>
 #include <filesystem>

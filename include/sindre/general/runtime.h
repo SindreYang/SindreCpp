@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief 线程、并发、重试、计时和动态库运行时接口。
+
 #include <sindre/general/core.h>
 
 #include <atomic>

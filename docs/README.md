@@ -42,7 +42,7 @@ General 和 Math 默认启用，其余领域模块默认关闭。各模块的 ta
 include(FetchContent)
 set(SINDRE_WITH_GENERAL ON CACHE BOOL "")
 FetchContent_Declare(sindrecpp
-    GIT_REPOSITORY https://github.com/SindreYang/sindre.git
+    GIT_REPOSITORY https://github.com/SindreYang/SindreCpp.git
     GIT_TAG main) # 生产环境请固定到经过验证的提交
 FetchContent_MakeAvailable(sindrecpp)
 

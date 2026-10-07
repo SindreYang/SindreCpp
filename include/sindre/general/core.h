@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief General 的 Result、错误、编码、版本和压缩基础接口。
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -236,10 +239,6 @@ Result<std::vector<std::uint8_t>> decrypt_bytes(
 Result<std::vector<std::uint8_t>> rle_compress(const std::vector<std::uint8_t> &data);
 /// @brief 解码由 `rle_compress` 生成的内存字节序列。
 Result<std::vector<std::uint8_t>> rle_decompress(const std::vector<std::uint8_t> &data);
-/// @brief 兼容旧名称；等价于 `rle_compress`。
-Result<std::vector<std::uint8_t>> simple_compress(const std::vector<std::uint8_t> &data);
-/// @brief 兼容旧名称；等价于 `rle_decompress`。
-Result<std::vector<std::uint8_t>> simple_decompress(const std::vector<std::uint8_t> &data);
 }
 
 namespace versioning {

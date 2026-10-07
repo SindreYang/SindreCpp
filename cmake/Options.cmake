@@ -4,6 +4,22 @@ else()
     set(sindre_build_extras_default OFF)
 endif()
 
+# The supported product platforms are deliberately limited to Windows and
+# Linux/WSL. Fail during configuration instead of compiling an untested
+# partial backend on macOS or another Unix-like system.
+if(APPLE OR NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
+    message(FATAL_ERROR
+        "sindrecpp supports Windows and Linux/WSL only; macOS and other platforms are unsupported")
+endif()
+
+# The fixed static dependency profiles are Release ABI packages.  Make a
+# single-config generator safe by selecting Release when the caller did not
+# choose a build type explicitly; a Debug selection would mix /MTd vcpkg
+# archives with the library's fixed /MT profile on Windows.
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "sindrecpp single-config build type" FORCE)
+endif()
+
 option(SINDRE_BUILD_TESTS "Build sindre tests" ${sindre_build_extras_default})
 option(SINDRE_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
 option(SINDRE_BUILD_EXAMPLES "Build sindre examples" ${sindre_build_extras_default})
@@ -27,8 +43,13 @@ set(SINDRE_MATH_BLAS_BACKEND "OPENBLAS" CACHE STRING
     "Math BLAS backend: OPENBLAS or EIGEN")
 set_property(CACHE SINDRE_MATH_BLAS_BACKEND PROPERTY STRINGS OPENBLAS EIGEN)
 option(SINDRE_MATH_NATIVE_ARCH "Optimize Math for the local CPU" ON)
-set(SINDRE_MATH_OPENBLAS_ROOT "${SINDRE_THIRDS_DIR}/math/openblas" CACHE PATH
-    "Fixed OpenBLAS root used by Math")
+if(WIN32)
+    set(sindre_openblas_default_root "${SINDRE_THIRDS_DIR}/math/openblas")
+else()
+    set(sindre_openblas_default_root "${SINDRE_THIRDS_DIR}/math/openblas-linux")
+endif()
+set(SINDRE_MATH_OPENBLAS_ROOT "${sindre_openblas_default_root}" CACHE PATH
+    "Fixed platform OpenBLAS root used by Math")
 # 仅把当前平台的固定 profile 加入查找路径，绝不混用其他平台二进制包。
 list(PREPEND CMAKE_PREFIX_PATH "${SINDRE_GENERAL_PACKAGE_ROOT}")
 # 固定 Windows Crashpad profile 使用 Release STL iterator ABI。

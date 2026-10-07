@@ -17,8 +17,6 @@
 #if defined(_WIN32)
 #include <windows.h>
 #include <shellapi.h>
-#elif defined(__APPLE__)
-#include <crt_externs.h>
 #endif
 
 namespace sindre::general::cli {
@@ -484,21 +482,6 @@ Result<std::vector<std::string>> current_arguments() noexcept {
         result.push_back(value);
         if (end == std::string::npos) break;
         begin = end + 1;
-    }
-    return Result<std::vector<std::string>>::success(std::move(result));
-#elif defined(__APPLE__)
-    const auto argc = *_NSGetArgc();
-    const auto argv = *_NSGetArgv();
-    if (argc < 0 || !argv) return Result<std::vector<std::string>>::failure(
-        std::make_error_code(std::errc::io_error), "Cannot read process command line", "cli.current");
-    std::vector<std::string> result;
-    result.reserve(static_cast<std::size_t>(argc));
-    for (int index = 0; index < argc; ++index) {
-        const std::string value = argv[index] ? argv[index] : std::string{};
-        if (!string::valid_utf8(value)) return Result<std::vector<std::string>>::failure(
-            std::make_error_code(std::errc::illegal_byte_sequence),
-            "Process command line is not UTF-8", "cli.current");
-        result.push_back(value);
     }
     return Result<std::vector<std::string>>::success(std::move(result));
 #else

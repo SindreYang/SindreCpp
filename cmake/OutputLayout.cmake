@@ -5,8 +5,8 @@ set(SINDRE_BIN_DIR "${CMAKE_BINARY_DIR}/bin" CACHE PATH
 
 file(MAKE_DIRECTORY "${SINDRE_BIN_DIR}")
 
-# Keep every configuration in the same build/bin directory. This is intentional
-# for this library: Windows DLLs must sit next to executables.
+# Keep every configuration in the same profile/bin directory. This is
+# intentional for this library: Windows DLLs must sit next to executables.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${SINDRE_BIN_DIR}")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${SINDRE_BIN_DIR}")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${SINDRE_BIN_DIR}")

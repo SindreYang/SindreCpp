@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief ImGui 初始化、资源加载和帧生命周期接口。
+
 #if !defined(SINDRE_WITH_GUI)
 #error "Enable SINDRE_WITH_GUI and link sindre::gui before including this header."
 #endif

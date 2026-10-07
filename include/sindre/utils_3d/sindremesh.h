@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief SindreMesh 组合格式和网格序列化接口。
+
 #include "vtk.h"
 #include "algorithms.h"
 #include <filesystem>

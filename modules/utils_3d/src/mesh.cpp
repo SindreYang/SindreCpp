@@ -120,15 +120,17 @@ void Mesh::set_faces_labels(const Labels &labels) { impl_->value.set_faces_label
 Labels Mesh::get_vertex_labels() const { return impl_->value.get_vertex_labels(); }
 Labels Mesh::get_faces_labels() const { return impl_->value.get_faces_labels(); }
 Mesh &Mesh::apply_transform(const ::sindre::math::Matrix4 &transform) {
-    impl_->value.apply_transform(transform);
+    // Math matrices are row-major aliases; convert explicitly to Eigen's
+    // native Matrix4d so the legacy overload set cannot choose ambiguously.
+    impl_->value.apply_transform(Eigen::Matrix4d(transform));
     return *this;
 }
 Mesh &Mesh::apply_transform(const ::sindre::math::Matrix3 &transform) {
-    impl_->value.apply_transform(transform);
+    impl_->value.apply_transform(Eigen::Matrix3d(transform));
     return *this;
 }
 Mesh &Mesh::apply_inv_transform(const ::sindre::math::Matrix4 &transform) {
-    impl_->value.apply_inv_transform(transform);
+    impl_->value.apply_inv_transform(Eigen::Matrix4d(transform));
     return *this;
 }
 Mesh &Mesh::shift_xyz(const ::sindre::math::Vector3 &offset) {

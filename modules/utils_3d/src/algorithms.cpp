@@ -1,5 +1,5 @@
 
-#include <sindre/utils_3d/mesh.h>
+#include <sindre/utils_3d/algorithms.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -100,7 +100,7 @@ slice_plane(const SindreMesh &mesh, const ::sindre::math::Vector3 &origin,
     return result;
 }
 SindreMesh clip_box(const SindreMesh &mesh, const ::sindre::math::Vector3 &lower,
-                    const ::sindre::math::Vector3 &upper, bool inside = true) {
+                    const ::sindre::math::Vector3 &upper, bool inside) {
     if (!lower.allFinite() || !upper.allFinite() || (lower.array() >= upper.array()).any())
         throw std::invalid_argument("Invalid clip bounds");
     vtkNew<vtkBox> box;
@@ -113,7 +113,7 @@ SindreMesh clip_box(const SindreMesh &mesh, const ::sindre::math::Vector3 &lower
     return SindreMesh(clip->GetOutput());
 }
 SindreMesh clip_sphere(const SindreMesh &mesh, const ::sindre::math::Vector3 &center,
-                       double radius, bool inside = true) {
+                       double radius, bool inside) {
     if (!center.allFinite() || !std::isfinite(radius) || radius <= 0)
         throw std::invalid_argument("Invalid clip sphere");
     vtkNew<vtkSphere> sphere;
@@ -126,8 +126,8 @@ SindreMesh clip_sphere(const SindreMesh &mesh, const ::sindre::math::Vector3 &ce
     clip->Update();
     return SindreMesh(clip->GetOutput());
 }
-SindreMesh append_meshes(const std::vector<SindreMesh> &meshes, bool merge_points = false,
-                                double tolerance = 0) {
+SindreMesh append_meshes(const std::vector<SindreMesh> &meshes, bool merge_points,
+                         double tolerance) {
     if (!std::isfinite(tolerance) || tolerance < 0)
         throw std::invalid_argument("Invalid merge tolerance");
     if (meshes.empty())
@@ -139,21 +139,6 @@ SindreMesh append_meshes(const std::vector<SindreMesh> &meshes, bool merge_point
     SindreMesh result(append->GetOutput());
     return merge_points ? result.clean(tolerance) : result;
 }
-enum class Backend { automatic, meshlib, cgal, open3d, igl, vcg, vtk };
-enum class Operation {
-    decimate,
-    smooth,
-    remesh,
-    boolean_op,
-    fill_holes,
-    self_intersections,
-    clean,
-    curvature,
-    uv,
-    registration,
-    reconstruction,
-    sample
-};
 const char *backend_name(Backend b) {
     switch (b) {
     case Backend::meshlib:
@@ -244,7 +229,7 @@ std::vector<Backend> get_supported_backends(Operation op) {
             x.push_back(b);
     return x;
 }
-Backend get_backend(Operation op, Backend requested = Backend::automatic) {
+Backend get_backend(Operation op, Backend requested) {
     const auto choices = get_supported_backends(op);
     if (requested == Backend::automatic) {
         if (choices.empty())
@@ -421,11 +406,7 @@ SindreMesh clean_vcg(const SindreMesh &m) {
 #endif
 } // namespace detail
 
-struct DecimateOptions {
-    std::size_t target_faces = 10000;
-    Backend backend = Backend::automatic;
-};
-SindreMesh decimate(const SindreMesh &m, const DecimateOptions &o = {}) {
+SindreMesh decimate(const SindreMesh &m, const DecimateOptions &o) {
     detail::require_surface(m);
     if (!o.target_faces)
         throw std::invalid_argument("target_faces must be positive");
@@ -494,13 +475,7 @@ SindreMesh decimate(const SindreMesh &m, const DecimateOptions &o = {}) {
     d->Update();
     return SindreMesh(d->GetOutput());
 }
-struct SmoothOptions {
-    int iterations = 20;
-    double strength = 0.1;
-    bool preserve_volume = true;
-    Backend backend = Backend::automatic;
-};
-SindreMesh smooth(const SindreMesh &m, const SmoothOptions &o = {}) {
+SindreMesh smooth(const SindreMesh &m, const SmoothOptions &o) {
     detail::require_surface(m);
     if (o.iterations < 1 || !std::isfinite(o.strength) || o.strength <= 0 || o.strength > 1)
         throw std::invalid_argument("Invalid smoothing iterations/strength");
@@ -548,12 +523,7 @@ SindreMesh smooth(const SindreMesh &m, const SmoothOptions &o = {}) {
     s->Update();
     return SindreMesh(s->GetOutput());
 }
-struct RemeshOptions {
-    double edge_length = 1;
-    unsigned iterations = 3;
-    Backend backend = Backend::automatic;
-};
-SindreMesh remesh(const SindreMesh &m, const RemeshOptions &o = {}) {
+SindreMesh remesh(const SindreMesh &m, const RemeshOptions &o) {
     detail::require_surface(m);
     detail::positive(o.edge_length, "edge_length");
     if (!o.iterations)
@@ -580,9 +550,8 @@ SindreMesh remesh(const SindreMesh &m, const RemeshOptions &o = {}) {
 #endif
     throw std::runtime_error("Remesh backend unavailable");
 }
-enum class BooleanOperation { unite, intersect, subtract };
 SindreMesh boolean_mesh(const SindreMesh &a, const SindreMesh &b, [[maybe_unused]] BooleanOperation op,
-                               Backend requested = Backend::automatic) {
+                        Backend requested) {
     detail::require_surface(a);
     detail::require_surface(b);
     if (!a.is_watertight() || !b.is_watertight())
@@ -618,7 +587,7 @@ SindreMesh boolean_mesh(const SindreMesh &a, const SindreMesh &b, [[maybe_unused
 #endif
     throw std::runtime_error("Boolean backend unavailable");
 }
-bool has_self_intersections(const SindreMesh &m, Backend requested = Backend::automatic) {
+bool has_self_intersections(const SindreMesh &m, Backend requested) {
     detail::require_surface(m);
     [[maybe_unused]] const auto b = get_backend(Operation::self_intersections, requested);
 #if defined(SINDRE_UTILS_3D_MESHLIB)
@@ -636,7 +605,7 @@ bool has_self_intersections(const SindreMesh &m, Backend requested = Backend::au
 #endif
     throw std::runtime_error("Self-intersection backend unavailable");
 }
-SindreMesh fill_holes(const SindreMesh &m, Backend requested = Backend::automatic) {
+SindreMesh fill_holes(const SindreMesh &m, Backend requested) {
     detail::require_surface(m);
     [[maybe_unused]] const auto b = get_backend(Operation::fill_holes, requested);
 #if defined(SINDRE_UTILS_3D_MESHLIB)
@@ -675,7 +644,7 @@ SindreMesh fill_holes(const SindreMesh &m, Backend requested = Backend::automati
     f->Update();
     return SindreMesh(f->GetOutput());
 }
-SindreMesh clean(const SindreMesh &m, Backend requested = Backend::automatic) {
+SindreMesh clean(const SindreMesh &m, Backend requested) {
     [[maybe_unused]] const auto b = get_backend(Operation::clean, requested);
 #if defined(SINDRE_UTILS_3D_MESHLIB)
     if (b == Backend::meshlib) {
@@ -708,15 +677,14 @@ SindreMesh clean(const SindreMesh &m, Backend requested = Backend::automatic) {
 }
 // Explicit limited repair, not a promise to resolve all
 // self-intersections/non-manifold inputs.
-SindreMesh fix_mesh(const SindreMesh &m, bool close_holes = true,
-                           Backend b = Backend::automatic) {
+SindreMesh fix_mesh(const SindreMesh &m, bool close_holes, Backend b) {
     auto x = clean(m, b);
     if (close_holes)
         x = fill_holes(x, b);
     x.compute_normals();
     return x;
 }
-SindreMesh subdivide(const SindreMesh &m, int iterations = 1) {
+SindreMesh subdivide(const SindreMesh &m, int iterations) {
     detail::require_surface(m);
     if (iterations < 0 || iterations > 8)
         throw std::invalid_argument("Subdivision iterations must be in [0,8]");
@@ -727,7 +695,7 @@ SindreMesh subdivide(const SindreMesh &m, int iterations = 1) {
     return SindreMesh(s->GetOutput());
 }
 SindreMesh cut_plane(const SindreMesh &m, const ::sindre::math::Vector3 &origin,
-                     const ::sindre::math::Vector3 &normal, bool keep_negative = false) {
+                     const ::sindre::math::Vector3 &normal, bool keep_negative) {
     detail::require_surface(m);
     if (!origin.allFinite() || !normal.allFinite() || normal.norm() == 0)
         throw std::invalid_argument("Invalid plane");
@@ -749,11 +717,6 @@ SindreMesh reverse_faces(const SindreMesh &m) {
     r->Update();
     return SindreMesh(r->GetOutput());
 }
-struct Projection {
-    Vertices points;
-    Eigen::VectorXd distances;
-    Labels face_ids;
-};
 Projection project_points(const SindreMesh &m, const Vertices &q) {
     detail::require_surface(m);
     if (!q.allFinite())
@@ -817,7 +780,7 @@ Labels vertex_labels_to_face_labels(const Faces &f, const Labels &labels) {
 }
 Labels face_labels_to_vertex_labels(const Faces &f, const Labels &labels,
                                     ::sindre::math::Index n,
-                                    std::int64_t unused_label = -1) {
+                                    std::int64_t unused_label) {
     if (n < 0 || labels.size() != f.rows())
         throw std::invalid_argument("Label shape mismatch");
     std::vector<std::map<std::int64_t, int>> counts(n);
@@ -838,22 +801,17 @@ Labels face_labels_to_vertex_labels(const Faces &f, const Labels &labels,
     }
     return out;
 }
-struct Normalization {
-    Eigen::Vector3d center;
-    double scale;
-    Eigen::Matrix4d transform;
-};
 Normalization get_normalize(const SindreMesh &m) {
     auto c = m.center();
     auto s = m.radius();
     detail::positive(s, "radius");
-    Eigen::Matrix4d t = Eigen::Matrix4d::Identity();
+    ::sindre::math::Matrix4 t = ::sindre::math::Matrix4::Identity();
     t.topLeftCorner<3, 3>() /= s;
     t.topRightCorner<3, 1>() = -c / s;
     return {c, s, t};
 }
-Matrix get_gaussian_heatmap(const Vertices &points, const Vertices &keys, double sigma = .5,
-                                   bool normalize = false) {
+Matrix get_gaussian_heatmap(const Vertices &points, const Vertices &keys, double sigma,
+                            bool normalize) {
     detail::positive(sigma, "sigma");
     if (!points.allFinite() || !keys.allFinite())
         throw std::invalid_argument("Nonfinite heatmap points");
@@ -870,7 +828,7 @@ Matrix get_gaussian_heatmap(const Vertices &points, const Vertices &keys, double
     return h;
 }
 ::sindre::math::VectorXd get_curvature(const SindreMesh &m,
-                                       Backend requested = Backend::automatic) {
+                                       Backend requested) {
     detail::require_surface(m);
     [[maybe_unused]] const auto b = get_backend(Operation::curvature, requested);
 #if defined(SINDRE_UTILS_3D_IGL)
@@ -917,14 +875,9 @@ Matrix get_uv(const SindreMesh &m) {
     throw std::runtime_error("Enable libigl for UV");
 #endif
 }
-struct Registration {
-    Eigen::Matrix4d transform;
-    double fitness;
-    double rmse;
-};
 Registration register_icp([[maybe_unused]] const Vertices &source,
                            [[maybe_unused]] const Vertices &target,
-                           double max_distance, int iterations = 50,
+                           double max_distance, int iterations,
                            const ::sindre::math::Matrix4 &initial) {
     detail::positive(max_distance, "max_distance");
     if (iterations < 1 || !initial.allFinite())
@@ -935,13 +888,13 @@ Registration register_icp([[maybe_unused]] const Vertices &source,
         throw std::invalid_argument("ICP requires at least three points per cloud");
     if (source.rows() == target.rows() && source.isApprox(target) &&
         initial.isApprox(Eigen::Matrix4d::Identity()))
-        return {Eigen::Matrix4d::Identity(), 1.0, 0.0};
+        return {::sindre::math::Matrix4::Identity(), 1.0, 0.0};
     auto s = detail::pointcloud(source), t = detail::pointcloud(target);
     namespace reg = open3d::pipelines::registration;
-    auto r = reg::RegistrationICP(s, t, max_distance, initial,
+    auto r = reg::RegistrationICP(s, t, max_distance, Eigen::Matrix4d(initial),
                                   reg::TransformationEstimationPointToPoint(false),
                                   reg::ICPConvergenceCriteria(1e-6, 1e-6, iterations));
-    return {r.transformation_, r.fitness_, r.inlier_rmse_};
+    return {::sindre::math::Matrix4(r.transformation_), r.fitness_, r.inlier_rmse_};
 #else
     throw std::runtime_error("Enable Open3D for ICP");
 #endif
@@ -986,7 +939,7 @@ Vertices sample(const SindreMesh &m, std::size_t count) {
 #endif
 }
 SindreMesh reconstruct_poisson(const Vertices &points, const Vertices &normals,
-                                      std::size_t depth = 8) {
+                               std::size_t depth) {
     if (points.rows() != normals.rows() || !normals.allFinite() || depth < 2 || depth > 16)
         throw std::invalid_argument("Invalid Poisson points/normals/depth");
     get_backend(Operation::reconstruction);

@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief 三角网格值语义、I/O、拓扑和 Eigen 互操作接口。
+
 #if !defined(SINDRE_WITH_UTILS_3D)
 #error "Enable SINDRE_WITH_UTILS_3D and link sindre::utils_3d."
 #endif

@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief AI 张量类型、布局和 Result 校验辅助接口。
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>

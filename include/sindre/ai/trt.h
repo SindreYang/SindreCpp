@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief TensorRT engine 构建、加载和推理接口。
+
 #if !defined(SINDRE_AI_TRT)
 #error "Enable SINDRE_WITH_AI and SINDRE_AI_TRT; link sindre::ai."
 #endif

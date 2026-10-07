@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief OpenCV 图像读取、预处理和 Math Tensor 转换接口。
+
 #if !defined(SINDRE_WITH_UTILS_2D)
 #error "Enable SINDRE_WITH_UTILS_2D and link sindre::utils_2d."
 #endif

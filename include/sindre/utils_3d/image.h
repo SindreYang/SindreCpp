@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief VTK 图像采样、重采样和形态学处理接口。
+
 #include "data.h"
 #include <array>
 

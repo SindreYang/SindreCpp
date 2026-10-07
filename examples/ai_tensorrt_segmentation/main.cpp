@@ -250,11 +250,6 @@ int main() {
     ai::trt::LoadOptions load_options;
     load_options.device_id = static_cast<int>(device.value());
     load_options.allow_engine_host_code = parsed.value().is_set("--allow-engine-host-code");
-    if (parsed.value().is_set("--exclude-lean-runtime") &&
-        !parsed.value().has("--lean-runtime")) {
-        std::cerr << "--exclude-lean-runtime requires --lean-runtime when loading the engine\n";
-        return 2;
-    }
     if (parsed.value().has("--lean-runtime"))
         load_options.lean_runtime_path = general::path::from_utf8(
             parsed.value().get_string("--lean-runtime"));

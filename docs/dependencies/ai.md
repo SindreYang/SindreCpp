@@ -24,12 +24,36 @@ can otherwise be loaded before the package runtime and report an older API.
 
 TensorRT is intentionally not fetched automatically: it is a large binary SDK
 and must match the host compiler, GPU driver, CUDA and cuDNN.
-The AI module copies discovered Windows runtime DLLs beside its executables.
-For version-compatible plans, TensorRT may embed its lean runtime. To reduce
-deployment duplication, build with `version_compatible` plus
-`exclude_lean_runtime` and load the matching external lean runtime through
-`LoadOptions::lean_runtime_path`; the lean runtime must be deployed and
-version-pinned with the engine package.
+The AI module supports `SINDRE_AI_TRT_RUNTIME=FULL` and `DISPATCH`.
+`FULL` is required for ONNX parsing/building. `DISPATCH` is load-only and uses
+`nvinfer_dispatch_10.dll` plus an external `nvinfer_lean_10.dll`; its ONNX
+conversion API deliberately returns `function_not_supported`.
+
+For a version-compatible plan, build with `VERSION_COMPATIBLE` and
+`EXCLUDE_LEAN_RUNTIME` (the public API fields are
+`BuildOptions::version_compatible` and `BuildOptions::exclude_lean_runtime`).
+Dispatch loads it with the matching external Lean Runtime through
+`LoadOptions::lean_runtime_path`; Full Runtime can load the same plan without
+that argument. When Dispatch is used, the Lean DLL must be deployed and
+version-pinned with the engine package. `allow_engine_host_code` remains off
+by default and must only be enabled for a trusted engine that actually needs
+embedded host code.
+
+On the validated Windows FCN example, a Dispatch deployment containing
+`nvinfer_dispatch_10.dll`, `nvinfer_lean_10.dll`, `nvinfer_plugin_10.dll` and
+`cudart64_12.dll` was 96.30 MiB, plus a 70.19 MiB engine. The same example
+ran from a clean directory without `cublas64_12.dll` or `cublasLt64_12.dll` and
+produced the same mask. This is a model-specific smoke-test result, not a
+universal TensorRT packaging rule; retain cuBLAS libraries when the engine or
+plugin requires them. A Full load-only package is much larger because the
+builder runtime is about 454.56 MiB and the monolithic Sindre translation unit
+also links the ONNX parser.
+
+The minimum validated runtime list is therefore not a promise for arbitrary
+engines. Before release, inspect the engine's actual plugin/tactic usage and
+run the executable in an empty deployment directory. Do not remove a DLL just
+because it is not a direct import in `dumpbin`; TensorRT may load optional
+dependencies dynamically.
 
 AI does not depend on `utils_py`, Python or NumPy. The SDK headers are consumed
 only by `modules/ai/src/*.cpp`; consumers link `sindre::ai` and include only

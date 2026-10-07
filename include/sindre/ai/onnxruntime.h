@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief ONNX Runtime 模型生命周期、同步和异步推理接口。
+
 #if !defined(SINDRE_AI_ONNXRUNTIME)
 #error "Enable SINDRE_WITH_AI and SINDRE_AI_ONNXRUNTIME; link sindre::ai."
 #endif

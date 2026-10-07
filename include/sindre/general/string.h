@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief UTF 字符串、路径转换和 CsString 值语义封装。
+
 #include <sindre/general/core.h>
 
 #include <algorithm>
@@ -271,13 +274,6 @@ public:
             return static_cast<code_point_type>(value_.back().unicode());
         }, "string.get_back");
     }
-
-    // Compatibility names retained for the first public String API.
-    Result<code_point_type> get_code_point(size_type index) const noexcept {
-        return try_get_code_point(index);
-    }
-    Result<code_point_type> get_front() const noexcept { return try_get_front(); }
-    Result<code_point_type> get_back() const noexcept { return try_get_back(); }
 
     size_type find(const BasicString &needle, size_type start = 0) const noexcept {
         if (start > size()) return npos;
@@ -583,7 +579,7 @@ public:
         if (size() != 1) return Result<char32_t>::failure(
             std::make_error_code(std::errc::invalid_argument),
             "String must contain exactly one Unicode code point", "string.to_code_point");
-        const auto code_point = get_code_point(0);
+        const auto code_point = try_get_code_point(0);
         if (!code_point) return Result<char32_t>::failure(code_point.error());
         return Result<char32_t>::success(code_point.value());
     }

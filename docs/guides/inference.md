@@ -99,6 +99,12 @@ FP16/TF32 必须检查业务误差，INT8 校准/量化不在首版便利参数�
 外部权重文件必须与 ONNX 相对位置正确，转换模型及插件只来自可信来源。
 configure 回调能够覆盖前述选项；不保证自定义配置仍满足便利接口限制。
 
+本机 FCN ResNet-50 的实测参考：`build_gpu` 为 2.37257 ms / 421.071 qps，
+`same_compute_capability` 为 2.38387 ms / 419.043 qps（延迟 +0.48%、吞吐 -0.48%），
+`ampere_plus` 为 3.47930 ms / 287.225 qps（延迟 +46.65%、吞吐 -31.79%）。三种
+配置在三个确定性 PPM 输入上的 mask 字节级一致；这只是输出一致性 smoke test，
+不是业务数据集精度报告。完整测试条件和限制见 [AI 模块说明](../modules/ai.md)。
+
 ## 原生 TRT 异步与设备接口
 
 ```cpp
@@ -152,6 +158,49 @@ TensorRT::nvinfer_plugin、TensorRT::nvonnxparser targets。
 只有可信 engine 才显式 LoadOptions.allow_engine_host_code=true。
 默认拒绝 engine 嵌入的 host code；不要对外部不可信 plan 放开此开关。
 
+如果构建机和推理机分离，建议使用 Full 构建机生成外置 Lean 的版本兼容 plan：
+
+```text
+BuildOptions.version_compatible = true;
+BuildOptions.exclude_lean_runtime = true;
+```
+
+推理机可以配置 `-DSINDRE_AI_TRT_RUNTIME=DISPATCH`。Dispatch 程序不包含 builder
+和 ONNX parser，只能加载已有 engine；必须把匹配的
+`nvinfer_lean_10.dll` 传给 `LoadOptions::lean_runtime_path`。Full Runtime 也可以直接
+加载不含内嵌 Lean 的 plan；独立示例也支持 Dispatch：
+
+如果从仓库根目录构建，可直接使用预设。先配置 SDK 路径环境变量：
+
+```powershell
+$env:SINDRE_TENSORRT_ROOT = "C:\Program Files\NVIDIA\TensorRT-10.11.0.33"
+$env:CUDAToolkit_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
+cmake --preset ai-trt-full
+cmake --build --preset ai-trt-full
+cmake --preset ai-trt-dispatch
+cmake --build --preset ai-trt-dispatch
+```
+
+预设分别生成 `build/ai-trt-full` 和 `build/ai-trt-dispatch`，不会复用或覆盖普通
+Windows/Linux 构建缓存。
+
+```powershell
+cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg_dispatch -G Ninja `
+  -DSINDRE_TENSORRT_ROOT="C:/Program Files/NVIDIA/TensorRT-10.11.0.33" `
+  -DSINDRE_AI_TRT_RUNTIME=DISPATCH
+cmake --build build_ai_seg_dispatch --parallel
+
+build_ai_seg_dispatch/sindre_example_ai_tensorrt_segmentation.exe `
+  --input sample.ppm --engine fcn.plan `
+  --lean-runtime nvinfer_lean_10.dll
+```
+
+Windows SDK 中 TensorRT 10.11 的 Lean DLL 位于 `lib/nvinfer_lean_10.dll`；复制到
+部署目录后可直接使用文件名。Dispatch 的最小 DLL 集合不是固定保证：经过本仓库
+FCN 示例的干净目录 smoke test 后，当前 engine 使用四个 DLL（96.30 MiB），但其他
+engine 或插件可能需要 `cublas64_12.dll`、`cublasLt64_12.dll` 或更多 CUDA DLL，
+必须逐个部署验证。
+
 Windows配置SDK的DLL目录到PATH；Linux配置动态库路径/RPATH。
 库不会自动安装显卡驱动、大型SDK或复制DLL。
 官方文档：
@@ -176,11 +225,11 @@ TRT和CUDA在无GPU runner仅检查官方API编译，不能证明GPU执行或跨
 ```bash
 uv run --with onnx==1.17.0 python tests/create_test_model.py
 # Generates the float32, int32, and float16 fixtures used by the AI tests.
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DSINDRE_WITH_AI=ON -DSINDRE_AI_ONNXRUNTIME=OFF -DSINDRE_AI_TRT=ON \
   -DSINDRE_BUILD_GPU_TESTS=ON -DSINDRE_TENSORRT_ROOT=/path/to/TensorRT
-cmake --build build
-ctest --test-dir build --output-on-failure
+cmake --build build/linux
+ctest --test-dir build/linux --output-on-failure
 ```
 
 测试保留唯一命名的临时identity engine供诊断。

@@ -1050,15 +1050,12 @@ Result<void> move_path(const std::filesystem::path &source,
 #include <sindre/general/string.h>
 #if defined(_WIN32)
 #include <windows.h>
-#elif defined(__linux__) || defined(__APPLE__)
+#elif defined(__linux__)
 #include <fcntl.h>
 #include <pwd.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
 #include <unistd.h>
-#if defined(__APPLE__)
-#include <mach-o/dyld.h>
-#endif
 #endif
 
 namespace sindre::general::system {
@@ -1245,7 +1242,7 @@ Result<void> unset_environment_variable(std::string_view name) noexcept {
         std::make_error_code(std::errc::invalid_argument), "Environment name is empty", "system.unset_environment_variable");
 #if defined(_WIN32)
     if (_putenv_s(std::string(name).c_str(), "") != 0)
-#elif defined(__linux__) || defined(__APPLE__)
+#elif defined(__linux__)
     if (::unsetenv(std::string(name).c_str()) != 0)
 #else
     return Result<void>::failure(
@@ -1292,18 +1289,6 @@ Result<std::filesystem::path> get_executable_path() noexcept {
         return Result<std::filesystem::path>::failure(
             std::make_error_code(std::errc::filename_too_long),
             "Executable path is too long", "system.get_executable_path");
-#elif defined(__APPLE__)
-        std::uint32_t size = 0;
-        if (::_NSGetExecutablePath(nullptr, &size) != -1 || size == 0)
-            return Result<std::filesystem::path>::failure(
-                std::make_error_code(std::errc::io_error),
-                "Cannot get executable path size", "system.get_executable_path");
-        std::vector<char> buffer(size);
-        if (::_NSGetExecutablePath(buffer.data(), &size) != 0)
-            return Result<std::filesystem::path>::failure(
-                std::make_error_code(std::errc::io_error),
-                "Cannot get executable path", "system.get_executable_path");
-        return Result<std::filesystem::path>::success(std::filesystem::path(buffer.data()));
 #else
         return Result<std::filesystem::path>::failure(
             std::make_error_code(std::errc::function_not_supported),
@@ -1326,8 +1311,6 @@ Result<Information> get_system_information() noexcept {
     result.os = "Windows";
 #elif defined(__linux__)
     result.os = "Linux";
-#elif defined(__APPLE__)
-    result.os = "macOS";
 #else
     result.os = "Unknown";
 #endif
@@ -1559,7 +1542,7 @@ Result<Information> get_system_information() noexcept {
                 result.local_ip_addresses.push_back(ip);
         }
     }
-#elif defined(__linux__) || defined(__APPLE__)
+#elif defined(__linux__)
     ifaddrs *interfaces = nullptr;
     if (::getifaddrs(&interfaces) != 0) {
         return Result<Information>::failure(
@@ -1656,28 +1639,6 @@ Result<Information> get_system_information() noexcept {
 
 namespace sindre::general::startup {
 
-#if defined(__APPLE__)
-namespace {
-
-std::string escape_xml(std::string_view value) {
-    std::string result;
-    result.reserve(value.size());
-    for (const char character : value) {
-        switch (character) {
-        case '&': result += "&amp;"; break;
-        case '<': result += "&lt;"; break;
-        case '>': result += "&gt;"; break;
-        case '\"': result += "&quot;"; break;
-        case '\'': result += "&apos;"; break;
-        default: result.push_back(character); break;
-        }
-    }
-    return result;
-}
-
-} // namespace
-#endif
-
 Result<std::filesystem::path> get_startup_location(std::string_view name) noexcept {
     if (name.empty()) return Result<std::filesystem::path>::failure(
         std::make_error_code(std::errc::invalid_argument), "Startup name is empty", "startup.get_startup_location");
@@ -1692,11 +1653,6 @@ Result<std::filesystem::path> get_startup_location(std::string_view name) noexce
     if (!home) return Result<std::filesystem::path>::failure(home.error());
     return Result<std::filesystem::path>::success(
         std::filesystem::path(home.value()) / ".config/systemd/user" / (std::string(name) + ".service"));
-#elif defined(__APPLE__)
-    auto home = system::get_environment_variable("HOME");
-    if (!home) return Result<std::filesystem::path>::failure(home.error());
-    return Result<std::filesystem::path>::success(
-        std::filesystem::path(home.value()) / "Library/LaunchAgents" / (std::string(name) + ".plist"));
 #else
     return Result<std::filesystem::path>::failure(
         std::make_error_code(std::errc::function_not_supported),
@@ -1723,17 +1679,6 @@ Result<void> enable_startup(std::string name, std::string command) noexcept {
         output << "[Unit]\nDescription=" << name << "\nAfter=graphical-session.target\n"
                << "[Service]\nType=simple\nExecStart=" << command << "\n"
                << "[Install]\nWantedBy=default.target\n";
-#elif defined(__APPLE__)
-        output << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-               << "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
-                  "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-               << "<plist version=\"1.0\">\n<dict>\n"
-               << "<key>Label</key>\n<string>" << escape_xml(name) << "</string>\n"
-               << "<key>ProgramArguments</key>\n<array>\n"
-               << "<string>/bin/sh</string>\n<string>-lc</string>\n<string>"
-               << escape_xml(command) << "</string>\n</array>\n"
-               << "<key>RunAtLoad</key>\n<true/>\n"
-               << "</dict>\n</plist>\n";
 #endif
         if (!output) return Result<void>::failure(
             std::make_error_code(std::errc::permission_denied), "Cannot write startup entry", "startup.enable_startup");

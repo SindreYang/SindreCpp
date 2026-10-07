@@ -11,7 +11,7 @@
 #endif
 #include <windows.h>
 #else
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(__linux__)
 #include <pthread.h>
 #endif
 #include <dlfcn.h>
@@ -99,15 +99,6 @@ Result<void> set_thread_name(std::string_view name) noexcept {
             return Result<void>::failure(
                 std::error_code(result, std::system_category()),
                 "Cannot set Linux thread name", "runtime.set_thread_name");
-        }
-        return Result<void>::success();
-#elif defined(__APPLE__)
-        const std::string value(name);
-        const int result = pthread_setname_np(value.c_str());
-        if (result != 0) {
-            return Result<void>::failure(
-                std::error_code(result, std::system_category()),
-                "Cannot set macOS thread name", "runtime.set_thread_name");
         }
         return Result<void>::success();
 #else

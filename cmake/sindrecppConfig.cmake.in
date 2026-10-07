@@ -52,11 +52,16 @@ if(@SINDRE_MATH_BLAS_ENABLED@)
         endif()
         get_filename_component(_sindre_openblas_root
             "${OpenBLAS_INCLUDE_DIRS}" DIRECTORY)
-        if(NOT EXISTS "${_sindre_openblas_root}/lib/@SINDRE_THIRD_MATH_OPENBLAS_IMPORT_LIBRARY@")
+        if(WIN32)
+            set(_sindre_openblas_import_name "libopenblas.lib")
+        else()
+            set(_sindre_openblas_import_name "libopenblas.a")
+        endif()
+        if(NOT EXISTS "${_sindre_openblas_root}/lib/${_sindre_openblas_import_name}")
             message(FATAL_ERROR "Fixed OpenBLAS import library is missing")
         endif()
         set(BLAS_LIBRARIES
-            "${_sindre_openblas_root}/lib/@SINDRE_THIRD_MATH_OPENBLAS_IMPORT_LIBRARY@"
+            "${_sindre_openblas_root}/lib/${_sindre_openblas_import_name}"
             CACHE STRING "OpenBLAS import library" FORCE)
     endif()
     find_dependency(BLAS)
@@ -163,12 +168,14 @@ endif()
 if(@SINDRE_WITH_AI@ AND @SINDRE_AI_TRT@)
     find_dependency(CUDAToolkit @SINDRE_THIRD_AI_CUDA_MIN_VERSION@)
     add_library(sindre::ai_tensorrt_native INTERFACE IMPORTED)
+    set(_sindre_tensorrt_linked FALSE)
     if("@SINDRE_AI_TRT_RUNTIME@" STREQUAL "DISPATCH")
         set(_sindre_tensorrt_runtime_name nvinfer_dispatch)
         if(TARGET TensorRT::nvinfer_dispatch AND TARGET TensorRT::nvinfer_plugin)
             set_target_properties(sindre::ai_tensorrt_native PROPERTIES
                 INTERFACE_LINK_LIBRARIES
                     "TensorRT::nvinfer_dispatch;TensorRT::nvinfer_plugin;CUDA::cudart")
+            set(_sindre_tensorrt_linked TRUE)
         endif()
     else()
         set(_sindre_tensorrt_runtime_name nvinfer)
@@ -177,9 +184,10 @@ if(@SINDRE_WITH_AI@ AND @SINDRE_AI_TRT@)
             set_target_properties(sindre::ai_tensorrt_native PROPERTIES
                 INTERFACE_LINK_LIBRARIES
                     "TensorRT::nvinfer;TensorRT::nvinfer_plugin;TensorRT::nvonnxparser;CUDA::cudart")
+            set(_sindre_tensorrt_linked TRUE)
         endif()
     endif()
-    if(NOT TARGET TensorRT::nvinfer AND NOT TARGET TensorRT::nvinfer_dispatch)
+    if(NOT _sindre_tensorrt_linked)
         find_path(_sindre_tensorrt_include NvInfer.h
             HINTS ENV TENSORRT_ROOT ENV SINDRE_TENSORRT_ROOT
             PATH_SUFFIXES include)

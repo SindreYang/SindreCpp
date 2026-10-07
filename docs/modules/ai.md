@@ -77,6 +77,22 @@ and tested.
 Use `SINDRE_ONNXRUNTIME_ROOT`, `SINDRE_TENSORRT_ROOT`, and
 `SINDRE_CUDNN_ROOT` when SDKs are not discoverable.
 
+根目录提供 `CMakePresets.json` 快速入口：
+
+```powershell
+$env:SINDRE_TENSORRT_ROOT = "C:\Program Files\NVIDIA\TensorRT-10.11.0.33"
+$env:CUDAToolkit_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
+
+cmake --preset ai-trt-full
+cmake --build --preset ai-trt-full
+
+cmake --preset ai-trt-dispatch
+cmake --build --preset ai-trt-dispatch
+```
+
+两个预设分别使用 `build/ai-trt-full` 和 `build/ai-trt-dispatch`，不能共用同一个构建
+目录。Full 预设用于构建 ONNX engine，Dispatch 预设用于生成小体积推理程序。
+
 The ONNX Runtime backend also exposes `try_get_available_backends`; the model
 exposes `try_create`, `try_infer`,
 `try_infer_typed`, `try_infer_into`, `try_infer_typed_into`, `try_warm_up`,
@@ -106,7 +122,7 @@ Zoo 的 FCN ResNet-50 语义分割模型、PPM 输入和 PGM/PPM 输出，不依
 展示了生产代码应使用的 `try_convert_onnx()`、`Model::try_create()` 和
 `try_infer()` 错误边界，以及固定尺寸 optimization profile。示例 README：
 
-[`examples/ai_tensorrt_segmentation/README.md`](../../examples/ai_tensorrt_segmentation/README.md)
+[`TensorRT 语义分割示例`](../guides/ai_tensorrt_segmentation.md)
 
 TensorRT 构建策略应按部署目标选择：
 
@@ -122,6 +138,70 @@ TensorRT 构建策略应按部署目标选择：
 
 这些选项并不能替代目标 GPU、CUDA、TensorRT 版本的实际 smoke test。Windows 发布
 包必须把匹配的 CUDA/TensorRT/lean runtime DLL 放在可搜索目录，并固定版本和哈希。
+
+### 兼容模式的实测差异
+
+当前在 RTX 3060 Laptop（计算能力 8.6）、TensorRT 10.11.0.33、CUDA 12.9、
+FCN ResNet-50、FP16、输入 `1x3x224x224` 上，用 `trtexec --loadEngine`、预热
+1 秒、运行 5 秒、`--noDataTransfers` 测得：
+
+| Engine 配置 | GPU 延迟均值 | 吞吐 | 相对 `build_gpu` 延迟 | 相对吞吐 |
+| --- | ---: | ---: | ---: | ---: |
+| `build_gpu` | 2.37257 ms | 421.071 qps | 基准 | 基准 |
+| `same_compute_capability` | 2.38387 ms | 419.043 qps | +0.48% | -0.48% |
+| `ampere_plus`（`--portable`） | 3.47930 ms | 287.225 qps | +46.65% | -31.79% |
+
+三个配置在 `sample`、`checker`、`noise` 三个确定性输入上的输出 mask 均为字节级
+一致，当前验证没有观察到输出差异。但这不是带标注数据集上的 mIoU 或数值误差
+评估；正式项目仍需用业务验证集测 mIoU、类别召回和端到端延迟。
+
+`VERSION_COMPATIBLE`、Full/Dispatch 和最小 DLL 集合使用的是同一份外置 Lean
+engine；当前 smoke test 的 mask 也字节级一致。运行时 DLL 裁剪本身不会改变已经
+编译进 engine 的 tactics，性能差异主要来自 engine 构建配置，而不是删除未使用的
+DLL。若重新构建时禁用 cuBLAS/cuBLASLt tactic source，必须单独重新做速度和精度
+对比，不能沿用上表结论。
+
+### Full / Dispatch / Lean 部署
+
+TensorRT 后端支持两种链接模式，由 `SINDRE_AI_TRT_RUNTIME` 选择：
+
+- `FULL`（默认）：链接完整 `nvinfer`、`nvinfer_plugin` 和 `nvonnxparser`，可在程序内
+  执行 `try_convert_onnx()`；适合构建机或需要现场转换 ONNX 的工具。
+- `DISPATCH`：只链接 `nvinfer_dispatch` 和插件库，不带 builder/parser；它是加载模式，
+  `try_convert_onnx()` 会返回 `function_not_supported`。创建 `Model` 时必须在
+  `LoadOptions::lean_runtime_path` 提供外部 `nvinfer_lean_10.dll`。
+
+例如分别构建 Full 和 Dispatch：
+
+```powershell
+cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg_full -G Ninja `
+  -DSINDRE_TENSORRT_ROOT="C:/Program Files/NVIDIA/TensorRT-10.11.0.33" `
+  -DSINDRE_AI_TRT_RUNTIME=FULL
+cmake --build build_ai_seg_full --parallel
+
+cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg_dispatch -G Ninja `
+  -DSINDRE_TENSORRT_ROOT="C:/Program Files/NVIDIA/TensorRT-10.11.0.33" `
+  -DSINDRE_AI_TRT_RUNTIME=DISPATCH
+cmake --build build_ai_seg_dispatch --parallel
+```
+
+推荐在 Full 构建机上生成版本兼容且不内嵌 Lean 的 plan：
+
+```text
+--version-compatible --exclude-lean-runtime \
+--lean-runtime C:/Program Files/NVIDIA/TensorRT-10.11.0.33/lib/nvinfer_lean_10.dll
+```
+
+其中 `--lean-runtime` 在构建阶段用于验证外置 Lean；使用 Dispatch 部署时仍需把同一
+版本的 Lean DLL 与 Dispatch 程序一起提供。Full Runtime 可以直接加载不含内嵌 Lean
+的 plan，不强制提供外部 Lean。`EXCLUDE_LEAN_RUNTIME` 不能单独使用，必须和
+`VERSION_COMPATIBLE` 同时设置。Dispatch 不等于跨 GPU：plan 仍受其构建时的 GPU、
+硬件兼容级别、CUDA/TensorRT 主版本和插件约束，必须在目标机做真实加载与推理验证。
+
+本机 RTX 3060 Laptop、TensorRT 10.11.0.33、CUDA 12.9 的 FCN ResNet-50 示例已验证：
+外置 Lean 的 version-compatible plan 可以由 Full 和 Dispatch 两种程序加载，输出
+mask SHA-256 完全相同；Dispatch 版本在没有 cuBLAS/cuBLASLt DLL 的干净目录仍能完成
+推理。这个结果只代表该 engine 和插件集合，不能据此保证任意模型都能删除 cuBLAS。
 
 ## Test order
 

@@ -205,14 +205,6 @@ Result<std::vector<std::uint8_t>> rle_decompress(const std::vector<std::uint8_t>
     });
 }
 
-Result<std::vector<std::uint8_t>> simple_compress(const std::vector<std::uint8_t> &data) {
-    return rle_compress(data);
-}
-
-Result<std::vector<std::uint8_t>> simple_decompress(const std::vector<std::uint8_t> &data) {
-    return rle_decompress(data);
-}
-
 #if defined(SINDRE_WITH_ZLIB)
 Result<std::vector<std::uint8_t>> zlib_compress(
     const std::vector<std::uint8_t> &data, int level) {

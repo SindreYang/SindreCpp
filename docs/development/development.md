@@ -23,7 +23,7 @@ sindrecpp/
 ├── thirds/              # 按模块登记的第三方依赖来源、版本和接入方式
 ├── tests/               # 单元测试
 ├── docs/                # 全部项目、模块和依赖文档
-├── scripts/             # Windows/Linux/macOS 快捷构建脚本
+├── scripts/             # Windows/Linux 快捷构建脚本
 ├── cmake/               # 编译器默认值、选项和公共 CMake 函数
 ├── CMakePresets.json    # Ninja 构建的可选入口
 ├── CMakeLists.txt       # CMake 配置
@@ -100,15 +100,15 @@ General 固定使用静态依赖和静态 MSVC CRT；Windows 宿主必须与 Gen
 
 ## 构建目录和运行时
 
-统一使用 `build` 作为构建目录，并使用 Ninja 生成器；生成文件放在
-`build/bin/` 中。Windows 下 General、AI、GUI、utils_2d 和 utils_3d 的测试/示例
+统一使用 `build/<profile>` 作为构建目录，并使用 Ninja 生成器；生成文件放在对应的
+`build/<profile>/bin/` 中。Windows 下 General、AI、GUI、utils_2d 和 utils_3d 的测试/示例
 目标会在构建后复制已发现的 DLL 到目标文件同目录，避免加载到系统中不匹配的版本。
 
 ## 快捷构建
 
-根目录提供 `scripts/build.bat` 和 `scripts/build.sh`，默认执行 Release
-配置、编译、模块测试和 benchmark。Windows 脚本优先使用 Ninja；当前环境没有 Ninja
-时会自动使用 Visual Studio 的 NMake 工具链。OpenBLAS 为默认 Math 后端，可以显式指定固定根目录：
+根目录提供 `scripts/build.bat` 和 `scripts/build.sh`，默认执行 Linux/WSL 或 Windows
+Release 配置、编译和模块测试。两个脚本都要求 Ninja；OpenBLAS 为默认 Math 后端，
+可以显式指定固定根目录：
 
 ```powershell
 $env:SINDRE_MATH_OPENBLAS_ROOT = 'C:\sdk\OpenBLAS'
@@ -260,9 +260,9 @@ System API 的命名也遵循同一规则：文件信息使用 `get_file_size()`
 `move_path()`、`remove_file()` 和 `remove_directory()`。公共 API 不保留同一行为的
 旧兼容别名。
 
-System 的跨平台边界固定为 Windows 和 Linux 必须支持，macOS 尽量复用 POSIX 实现。
-不得把 Linux 专用行为放进所有非 Windows 分支：平台专属功能必须使用明确的
-`_WIN32`、`__linux__` 和 `__APPLE__` 分支；未实现的平台返回
+System 的跨平台边界固定为 Windows 和 Linux/WSL；macOS 及其他平台在 CMake 配置阶段
+直接拒绝。不得把 Linux 专用行为放进所有非 Windows 分支：平台专属功能必须使用明确的
+`_WIN32` 和 `__linux__` 分支；未实现的平台返回
 `std::errc::function_not_supported`。文件路径统一按 UTF-8 公共输入处理，平台原生
 编码只能在 `system.cpp` 内部转换。
 
@@ -302,10 +302,32 @@ if (!result) {
 本地构建：
 
 ```bash
-cmake -S . -B build -G Ninja -DSINDRE_BUILD_TESTS=ON
-cmake --build build
-ctest --test-dir build --output-on-failure
+cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DSINDRE_BUILD_TESTS=ON
+cmake --build build/linux
+ctest --test-dir build/linux --output-on-failure
 ```
+
+也可以使用根目录 `CMakePresets.json` 的快捷入口。预设统一使用 Ninja，AI
+预设把构建目录分开，避免 Full 和 Dispatch 的缓存互相污染：
+
+```powershell
+cmake --list-presets
+
+cmake --preset windows-clang
+cmake --build --preset windows-clang
+
+$env:SINDRE_TENSORRT_ROOT = "C:\Program Files\NVIDIA\TensorRT-10.11.0.33"
+$env:CUDAToolkit_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
+cmake --preset ai-trt-full
+cmake --build --preset ai-trt-full
+
+cmake --preset ai-trt-dispatch
+cmake --build --preset ai-trt-dispatch
+```
+
+`ai-trt-full` 用于 ONNX 转 engine，`ai-trt-dispatch` 用于只加载已有 engine 的
+部署程序。TensorRT 和 CUDA 路径只从环境变量读取，不写入仓库；Linux 使用
+`linux-clang`，AI 预设的 Windows clang-cl 配置可按同样方式复制到本机 toolchain。
 
 The General layer is non-throwing at its public boundary in every build. Use
 `-DSINDRE_NO_EXCEPTIONS=ON` for the strict compiler-no-exceptions validation build.

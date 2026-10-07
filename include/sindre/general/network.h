@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief URL、HTTP 请求、下载和 JSON 网络接口。
+
 #include <sindre/general/core.h>
 #include <sindre/general/runtime.h>
 

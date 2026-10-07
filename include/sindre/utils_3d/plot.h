@@ -1,5 +1,8 @@
 #pragma once
 
+/// @file
+/// @brief 网格和曲线绘图、截图及样式接口。
+
 #include "show.h"
 #include <filesystem>
 #include <stdexcept>

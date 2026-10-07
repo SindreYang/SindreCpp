@@ -38,18 +38,52 @@ powershell -ExecutionPolicy Bypass -File .\download_model.ps1
 需要 TensorRT 10.11+、CUDA，以及 Ninja 和 clang/clang-cl。模型的输入名历史上通常
 是 `input.1`；如果你的导出文件不同，用 `--input-name` 指定实际名称。
 
+从仓库根目录构建时，推荐使用预设：
+
+```powershell
+$env:SINDRE_TENSORRT_ROOT = "C:\Program Files\NVIDIA\TensorRT-10.11.0.33"
+$env:CUDAToolkit_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
+cmake --preset ai-trt-full
+cmake --build --preset ai-trt-full
+
+cmake --preset ai-trt-dispatch
+cmake --build --preset ai-trt-dispatch
+```
+
+预设输出目录分别是 `build/ai-trt-full` 和 `build/ai-trt-dispatch`。如果只构建本示例，
+仍可使用下面的独立 CMake 命令。
+
 ```powershell
 cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg -G Ninja `
   -DSINDRE_TENSORRT_ROOT=C:/TensorRT
 cmake --build build_ai_seg --parallel
 
-build_ai_seg/bin/sindre_example_ai_tensorrt_segmentation.exe `
+build_ai_seg/sindre_example_ai_tensorrt_segmentation.exe `
   --onnx models/fcn-resnet50-12.onnx `
   --input sample.ppm `
   --engine artifacts/fcn.plan `
   --output artifacts/overlay.ppm `
   --mask artifacts/mask.pgm
 ```
+
+默认是 `FULL` 运行时，程序可以在本机把 ONNX 转成 engine。只部署预构建 engine
+时可以使用更小的 Dispatch 运行时：
+
+```powershell
+cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg_dispatch -G Ninja `
+  -DSINDRE_TENSORRT_ROOT="C:/Program Files/NVIDIA/TensorRT-10.11.0.33" `
+  -DSINDRE_AI_TRT_RUNTIME=DISPATCH
+cmake --build build_ai_seg_dispatch --parallel
+
+build_ai_seg_dispatch/sindre_example_ai_tensorrt_segmentation.exe `
+  --input sample.ppm --engine artifacts/fcn.plan `
+  --lean-runtime nvinfer_lean_10.dll
+```
+
+Dispatch 不包含 ONNX parser；没有已有 engine 时，`try_convert_onnx()` 会明确返回
+`function_not_supported`。构建外置 Lean plan 时，在 Full 构建机使用
+`--version-compatible --exclude-lean-runtime`；Full Runtime 可以直接加载该 plan，
+而 Dispatch 部署仍要提供匹配的 `nvinfer_lean_10.dll`。
 
 首次运行会构建 engine；已有 engine 时直接复用，不会覆盖它。示例使用输入图片的
 实际尺寸建立固定 optimization profile，因此同一个 engine 只接受同样的 `H x W`。
@@ -60,10 +94,21 @@ build_ai_seg/bin/sindre_example_ai_tensorrt_segmentation.exe `
 及更新架构之间迁移时使用 `--portable`，代价是 TensorRT 可选 tactics 变少，性能
 可能下降。
 
+本仓库在 RTX 3060 Laptop、TensorRT 10.11.0.33、CUDA 12.9 上的参考结果如下：
+
+| 配置 | GPU 延迟均值 | 吞吐 | 输出 mask |
+| --- | ---: | ---: | --- |
+| `build_gpu` | 2.37257 ms | 421.071 qps | 与其他配置一致 |
+| `same_compute_capability` | 2.38387 ms | 419.043 qps | 与其他配置一致 |
+| `ampere_plus` / `--portable` | 3.47930 ms | 287.225 qps | 与其他配置一致 |
+
+这是固定模型和输入下的性能参考，不是所有 GPU、模型或 TensorRT 版本的保证；正式
+发布必须在目标硬件和业务验证集上重新测量。
+
 需要跨 TensorRT 10.x 版本时可组合：
 
 ```powershell
-... --version-compatible --exclude-lean-runtime --lean-runtime C:/TensorRT/lib/lean.dll
+... --version-compatible --exclude-lean-runtime --lean-runtime C:/TensorRT/lib/nvinfer_lean_10.dll
 ```
 
 `--exclude-lean-runtime` 只允许和 `--version-compatible` 一起使用。生产环境不要

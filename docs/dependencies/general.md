@@ -48,8 +48,8 @@ intentionally ignored by Git because they contain generated binaries. The
 profile directory is part of the local build environment and must exist before
 CMake configuration. The Linux profile was provisioned with the fixed vcpkg
 2024.04.23 baseline; the Windows profile uses the matching fixed package set.
-macOS is rejected during configuration until an equivalent tested profile is
-provided.
+Only Windows and Linux/WSL profiles are distributed; other host platforms are
+rejected during configuration.
 
 Desktop helpers do not add a compiled third-party dependency. Windows uses the platform
 Win32/COM libraries already linked by General. Linux desktop helpers discover optional
