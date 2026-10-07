@@ -240,17 +240,21 @@ namespace sindre::general::regex {
 
 Result<Regex> Regex::compile(std::string pattern) noexcept {
 #if defined(SINDRE_WITH_RE2)
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         Regex result;
         result.pattern_ = std::make_shared<::re2::RE2>(std::move(pattern));
         if (!result.pattern_->ok()) return Result<Regex>::failure(
             std::make_error_code(std::errc::invalid_argument), result.pattern_->error(), "regex.compile");
         return Result<Regex>::success(std::move(result));
+#if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::exception &error) {
         return Result<Regex>::failure(std::make_error_code(std::errc::invalid_argument), error.what(), "regex.compile");
     } catch (...) {
         return Result<Regex>::failure(std::make_error_code(std::errc::invalid_argument), "Regex compilation failed", "regex.compile");
     }
+#endif
 #else
     (void)pattern;
     return Result<Regex>::failure(std::make_error_code(std::errc::function_not_supported), "RE2 support is not enabled", "regex.compile");

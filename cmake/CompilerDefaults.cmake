@@ -32,6 +32,13 @@ function(sindre_apply_compiler_defaults target)
         endif()
     endif()
 
+    # MSVC 默认不启用完整的 C++ 异常展开，而 General 的 Result 边界会
+    # 在启用异常时捕获第三方库异常。显式启用 /EHsc，避免 C4530 警告并
+    # 保证异常对象在跨库调用时可以正确析构。
+    if(MSVC AND NOT SINDRE_NO_EXCEPTIONS)
+        target_compile_options(${target} INTERFACE /EHsc)
+    endif()
+
     if(MSVC AND SINDRE_MSVC_STATIC_RUNTIME)
         set_property(TARGET ${target} PROPERTY
             MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")

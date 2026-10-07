@@ -20,27 +20,23 @@ static void set_example_environment() {
 }
 
 int main() {
-    const auto document = general::json::try_parse(R"({"name":"sindre","enabled":true})");
+    auto document = general::json::parse(R"({"name":"sindre","enabled":true})");
     if (!document) return report_failure("parse JSON", document.error());
+    const auto name = document.value().find("name");
+    if (!name) return report_failure(
+        "read JSON name",
+        general::Error::make(std::errc::invalid_argument, "JSON key is missing", "example.json.name"));
 
-    const auto name = document.value().root()["name"].get_string();
-    if (name.error() != simdjson::SUCCESS) {
-        return report_failure(
-            "read JSON name",
-            general::Error::make(std::errc::invalid_argument,
-                                 simdjson::error_message(name.error()), "example.json.name"));
-    }
-
-    const auto defaults = general::config::Config::with_defaults({
-        {"app.port", "8080"},
-        {"app.enabled", "false"},
+    const auto defaults = general::config::Config::create_with_defaults({
+        {"app.port", 8080},
+        {"app.enabled", false},
     });
-    auto config = general::config::Config::from_json(
+    auto config = general::config::Config::parse_json(
         R"({"app":{"enabled":true},"app_name":"demo"})", defaults);
     if (!config) return report_failure("load configuration", config.error());
 
     set_example_environment();
-    const auto environment = config.value().apply_environment("SINDRE_EXAMPLE");
+    const auto environment = config.value().apply_environment_overrides("SINDRE_EXAMPLE");
     if (!environment) return report_failure("apply environment", environment.error());
 
     const auto port = config.value().get_int("app.port");
@@ -48,13 +44,13 @@ int main() {
     if (!port) return report_failure("read app.port", port.error());
     if (!enabled) return report_failure("read app.enabled", enabled.error());
 
-    const auto invalid = general::json::try_parse("{broken");
+    auto invalid = general::json::parse("{broken");
     if (invalid) {
         std::cerr << "invalid JSON was accepted\n";
         return 1;
     }
 
-    std::cout << "name: " << name.value_unsafe() << '\n'
+    std::cout << "name: " << name->get_string().value() << '\n'
               << "app.port: " << port.value() << '\n'
               << "app.enabled: " << (enabled.value() ? "true" : "false") << '\n'
               << "invalid JSON: " << invalid.error().describe() << '\n';

@@ -2,10 +2,13 @@
 
 #include <sindre/general/core.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <functional>
+#include <iterator>
 #include <initializer_list>
 #include <limits>
 #include <memory>
@@ -17,6 +20,7 @@
 #include <vector>
 
 #include <cs_string.h>
+#include <cs_string_view.h>
 
 namespace sindre::general::string {
 
@@ -70,6 +74,10 @@ template <class Encoding,
           class Allocator = std::allocator<typename Encoding::storage_unit>>
 class BasicString;
 
+template <class Encoding,
+          class Allocator = std::allocator<typename Encoding::storage_unit>>
+class BasicStringView;
+
 template <class Value>
 struct is_basic_string : std::false_type {};
 
@@ -80,6 +88,18 @@ template <class Function>
 auto try_invoke(Function &&function, std::string context)
     -> Result<std::decay_t<std::invoke_result_t<Function>>> {
     using Value = std::decay_t<std::invoke_result_t<Function>>;
+#if defined(SINDRE_NO_EXCEPTIONS)
+    // In a no-exceptions build the backend is compiled with exception support
+    // disabled as well. Keep the same Result API without emitting try/catch,
+    // which would otherwise make the public header uncompilable.
+    (void)context;
+    if constexpr (std::is_void_v<Value>) {
+        std::forward<Function>(function)();
+        return Result<void>::success();
+    } else {
+        return Result<Value>::success(std::forward<Function>(function)());
+    }
+#else
     try {
         if constexpr (std::is_void_v<Value>) {
             std::forward<Function>(function)();
@@ -100,6 +120,7 @@ auto try_invoke(Function &&function, std::string context)
         return Result<Value>::failure(std::make_error_code(std::errc::invalid_argument),
                                       "CsString operation failed", std::move(context));
     }
+#endif
 }
 
 } // namespace detail
@@ -111,11 +132,15 @@ auto try_invoke(Function &&function, std::string context)
 /// public failure boundaries; they convert backend exceptions into Result.
 template <class Encoding, class Allocator>
 class detail::BasicString {
-public:
+private:
     using encoding_type = Encoding;
     using allocator_type = Allocator;
     using native_type = CsString::CsBasicString<Encoding, Allocator>;
-    using code_point_type = CsString::CsChar;
+    using native_code_point_type = CsString::CsChar;
+
+public:
+    using code_point_type = char32_t;
+    using view_type = BasicStringView<Encoding, Allocator>;
     using size_type = std::size_t;
 
     static constexpr size_type npos = std::numeric_limits<size_type>::max();
@@ -217,30 +242,52 @@ public:
         return detail::try_invoke([&] { return BasicString(text); }, "string.create_utf16");
     }
 
-    const native_type &get_native() const noexcept { return value_; }
-    native_type &get_native() noexcept { return value_; }
     bool empty() const noexcept { return value_.empty(); }
     size_type size() const noexcept { return static_cast<size_type>(value_.size()); }
     size_type size_storage() const noexcept { return static_cast<size_type>(value_.size_storage()); }
 
-    Result<code_point_type> get_code_point(size_type index) const noexcept {
-        return detail::try_invoke([&] { return value_.at(static_cast<typename native_type::size_type>(index)); },
-                                   "string.get_code_point");
+    bool is_empty() const noexcept { return empty(); }
+    size_type get_size() const noexcept { return size(); }
+    size_type get_storage_size() const noexcept { return size_storage(); }
+    view_type get_view() const noexcept;
+
+    Result<code_point_type> try_get_code_point(size_type index) const noexcept {
+        return detail::try_invoke([&] {
+            return static_cast<code_point_type>(value_.at(
+                static_cast<typename native_type::size_type>(index)).unicode());
+        }, "string.get_code_point");
     }
-    Result<code_point_type> get_front() const noexcept {
+    Result<code_point_type> try_get_front() const noexcept {
         if (empty()) return Result<code_point_type>::failure(
             std::make_error_code(std::errc::invalid_argument), "String is empty", "string.get_front");
-        return detail::try_invoke([&] { return value_.front(); }, "string.get_front");
+        return detail::try_invoke([&] {
+            return static_cast<code_point_type>(value_.front().unicode());
+        }, "string.get_front");
     }
-    Result<code_point_type> get_back() const noexcept {
+    Result<code_point_type> try_get_back() const noexcept {
         if (empty()) return Result<code_point_type>::failure(
             std::make_error_code(std::errc::invalid_argument), "String is empty", "string.get_back");
-        return detail::try_invoke([&] { return value_.back(); }, "string.get_back");
+        return detail::try_invoke([&] {
+            return static_cast<code_point_type>(value_.back().unicode());
+        }, "string.get_back");
     }
+
+    // Compatibility names retained for the first public String API.
+    Result<code_point_type> get_code_point(size_type index) const noexcept {
+        return try_get_code_point(index);
+    }
+    Result<code_point_type> get_front() const noexcept { return try_get_front(); }
+    Result<code_point_type> get_back() const noexcept { return try_get_back(); }
 
     size_type find(const BasicString &needle, size_type start = 0) const noexcept {
         if (start > size()) return npos;
         const auto result = value_.find(needle.value_, static_cast<typename native_type::size_type>(start));
+        return result < 0 ? npos : static_cast<size_type>(result);
+    }
+    size_type find(code_point_type code_point, size_type start = 0) const noexcept {
+        if (start > size()) return npos;
+        const auto result = value_.find(native_code_point_type(code_point),
+                                        static_cast<typename native_type::size_type>(start));
         return result < 0 ? npos : static_cast<size_type>(result);
     }
     size_type rfind(const BasicString &needle, size_type start = npos) const noexcept {
@@ -250,6 +297,78 @@ public:
         const auto result = value_.rfind(needle.value_, native_start);
         return result < 0 ? npos : static_cast<size_type>(result);
     }
+    size_type rfind(code_point_type code_point, size_type start = npos) const noexcept {
+        const auto native_start = start == npos
+            ? native_type::npos
+            : static_cast<typename native_type::size_type>(start);
+        const auto result = value_.rfind(native_code_point_type(code_point), native_start);
+        return result < 0 ? npos : static_cast<size_type>(result);
+    }
+
+    size_type find_first_of(const BasicString &characters, size_type start = 0) const noexcept {
+        if (start > size()) return npos;
+        const auto result = value_.find_first_of(
+            characters.value_, static_cast<typename native_type::size_type>(start));
+        return result < 0 ? npos : static_cast<size_type>(result);
+    }
+    size_type find_last_of(const BasicString &characters, size_type start = npos) const noexcept {
+        const auto native_start = start == npos
+            ? native_type::npos
+            : static_cast<typename native_type::size_type>(start);
+        const auto result = value_.find_last_of(characters.value_, native_start);
+        return result < 0 ? npos : static_cast<size_type>(result);
+    }
+    size_type find_first_not_of(const BasicString &characters, size_type start = 0) const noexcept {
+        if (start > size()) return npos;
+        const auto result = value_.find_first_not_of(
+            characters.value_, static_cast<typename native_type::size_type>(start));
+        return result < 0 ? npos : static_cast<size_type>(result);
+    }
+    size_type find_last_not_of(const BasicString &characters, size_type start = npos) const noexcept {
+        const auto native_start = start == npos
+            ? native_type::npos
+            : static_cast<typename native_type::size_type>(start);
+        const auto result = value_.find_last_not_of(characters.value_, native_start);
+        return result < 0 ? npos : static_cast<size_type>(result);
+    }
+
+    bool starts_with(const BasicString &prefix) const noexcept {
+        return prefix.size() <= size() && find(prefix, 0) == 0;
+    }
+    bool ends_with(const BasicString &suffix) const noexcept {
+        if (suffix.size() > size()) return false;
+        return rfind(suffix, size() - suffix.size()) == size() - suffix.size();
+    }
+    bool contains(const BasicString &needle) const noexcept { return find(needle) != npos; }
+    size_type count(const BasicString &needle) const noexcept {
+        if (needle.empty()) return size() + 1;
+        size_type result = 0;
+        for (size_type cursor = 0; cursor <= size();) {
+            const auto match = find(needle, cursor);
+            if (match == npos) break;
+            ++result;
+            cursor = match + needle.size();
+        }
+        return result;
+    }
+
+    size_type find(const view_type &needle, size_type start = 0) const noexcept;
+    size_type rfind(const view_type &needle, size_type start = npos) const noexcept;
+    size_type find_first_of(const view_type &characters, size_type start = 0) const noexcept;
+    size_type find_last_of(const view_type &characters, size_type start = npos) const noexcept;
+    size_type find_first_not_of(const view_type &characters, size_type start = 0) const noexcept;
+    size_type find_last_not_of(const view_type &characters, size_type start = npos) const noexcept;
+    bool starts_with(const view_type &prefix) const noexcept;
+    bool ends_with(const view_type &suffix) const noexcept;
+    bool contains(const view_type &needle) const noexcept;
+    size_type count(const view_type &needle) const noexcept;
+    int compare(const BasicString &other) const noexcept;
+    int compare(const view_type &other) const noexcept;
+
+    Result<view_type> try_substr_view(size_type start, size_type count = npos) const noexcept;
+
+    template <class Function>
+    Result<void> try_for_each_code_point(Function &&function) const noexcept;
 
     Result<BasicString> try_substr(size_type start, size_type count = npos) const noexcept {
         if (start > size()) return Result<BasicString>::failure(
@@ -264,6 +383,31 @@ public:
     Result<void> try_append(const BasicString &other) noexcept {
         return detail::try_invoke([&] { value_ += other.value_; }, "string.append");
     }
+    Result<void> try_append(const view_type &other) noexcept;
+    Result<void> try_append(code_point_type code_point, size_type count = 1) noexcept {
+        return detail::try_invoke([&] {
+            value_.append(static_cast<typename native_type::size_type>(count),
+                          native_code_point_type(code_point));
+        }, "string.append_code_point");
+    }
+    Result<void> try_assign(const BasicString &other) noexcept {
+        return detail::try_invoke([&] { value_ = other.value_; }, "string.assign");
+    }
+    Result<void> try_assign(const view_type &other) noexcept;
+    Result<void> try_clear() noexcept {
+        return detail::try_invoke([&] { value_.clear(); }, "string.clear");
+    }
+    Result<void> try_pop_back() noexcept {
+        if (empty()) return Result<void>::failure(
+            std::make_error_code(std::errc::invalid_argument), "String is empty", "string.pop_back");
+        return detail::try_invoke([&] { value_.pop_back(); }, "string.pop_back");
+    }
+    Result<void> try_swap(BasicString &other) noexcept {
+        return detail::try_invoke([&] { value_.swap(other.value_); }, "string.swap");
+    }
+    Result<void> try_shrink_to_fit() noexcept {
+        return detail::try_invoke([&] { value_.shrink_to_fit(); }, "string.shrink_to_fit");
+    }
     Result<void> try_insert(size_type index, const BasicString &other) noexcept {
         if (index > size()) return Result<void>::failure(
             std::make_error_code(std::errc::invalid_argument), "String index is out of range", "string.insert");
@@ -271,6 +415,7 @@ public:
             value_.insert(static_cast<typename native_type::size_type>(index), other.value_);
         }, "string.insert");
     }
+    Result<void> try_insert(size_type index, const view_type &other) noexcept;
     Result<void> try_erase(size_type index, size_type count = npos) noexcept {
         if (index > size()) return Result<void>::failure(
             std::make_error_code(std::errc::invalid_argument), "String index is out of range", "string.erase");
@@ -280,11 +425,34 @@ public:
                                         : static_cast<typename native_type::size_type>(count));
         }, "string.erase");
     }
+    Result<void> try_insert(size_type index, code_point_type code_point, size_type count = 1) noexcept {
+        if (index > size()) return Result<void>::failure(
+            std::make_error_code(std::errc::invalid_argument), "String index is out of range", "string.insert");
+        return detail::try_invoke([&] {
+            value_.insert(static_cast<typename native_type::size_type>(index),
+                          static_cast<typename native_type::size_type>(count),
+                          native_code_point_type(code_point));
+        }, "string.insert_code_point");
+    }
     Result<void> try_replace(size_type index, size_type count, const BasicString &replacement) noexcept {
         if (index > size()) return Result<void>::failure(
             std::make_error_code(std::errc::invalid_argument), "String index is out of range", "string.replace");
         return detail::try_invoke([&] { replace_range_unchecked(index, count, replacement); }, "string.replace");
     }
+    Result<void> try_replace(size_type index, size_type count,
+                             code_point_type code_point, size_type repeat_count) noexcept {
+        if (index > size()) return Result<void>::failure(
+            std::make_error_code(std::errc::invalid_argument), "String index is out of range", "string.replace");
+        return detail::try_invoke([&] {
+            value_.replace(static_cast<typename native_type::size_type>(index),
+                           count == npos ? native_type::npos
+                                         : static_cast<typename native_type::size_type>(count),
+                           static_cast<typename native_type::size_type>(repeat_count),
+                           native_code_point_type(code_point));
+        }, "string.replace_code_point");
+    }
+    Result<void> try_replace(size_type index, size_type count,
+                             const view_type &replacement) noexcept;
     Result<void> try_replace_all(const BasicString &from, const BasicString &to) noexcept {
         if (from.empty()) return Result<void>::success();
         return detail::try_invoke([&] {
@@ -297,8 +465,12 @@ public:
             }
         }, "string.replace_all");
     }
+    Result<void> try_replace_all(const view_type &from, const view_type &to) noexcept;
     /// @brief 按 Unicode code point 修改自身；必要时允许后端重新分配内存。
     Result<void> replace(size_type index, size_type count, const BasicString &replacement) noexcept {
+        return try_replace(index, count, replacement);
+    }
+    Result<void> replace(size_type index, size_type count, const view_type &replacement) noexcept {
         return try_replace(index, count, replacement);
     }
     /// @brief 原地替换的显式命名版本。
@@ -306,16 +478,23 @@ public:
                                   const BasicString &replacement) noexcept {
         return try_replace(index, count, replacement);
     }
+    Result<void> replace_in_place(size_type index, size_type count,
+                                  const view_type &replacement) noexcept {
+        return try_replace(index, count, replacement);
+    }
     /// @brief 修改自身并替换全部非重叠匹配。
     Result<void> replace_all(const BasicString &from, const BasicString &to) noexcept {
         return try_replace_all(from, to);
     }
+    Result<void> replace_all(const view_type &from, const view_type &to) noexcept {
+        return try_replace_all(from, to);
+    }
     Result<void> try_push_back(code_point_type code_point) noexcept {
-        return detail::try_invoke([&] { value_.push_back(code_point); }, "string.push_back");
+        return detail::try_invoke([&] { value_.push_back(native_code_point_type(code_point)); }, "string.push_back");
     }
     Result<void> try_resize(size_type count, code_point_type fill = code_point_type{}) noexcept {
         return detail::try_invoke([&] {
-            value_.resize(static_cast<typename native_type::size_type>(count), fill);
+            value_.resize(static_cast<typename native_type::size_type>(count), native_code_point_type(fill));
         }, "string.resize");
     }
 
@@ -323,8 +502,10 @@ public:
         return detail::try_invoke([&] {
             size_type first = 0;
             size_type last = size();
-            while (first < last && is_ascii_space(value_.at(static_cast<typename native_type::size_type>(first)))) ++first;
-            while (last > first && is_ascii_space(value_.at(static_cast<typename native_type::size_type>(last - 1)))) --last;
+            while (first < last && is_ascii_space(static_cast<code_point_type>(value_.at(
+                       static_cast<typename native_type::size_type>(first)).unicode()))) ++first;
+            while (last > first && is_ascii_space(static_cast<code_point_type>(value_.at(
+                       static_cast<typename native_type::size_type>(last - 1)).unicode()))) --last;
             value_.erase(static_cast<typename native_type::size_type>(last), native_type::npos);
             value_.erase(0, static_cast<typename native_type::size_type>(first));
         }, "string.trim");
@@ -338,7 +519,8 @@ public:
             std::vector<BasicString> result;
             if (delimiter.empty()) {
                 result.reserve(size());
-                for (const auto code_point : value_) result.emplace_back(native_type(1, code_point));
+                for (const auto code_point : value_)
+                    result.emplace_back(native_type(1, code_point));
                 return result;
             }
             size_type begin = 0;
@@ -367,17 +549,6 @@ public:
             for (size_type index = 0; index < times; ++index) result.value_ += value_;
             return result;
         }, "string.repeat");
-    }
-
-    template <class TargetEncoding,
-              class TargetAllocator = std::allocator<typename TargetEncoding::storage_unit>>
-    Result<BasicString<TargetEncoding, TargetAllocator>> try_convert() const noexcept {
-        using Target = BasicString<TargetEncoding, TargetAllocator>;
-        return detail::try_invoke([&] {
-            Target result;
-            CsString::convert(value_, result.get_native());
-            return result;
-        }, "string.convert");
     }
 
     Result<std::string> try_to_utf8() const noexcept {
@@ -414,7 +585,7 @@ public:
             "String must contain exactly one Unicode code point", "string.to_code_point");
         const auto code_point = get_code_point(0);
         if (!code_point) return Result<char32_t>::failure(code_point.error());
-        return Result<char32_t>::success(static_cast<char32_t>(code_point.value().unicode()));
+        return Result<char32_t>::success(code_point.value());
     }
     /// @brief Convert to a single ASCII char; non-ASCII code points fail.
     Result<char> to_char() const noexcept {
@@ -474,13 +645,34 @@ public:
     }
 
 private:
+    const native_type &get_native() const noexcept { return value_; }
+    native_type &get_native() noexcept { return value_; }
+
+    template <class TargetEncoding,
+              class TargetAllocator = std::allocator<typename TargetEncoding::storage_unit>>
+    Result<BasicString<TargetEncoding, TargetAllocator>> try_convert() const noexcept {
+        using Target = BasicString<TargetEncoding, TargetAllocator>;
+        return detail::try_invoke([&] {
+            Target result;
+            CsString::convert(value_, result.value_);
+            return result;
+        }, "string.convert");
+    }
+
+    template <class OtherEncoding, class OtherAllocator>
+    friend class BasicString;
+    template <class OtherEncoding, class OtherAllocator>
+    friend class BasicStringView;
+
     void replace_range_unchecked(size_type index, size_type count,
                                  const BasicString &replacement) {
-        const auto suffix_start = count > size() - index ? size() : index + count;
-        auto result = value_.substr(0, static_cast<typename native_type::size_type>(index));
-        result += replacement.value_;
-        result += value_.substr(static_cast<typename native_type::size_type>(suffix_start), native_type::npos);
-        value_ = std::move(result);
+        // Use CsString's code-point iterator implementation directly. Building
+        // the result from substr() can leave stale storage for multibyte UTF-8
+        // ranges in the fixed CsString backend.
+        value_.replace(static_cast<typename native_type::size_type>(index),
+                       count == npos ? native_type::npos
+                                     : static_cast<typename native_type::size_type>(count),
+                       replacement.value_);
     }
     static native_type from_wide(std::wstring_view text) {
         if constexpr (sizeof(wchar_t) == sizeof(char16_t)) {
@@ -496,12 +688,12 @@ private:
     static native_type from_code_points(const char32_t *data, size_type count) {
         native_type result;
         for (size_type index = 0; index < count; ++index)
-            result.push_back(code_point_type(data[index]));
+            result.push_back(native_code_point_type(data[index]));
         return result;
     }
     static bool is_ascii_space(code_point_type code_point) noexcept {
-        const auto value = code_point.unicode();
-        return value == ' ' || value == '\t' || value == '\n' || value == '\r' || value == '\f' || value == '\v';
+        return code_point == U' ' || code_point == U'\t' || code_point == U'\n' ||
+               code_point == U'\r' || code_point == U'\f' || code_point == U'\v';
     }
     Result<void> change_ascii_case(bool upper) noexcept {
         return detail::try_invoke([&] {
@@ -510,10 +702,10 @@ private:
                 const auto value = code_point.unicode();
                 if (upper && value >= 'a' && value <= 'z')
                     value_.replace(static_cast<typename native_type::size_type>(index), 1, 1,
-                                   code_point_type(static_cast<char32_t>(value - ('a' - 'A'))));
+                    native_code_point_type(static_cast<char32_t>(value - ('a' - 'A'))));
                 else if (!upper && value >= 'A' && value <= 'Z')
                     value_.replace(static_cast<typename native_type::size_type>(index), 1, 1,
-                                   code_point_type(static_cast<char32_t>(value + ('a' - 'A'))));
+                                   native_code_point_type(static_cast<char32_t>(value + ('a' - 'A'))));
             }
         }, upper ? "string.upper_ascii" : "string.lower_ascii");
     }
@@ -521,12 +713,399 @@ private:
     native_type value_;
 };
 
+/// @brief Non-owning Unicode view over a String.
+///
+/// The view does not copy text. It remains valid only while the source String
+/// remains alive and is not modified in a way that invalidates its storage.
+template <class Encoding, class Allocator>
+class detail::BasicStringView {
+public:
+    using string_type = BasicString<Encoding, Allocator>;
+    using size_type = std::size_t;
+    using code_point_type = char32_t;
+
+    static constexpr size_type npos = std::numeric_limits<size_type>::max();
+
+    BasicStringView() = default;
+
+    bool is_empty() const noexcept { return native_view_.empty(); }
+    size_type get_size() const noexcept {
+        const auto value = native_view_.size();
+        return value < 0 ? 0 : static_cast<size_type>(value);
+    }
+    size_type get_storage_size() const noexcept {
+        return static_cast<size_type>(std::distance(native_view_.storage_begin(), native_view_.storage_end()));
+    }
+
+    Result<code_point_type> try_get_code_point(size_type index) const noexcept {
+        if (index >= get_size()) return Result<code_point_type>::failure(
+            std::make_error_code(std::errc::result_out_of_range),
+            "String view index is out of range", "string.view.get_code_point");
+        return detail::try_invoke([&] {
+            return static_cast<code_point_type>(native_view_.at(
+                static_cast<typename native_view_type::size_type>(index)).unicode());
+        }, "string.view.get_code_point");
+    }
+    Result<code_point_type> try_get_front() const noexcept {
+        if (is_empty()) return Result<code_point_type>::failure(
+            std::make_error_code(std::errc::invalid_argument), "String view is empty", "string.view.get_front");
+        return detail::try_invoke([&] {
+            return static_cast<code_point_type>(native_view_.front().unicode());
+        }, "string.view.get_front");
+    }
+    Result<code_point_type> try_get_back() const noexcept {
+        if (is_empty()) return Result<code_point_type>::failure(
+            std::make_error_code(std::errc::invalid_argument), "String view is empty", "string.view.get_back");
+        return detail::try_invoke([&] {
+            return static_cast<code_point_type>(native_view_.back().unicode());
+        }, "string.view.get_back");
+    }
+
+    size_type find(const string_type &needle, size_type start = 0) const noexcept {
+        if (start > get_size()) return npos;
+        const auto begin = get_iterator_at(start);
+        const auto found = native_view_.find_fast(native_view_type(needle.get_native()), begin);
+        return found == native_view_.cend() ? npos : iterator_index(found);
+    }
+    size_type find(const BasicStringView &needle, size_type start = 0) const noexcept {
+        if (start > get_size()) return npos;
+        const auto begin = get_iterator_at(start);
+        const auto found = native_view_.find_fast(needle.native_view_, begin);
+        return found == native_view_.cend() ? npos : iterator_index(found);
+    }
+    size_type find(code_point_type code_point, size_type start = 0) const noexcept {
+        if (start > get_size()) return npos;
+        auto iterator = get_iterator_at(start);
+        for (; iterator != native_view_.cend(); ++iterator)
+            if (static_cast<code_point_type>((*iterator).unicode()) == code_point)
+                return iterator_index(iterator);
+        return npos;
+    }
+    size_type rfind(const string_type &needle, size_type start = npos) const noexcept {
+        return rfind(BasicStringView(needle), start);
+    }
+    size_type rfind(const BasicStringView &needle, size_type start = npos) const noexcept {
+        const auto limit = start == npos ? get_size() : std::min(start, get_size());
+        if (needle.is_empty()) return limit;
+        size_type result = npos;
+        for (size_type cursor = 0; cursor <= limit;) {
+            const auto found = find(needle, cursor);
+            if (found == npos || found > limit) break;
+            result = found;
+            cursor = found + needle.get_size();
+        }
+        return result;
+    }
+    size_type rfind(code_point_type code_point, size_type start = npos) const noexcept {
+        if (is_empty()) return npos;
+        const auto last = start == npos ? get_size() - 1 : std::min(start, get_size() - 1);
+        for (size_type index = last + 1; index > 0; --index)
+            if (static_cast<code_point_type>(native_view_.at(
+                    static_cast<typename native_view_type::size_type>(index - 1)).unicode()) == code_point)
+                return index - 1;
+        return npos;
+    }
+
+    size_type find_first_of(const BasicStringView &characters, size_type start = 0) const noexcept {
+        return find_character_set(characters, start, false, false);
+    }
+    size_type find_last_of(const BasicStringView &characters, size_type start = npos) const noexcept {
+        return find_character_set(characters, start, true, false);
+    }
+    size_type find_first_not_of(const BasicStringView &characters, size_type start = 0) const noexcept {
+        return find_character_set(characters, start, false, true);
+    }
+    size_type find_last_not_of(const BasicStringView &characters, size_type start = npos) const noexcept {
+        return find_character_set(characters, start, true, true);
+    }
+
+    size_type find_first_of(const string_type &characters, size_type start = 0) const noexcept {
+        return find_first_of(BasicStringView(characters), start);
+    }
+    size_type find_last_of(const string_type &characters, size_type start = npos) const noexcept {
+        return find_last_of(BasicStringView(characters), start);
+    }
+    size_type find_first_not_of(const string_type &characters, size_type start = 0) const noexcept {
+        return find_first_not_of(BasicStringView(characters), start);
+    }
+    size_type find_last_not_of(const string_type &characters, size_type start = npos) const noexcept {
+        return find_last_not_of(BasicStringView(characters), start);
+    }
+
+    bool starts_with(const BasicStringView &prefix) const noexcept {
+        return native_view_.startsWith(prefix.native_view_);
+    }
+    bool ends_with(const BasicStringView &suffix) const noexcept {
+        return native_view_.endsWith(suffix.native_view_);
+    }
+    bool contains(const BasicStringView &needle) const noexcept { return find(needle) != npos; }
+    size_type count(const BasicStringView &needle) const noexcept {
+        if (needle.is_empty()) return get_size() + 1;
+        size_type result = 0;
+        for (size_type cursor = 0; cursor <= get_size();) {
+            const auto found = find(needle, cursor);
+            if (found == npos) break;
+            ++result;
+            cursor = found + needle.get_size();
+        }
+        return result;
+    }
+    bool starts_with(const string_type &prefix) const noexcept { return starts_with(BasicStringView(prefix)); }
+    bool ends_with(const string_type &suffix) const noexcept { return ends_with(BasicStringView(suffix)); }
+    bool contains(const string_type &needle) const noexcept { return contains(BasicStringView(needle)); }
+    size_type count(const string_type &needle) const noexcept { return count(BasicStringView(needle)); }
+    int compare(const BasicStringView &other) const noexcept {
+        return native_view_.compare(other.native_view_);
+    }
+    int compare(const string_type &other) const noexcept { return compare(BasicStringView(other)); }
+
+    Result<BasicStringView> try_substr(size_type start = 0, size_type count = npos) const noexcept {
+        if (start > get_size()) return Result<BasicStringView>::failure(
+            std::make_error_code(std::errc::invalid_argument),
+            "String view index is out of range", "string.view.substr");
+        return detail::try_invoke([&] {
+            const auto native_count = count == npos
+                ? native_view_type::npos
+                : static_cast<typename native_view_type::size_type>(count);
+            return BasicStringView(native_view_.substr(
+                static_cast<typename native_view_type::size_type>(start), native_count));
+        }, "string.view.substr");
+    }
+    BasicStringView remove_prefix(size_type count) const noexcept {
+        return BasicStringView(native_view_.remove_prefix(
+            static_cast<typename native_view_type::size_type>(count)));
+    }
+    BasicStringView remove_suffix(size_type count) const noexcept {
+        return BasicStringView(native_view_.remove_suffix(
+            static_cast<typename native_view_type::size_type>(count)));
+    }
+    Result<string_type> try_to_string() const noexcept {
+        return detail::try_invoke([&] { return string_type(native_view_); }, "string.view.to_string");
+    }
+
+    template <class Function>
+    Result<void> try_for_each_code_point(Function &&function) const noexcept {
+        return detail::try_invoke([&] {
+            for (const auto code_point : native_view_)
+                std::invoke(function, static_cast<code_point_type>(code_point.unicode()));
+        }, "string.view.for_each_code_point");
+    }
+
+private:
+    using native_type = typename string_type::native_type;
+    using native_view_type = CsString::CsBasicStringView<native_type>;
+    using native_iterator = typename native_view_type::const_iterator;
+
+    explicit BasicStringView(const string_type &value) : native_view_(value.get_native()) {}
+    explicit BasicStringView(const native_type &value) : native_view_(value) {}
+    explicit BasicStringView(native_view_type value) : native_view_(std::move(value)) {}
+
+    native_iterator get_iterator_at(size_type index) const noexcept {
+        auto result = native_view_.cbegin();
+        std::advance(result, static_cast<typename native_view_type::difference_type>(index));
+        return result;
+    }
+    size_type iterator_index(native_iterator iterator) const noexcept {
+        return static_cast<size_type>(std::distance(native_view_.cbegin(), iterator));
+    }
+    size_type find_character_set(const BasicStringView &characters, size_type start,
+                                 bool reverse, bool negated) const noexcept {
+        const auto size = get_size();
+        if (start != npos && start > size) return npos;
+        if (characters.is_empty()) {
+            if (!negated || size == 0) return npos;
+            if (!reverse) return start < size ? start : npos;
+            return start == npos ? size - 1 : std::min(start, size - 1);
+        }
+        if (is_empty()) return npos;
+        if (!reverse) {
+            if (start >= size) return npos;
+            for (size_type index = start; index < size; ++index) {
+                const auto current = native_view_.at(static_cast<typename native_view_type::size_type>(index));
+                bool matched = false;
+                for (size_type candidate_index = 0;
+                     candidate_index < characters.get_size(); ++candidate_index) {
+                    const auto candidate = characters.try_get_code_point(candidate_index);
+                    if (candidate && candidate.value() == current.unicode()) {
+                        matched = true;
+                        break;
+                    }
+                }
+                if (matched != negated) return index;
+            }
+            return npos;
+        }
+        const auto last = start == npos ? size - 1 : std::min(start, size - 1);
+        for (size_type index = last + 1; index > 0; --index) {
+            const auto current = native_view_.at(static_cast<typename native_view_type::size_type>(index - 1));
+            bool matched = false;
+            for (size_type candidate_index = 0;
+                 candidate_index < characters.get_size(); ++candidate_index) {
+                const auto candidate = characters.try_get_code_point(candidate_index);
+                if (candidate && candidate.value() == current.unicode()) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (matched != negated) return index - 1;
+        }
+        return npos;
+    }
+
+    friend class BasicString<Encoding, Allocator>;
+    native_view_type native_view_;
+};
+
+template <class Encoding, class Allocator>
+typename detail::BasicString<Encoding, Allocator>::view_type
+detail::BasicString<Encoding, Allocator>::get_view() const noexcept {
+    return view_type(value_);
+}
+
+template <class Encoding, class Allocator>
+typename detail::BasicString<Encoding, Allocator>::size_type
+detail::BasicString<Encoding, Allocator>::find(
+    const view_type &needle, size_type start) const noexcept {
+    return get_view().find(needle, start);
+}
+
+template <class Encoding, class Allocator>
+typename detail::BasicString<Encoding, Allocator>::size_type
+detail::BasicString<Encoding, Allocator>::rfind(
+    const view_type &needle, size_type start) const noexcept {
+    return get_view().rfind(needle, start);
+}
+
+template <class Encoding, class Allocator>
+typename detail::BasicString<Encoding, Allocator>::size_type
+detail::BasicString<Encoding, Allocator>::find_first_of(
+    const view_type &characters, size_type start) const noexcept {
+    return get_view().find_first_of(characters, start);
+}
+
+template <class Encoding, class Allocator>
+typename detail::BasicString<Encoding, Allocator>::size_type
+detail::BasicString<Encoding, Allocator>::find_last_of(
+    const view_type &characters, size_type start) const noexcept {
+    return get_view().find_last_of(characters, start);
+}
+
+template <class Encoding, class Allocator>
+typename detail::BasicString<Encoding, Allocator>::size_type
+detail::BasicString<Encoding, Allocator>::find_first_not_of(
+    const view_type &characters, size_type start) const noexcept {
+    return get_view().find_first_not_of(characters, start);
+}
+
+template <class Encoding, class Allocator>
+typename detail::BasicString<Encoding, Allocator>::size_type
+detail::BasicString<Encoding, Allocator>::find_last_not_of(
+    const view_type &characters, size_type start) const noexcept {
+    return get_view().find_last_not_of(characters, start);
+}
+
+template <class Encoding, class Allocator>
+bool detail::BasicString<Encoding, Allocator>::starts_with(
+    const view_type &prefix) const noexcept {
+    return get_view().starts_with(prefix);
+}
+
+template <class Encoding, class Allocator>
+bool detail::BasicString<Encoding, Allocator>::ends_with(
+    const view_type &suffix) const noexcept {
+    return get_view().ends_with(suffix);
+}
+
+template <class Encoding, class Allocator>
+bool detail::BasicString<Encoding, Allocator>::contains(
+    const view_type &needle) const noexcept {
+    return get_view().contains(needle);
+}
+
+template <class Encoding, class Allocator>
+typename detail::BasicString<Encoding, Allocator>::size_type
+detail::BasicString<Encoding, Allocator>::count(
+    const view_type &needle) const noexcept {
+    return get_view().count(needle);
+}
+
+template <class Encoding, class Allocator>
+int detail::BasicString<Encoding, Allocator>::compare(
+    const BasicString &other) const noexcept {
+    return get_view().compare(other.get_view());
+}
+
+template <class Encoding, class Allocator>
+int detail::BasicString<Encoding, Allocator>::compare(
+    const view_type &other) const noexcept {
+    return get_view().compare(other);
+}
+
+template <class Encoding, class Allocator>
+Result<typename detail::BasicString<Encoding, Allocator>::view_type>
+detail::BasicString<Encoding, Allocator>::try_substr_view(
+    size_type start, size_type count) const noexcept {
+    return get_view().try_substr(start, count);
+}
+
+template <class Encoding, class Allocator>
+template <class Function>
+Result<void> detail::BasicString<Encoding, Allocator>::try_for_each_code_point(
+    Function &&function) const noexcept {
+    return get_view().try_for_each_code_point(std::forward<Function>(function));
+}
+
+template <class Encoding, class Allocator>
+Result<void> detail::BasicString<Encoding, Allocator>::try_append(
+    const view_type &other) noexcept {
+    auto owned = other.try_to_string();
+    if (!owned) return Result<void>::failure(owned.error());
+    return try_append(owned.value());
+}
+
+template <class Encoding, class Allocator>
+Result<void> detail::BasicString<Encoding, Allocator>::try_assign(
+    const view_type &other) noexcept {
+    auto owned = other.try_to_string();
+    if (!owned) return Result<void>::failure(owned.error());
+    return try_assign(owned.value());
+}
+
+template <class Encoding, class Allocator>
+Result<void> detail::BasicString<Encoding, Allocator>::try_insert(
+    size_type index, const view_type &other) noexcept {
+    if (index > size()) return Result<void>::failure(
+        std::make_error_code(std::errc::invalid_argument), "String index is out of range", "string.insert");
+    auto owned = other.try_to_string();
+    if (!owned) return Result<void>::failure(owned.error());
+    return try_insert(index, owned.value());
+}
+
+template <class Encoding, class Allocator>
+Result<void> detail::BasicString<Encoding, Allocator>::try_replace(
+    size_type index, size_type count, const view_type &replacement) noexcept {
+    auto owned = replacement.try_to_string();
+    if (!owned) return Result<void>::failure(owned.error());
+    return try_replace(index, count, owned.value());
+}
+
+template <class Encoding, class Allocator>
+Result<void> detail::BasicString<Encoding, Allocator>::try_replace_all(
+    const view_type &from, const view_type &to) noexcept {
+    auto source = from.try_to_string();
+    if (!source) return Result<void>::failure(source.error());
+    auto replacement = to.try_to_string();
+    if (!replacement) return Result<void>::failure(replacement.error());
+    return try_replace_all(source.value(), replacement.value());
+}
+
 /// @brief The single public string type used by Sindre.
 ///
 /// Callers do not select an encoding policy. CsString owns the representation
 /// and conversion details internally; construct this type from UTF-8 or UTF-16
 /// input and use `to_utf8()` / `to_utf16()` when crossing an external API.
 using String = detail::BasicString<CsString::utf8>;
+using StringView = detail::BasicStringView<CsString::utf8>;
 
 template <class Part>
 inline void concat_append(std::string &result, Part &&part) {

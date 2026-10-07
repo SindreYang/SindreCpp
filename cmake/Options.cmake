@@ -9,48 +9,32 @@ option(SINDRE_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
 option(SINDRE_BUILD_EXAMPLES "Build sindre examples" ${sindre_build_extras_default})
 option(SINDRE_NO_EXCEPTIONS "Build sindre core with compiler exception support disabled" OFF)
 
-# Clang/clang-cl is the primary supported compiler profile. CMake still uses
-# the compiler selected by the toolchain or generator; these options only
-# control the common warning and runtime policy applied to sindre targets.
+# Clang/clang-cl 是主要编译器 profile；具体编译器仍由 toolchain 或生成器选择。
+# 下列选项只控制 sindre target 的统一警告和运行时策略。
 option(SINDRE_ENABLE_WARNINGS "Enable sindre compiler warnings" ON)
 option(SINDRE_WARNINGS_AS_ERRORS "Treat sindre warnings as errors" OFF)
-# The fixed Windows General package profile uses the dynamic MSVC runtime.
-set(SINDRE_MSVC_STATIC_RUNTIME OFF)
+# General uses the fixed static Windows package profile and matching static CRT.
+set(SINDRE_MSVC_STATIC_RUNTIME ON)
 
 # General is the mandatory foundation. Its public integrations and dependency
 # profile are fixed; they are deliberately not user-selectable feature flags.
+include("${SINDRE_THIRDS_DIR}/general/Dependencies.cmake")
 set(SINDRE_WITH_GENERAL ON)
-set(SINDRE_WITH_EIGEN ON)
+set(SINDRE_WITH_MATH ON)
 option(SINDRE_GENERAL_BUILD_LIBRARY "Build the compiled General runtime library" ON)
 option(SINDRE_GENERAL_SHARED "Build General as a shared library" OFF)
-set(SINDRE_EIGEN_BLAS_BACKEND "OPENBLAS")
-option(SINDRE_EIGEN_NATIVE_ARCH "Optimize Eigen for the local CPU" ON)
-set(SINDRE_OPENBLAS_ROOT "${SINDRE_THIRDS_DIR}/general/openblas")
-if(NOT IS_DIRECTORY "${SINDRE_OPENBLAS_ROOT}")
-    message(FATAL_ERROR
-        "Fixed General dependency is missing: OpenBLAS at ${SINDRE_OPENBLAS_ROOT}")
-endif()
-list(PREPEND CMAKE_PREFIX_PATH "${SINDRE_OPENBLAS_ROOT}")
-if(EXISTS "${SINDRE_OPENBLAS_ROOT}/bin")
-    set(SINDRE_OPENBLAS_RUNTIME_DIR "${SINDRE_OPENBLAS_ROOT}/bin"
-        CACHE INTERNAL "OpenBLAS runtime directory for Windows test targets")
-endif()
-if(EXISTS "${SINDRE_OPENBLAS_ROOT}/lib/cmake/openblas")
-    set(OpenBLAS_DIR "${SINDRE_OPENBLAS_ROOT}/lib/cmake/openblas"
-        CACHE PATH "OpenBLAS CMake package directory" FORCE)
-endif()
-set(SINDRE_GENERAL_PACKAGE_ROOT
-    "${SINDRE_THIRDS_DIR}/general/packages/general-x64-windows/installed/x64-windows")
-if(NOT IS_DIRECTORY "${SINDRE_GENERAL_PACKAGE_ROOT}/share")
-    message(FATAL_ERROR
-        "Fixed General dependency profile is missing: ${SINDRE_GENERAL_PACKAGE_ROOT}")
-endif()
+set(SINDRE_MATH_BLAS_BACKEND "OPENBLAS" CACHE STRING
+    "Math BLAS backend: OPENBLAS or EIGEN")
+set_property(CACHE SINDRE_MATH_BLAS_BACKEND PROPERTY STRINGS OPENBLAS EIGEN)
+option(SINDRE_MATH_NATIVE_ARCH "Optimize Math for the local CPU" ON)
+set(SINDRE_MATH_OPENBLAS_ROOT "${SINDRE_THIRDS_DIR}/math/openblas" CACHE PATH
+    "Fixed OpenBLAS root used by Math")
+# 仅把当前平台的固定 profile 加入查找路径，绝不混用其他平台二进制包。
 list(PREPEND CMAKE_PREFIX_PATH "${SINDRE_GENERAL_PACKAGE_ROOT}")
-# The fixed Windows Crashpad profile is built with the release STL iterator
-# ABI. Apply the same ABI to every project and bundled dependency target so
-# Debug builds do not mix iterator-debug levels at link time.
+# 固定 Windows Crashpad profile 使用 Release STL iterator ABI。
+# 所有项目和内置依赖统一该 ABI，避免 Debug 链接时混用 iterator 调试级别。
 if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
     add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
 endif()
 option(SINDRE_WITH_AI "Build the AI module" OFF)
@@ -123,10 +107,8 @@ endforeach()
 option(SINDRE_UTILS_3D_NATIVE_ARCH "Optimize utils_3d for the build machine" OFF)
 set(SINDRE_UTILS_3D_IGL_PACKAGE_FOUND OFF CACHE INTERNAL
     "Whether Utils_3d uses an installed libigl package")
-set(SINDRE_UTILS_3D_BLAS_BACKEND "AUTO" CACHE STRING "utils_3d BLAS backend: AUTO, EIGEN, or BLAS")
-set_property(CACHE SINDRE_UTILS_3D_BLAS_BACKEND PROPERTY STRINGS AUTO EIGEN BLAS)
 option(SINDRE_BUILD_UTILS_3D_BENCHMARKS "Build the utils_3d benchmark" OFF)
 
 if(SINDRE_WITH_UTILS_2D OR SINDRE_WITH_UTILS_3D OR SINDRE_WITH_UTILS_PY)
-    message(STATUS "General and Eigen are mandatory foundations for all utility modules")
+    message(STATUS "General and Math are mandatory foundations for all utility modules")
 endif()

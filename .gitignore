@@ -1,4 +1,6 @@
-/build*/
+/build/
+/build-*/
+/build_*/
 /bin/
 /out/
 /.history/
@@ -9,9 +11,8 @@ CMakeUserPresets.json
 
 /tests/models/*.onnx
 
-# Local build/install audits and generated reports
-/install*/
-/install-*/
+# Local build reports
+/build-*.log
 /install-*.log
 /diff-check*.log
 /vtk_coverage_show.json
@@ -23,3 +24,6 @@ CMakeUserPresets.json
 /thirds/general/openblas/
 /thirds/general/packages/
 /thirds/general/sources/
+/thirds/math/eigen/
+/thirds/math/openblas/
+/thirds/math/*.zip

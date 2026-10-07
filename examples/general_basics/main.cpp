@@ -44,9 +44,9 @@ int main() {
 
     auto temporary = general::temp::File::create("sindre-example-");
     if (!temporary) return report_failure("create temporary file", temporary.error());
-    const auto written = general::path::write_text(temporary.value().path(), "sindre UTF-8 text\n");
+    const auto written = general::path::write_text(temporary.value().get_path(), "sindre UTF-8 text\n");
     if (!written) return report_failure("write UTF-8 text", written.error());
-    const auto read = general::path::read_text(temporary.value().path());
+    const auto read = general::path::read_text(temporary.value().get_path());
     if (!read) return report_failure("read UTF-8 text", read.error());
 
     std::cout << "title: " << title.to_utf8() << '\n'
@@ -54,7 +54,7 @@ int main() {
               << "ratio: " << ratio.value() << '\n'
               << "version: " << general::versioning::to_string(version.value()) << '\n'
               << "base64: " << encoded.value() << '\n'
-              << "file: " << general::path::to_utf8(temporary.value().path())
+              << "file: " << general::path::to_utf8(temporary.value().get_path())
               << " (" << read.value().size() << " bytes)\n";
     return 0;
 }

@@ -1,7 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -10,11 +13,6 @@
 #include <utility>
 #include <variant>
 #include <vector>
-
-#if defined(SINDRE_WITH_EIGEN)
-#include <Eigen/Core>
-#include <Eigen/Geometry>
-#endif
 
 namespace sindre::general {
 
@@ -55,25 +53,56 @@ template <class T>
 /// @brief 表示成功值或结构化错误的非异常结果。
 class Result {
 public:
-    static Result success(T value) { return Result(std::in_place_index<0>, std::move(value)); }
-    static Result failure(Error error) { return Result(std::in_place_index<1>, std::move(error)); }
-    static Result failure(std::error_code code, std::string message, std::string context = {}) {
+    [[nodiscard]] static Result success(T value) {
+        return Result(std::in_place_index<0>, std::move(value));
+    }
+    [[nodiscard]] static Result failure(Error error) {
+        return Result(std::in_place_index<1>, std::move(error));
+    }
+    [[nodiscard]] static Result failure(
+        std::error_code code, std::string message, std::string context = {}) {
         return failure(Error{code, std::move(message), std::move(context)});
     }
-    bool has_value() const noexcept { return value_.index() == 0; }
-    explicit operator bool() const noexcept { return has_value(); }
-    T &value() & { return *std::get_if<0>(&value_); }
-    const T &value() const & { return *std::get_if<0>(&value_); }
-    T &&value() && { return std::move(*std::get_if<0>(&value_)); }
-    Error &error() & { return *std::get_if<1>(&value_); }
-    const Error &error() const & { return *std::get_if<1>(&value_); }
-    T *value_ptr() noexcept { return std::get_if<0>(&value_); }
-    const T *value_ptr() const noexcept { return std::get_if<0>(&value_); }
-    Error *error_ptr() noexcept { return std::get_if<1>(&value_); }
-    const Error *error_ptr() const noexcept { return std::get_if<1>(&value_); }
-    T value_or(T fallback) const {
+    [[nodiscard]] bool has_value() const noexcept { return value_.index() == 0; }
+    [[nodiscard]] explicit operator bool() const noexcept { return has_value(); }
+    // Accessors require the matching Result state.  Termination is deliberate:
+    // it keeps misuse deterministic in both exception-enabled and no-exception builds.
+    T &value() & noexcept {
+        auto *value = std::get_if<0>(&value_);
+        if (!value) std::terminate();
+        return *value;
+    }
+    const T &value() const & noexcept {
+        const auto *value = std::get_if<0>(&value_);
+        if (!value) std::terminate();
+        return *value;
+    }
+    T &&value() && noexcept {
+        auto *value = std::get_if<0>(&value_);
+        if (!value) std::terminate();
+        return std::move(*value);
+    }
+    Error &error() & noexcept {
+        auto *error = std::get_if<1>(&value_);
+        if (!error) std::terminate();
+        return *error;
+    }
+    const Error &error() const & noexcept {
+        const auto *error = std::get_if<1>(&value_);
+        if (!error) std::terminate();
+        return *error;
+    }
+    [[nodiscard]] T *value_ptr() noexcept { return std::get_if<0>(&value_); }
+    [[nodiscard]] const T *value_ptr() const noexcept { return std::get_if<0>(&value_); }
+    [[nodiscard]] Error *error_ptr() noexcept { return std::get_if<1>(&value_); }
+    [[nodiscard]] const Error *error_ptr() const noexcept { return std::get_if<1>(&value_); }
+    [[nodiscard]] T value_or(T fallback) const & {
         const auto *value = value_ptr();
         return value ? *value : std::move(fallback);
+    }
+    [[nodiscard]] T value_or(T fallback) && {
+        auto *value = value_ptr();
+        return value ? std::move(*value) : std::move(fallback);
     }
 private:
     template <class... Args>
@@ -89,28 +118,30 @@ template <>
 /// @brief 无返回值操作的 Result 特化。
 class Result<void> {
 public:
-    static Result success() { return Result(true, {}); }
-    static Result failure(Error error) { return Result(false, std::move(error)); }
-    static Result failure(std::error_code code, std::string message, std::string context = {}) {
+    [[nodiscard]] static Result success() { return Result(true, {}); }
+    [[nodiscard]] static Result failure(Error error) { return Result(false, std::move(error)); }
+    [[nodiscard]] static Result failure(
+        std::error_code code, std::string message, std::string context = {}) {
         return failure(Error{code, std::move(message), std::move(context)});
     }
-    bool has_value() const noexcept { return ok_; }
-    explicit operator bool() const noexcept { return ok_; }
-    const Error &error() const & { return error_; }
-    const Error *error_ptr() const noexcept { return ok_ ? nullptr : &error_; }
+    [[nodiscard]] bool has_value() const noexcept { return ok_; }
+    [[nodiscard]] explicit operator bool() const noexcept { return ok_; }
+    // The error accessor is valid only for a failed Result.
+    Error &error() & noexcept {
+        if (ok_) std::terminate();
+        return error_;
+    }
+    const Error &error() const & noexcept {
+        if (ok_) std::terminate();
+        return error_;
+    }
+    [[nodiscard]] Error *error_ptr() noexcept { return ok_ ? nullptr : &error_; }
+    [[nodiscard]] const Error *error_ptr() const noexcept { return ok_ ? nullptr : &error_; }
 private:
     Result(bool ok, Error error) : ok_(ok), error_(std::move(error)) {}
     bool ok_;
     Error error_;
 };
-
-namespace pointer {
-template <class T> using unique_ptr = std::unique_ptr<T>;
-template <class T> using shared_ptr = std::shared_ptr<T>;
-template <class T> using weak_ptr = std::weak_ptr<T>;
-using std::make_shared;
-using std::make_unique;
-}
 
 namespace ranges {
 /// @brief 判断范围中是否包含指定值。
@@ -152,8 +183,9 @@ template <class Function>
 /// @brief 在离开作用域时执行一次清理函数。
 class ScopeGuard {
 public:
-    explicit ScopeGuard(Function function) noexcept : function_(std::move(function)) {}
-    ScopeGuard(ScopeGuard &&other) noexcept
+    explicit ScopeGuard(Function function) noexcept(std::is_nothrow_move_constructible_v<Function>)
+        : function_(std::move(function)) {}
+    ScopeGuard(ScopeGuard &&other) noexcept(std::is_nothrow_move_constructible_v<Function>)
         : function_(std::move(other.function_)), active_(std::exchange(other.active_, false)) {}
     ScopeGuard(const ScopeGuard &) = delete;
     ScopeGuard &operator=(const ScopeGuard &) = delete;
@@ -171,54 +203,59 @@ private:
     bool active_ = true;
 };
 template <class Function>
-ScopeGuard<Function> scope_guard(Function function) noexcept { return ScopeGuard<Function>(std::move(function)); }
+ScopeGuard<Function> scope_guard(Function function) {
+    return ScopeGuard<Function>(std::move(function));
+}
 
 namespace codec {
 /// @brief 计算 UTF-8 字节序列的 FNV-1a 64 位哈希。
 std::uint64_t fnv1a64(std::string_view text) noexcept;
 /// @brief 把整数格式化为小写十六进制文本。
 std::string hex(std::uint64_t value);
+/// @brief 把整数格式化为小写十六进制文本，并把分配失败转换为 Result。
+Result<std::string> try_hex(std::uint64_t value);
 /// @brief 创建 RFC 4122 版本 4 UUID。
 Result<std::string> uuid4();
 Result<std::string> base64_encode(const std::vector<std::uint8_t> &data);
 Result<std::vector<std::uint8_t>> base64_decode(std::string_view text);
+/// @brief 对内存中的字节执行 RLE 编码；这不是文件压缩格式。
+Result<std::vector<std::uint8_t>> rle_compress(const std::vector<std::uint8_t> &data);
+/// @brief 解码由 `rle_compress` 生成的内存字节序列。
+Result<std::vector<std::uint8_t>> rle_decompress(const std::vector<std::uint8_t> &data);
+/// @brief 兼容旧名称；等价于 `rle_compress`。
 Result<std::vector<std::uint8_t>> simple_compress(const std::vector<std::uint8_t> &data);
+/// @brief 兼容旧名称；等价于 `rle_decompress`。
 Result<std::vector<std::uint8_t>> simple_decompress(const std::vector<std::uint8_t> &data);
 }
 
 namespace versioning {
-/// @brief 可比较的三段式版本号。
-struct Version { int major = 0; int minor = 0; int patch = 0; std::string suffix; };
+/// @brief 可比较的 SemVer 2.0.0 版本号。
+///
+/// `prerelease` 不包含前导 `-`，`build` 不包含前导 `+`。build metadata
+/// 会保留在格式化结果中，但不参与版本优先级比较。
+struct Version {
+    int major = 0;
+    int minor = 0;
+    int patch = 0;
+    std::string prerelease;
+    std::string build;
+};
 bool operator==(const Version &, const Version &) noexcept;
 bool operator!=(const Version &, const Version &) noexcept;
 bool operator<(const Version &, const Version &) noexcept;
 bool operator>(const Version &, const Version &) noexcept;
 bool operator<=(const Version &, const Version &) noexcept;
 bool operator>=(const Version &, const Version &) noexcept;
-/// @brief 解析 `major.minor.patch` 版本文本。
-Result<Version> parse(std::string_view text) noexcept;
+/// @brief 严格解析 SemVer 2.0.0 版本文本。
+Result<Version> parse(std::string_view text);
 /// @brief 格式化版本文本。
 std::string to_string(const Version &value);
+/// @brief 格式化版本文本，并把分配失败转换为 Result。
+Result<std::string> try_to_string(const Version &value);
 }
 
 inline constexpr char version[] = "0.1.0";
 
 const char *library_abi() noexcept;
-
-#if defined(SINDRE_WITH_EIGEN)
-namespace eigen {
-using Vector2 = Eigen::Vector2d;
-using Vector3 = Eigen::Vector3d;
-using Matrix3 = Eigen::Matrix3d;
-using Matrix4 = Eigen::Matrix4d;
-namespace native = Eigen;
-template <typename Scalar>
-using MatrixView = Eigen::Map<Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>>;
-template <typename Scalar>
-inline MatrixView<Scalar> map_matrix(Scalar *data, std::ptrdiff_t rows, std::ptrdiff_t columns) {
-    return MatrixView<Scalar>(data, rows, columns);
-}
-}
-#endif
 
 } // namespace sindre::general

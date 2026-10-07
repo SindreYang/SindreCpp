@@ -1,10 +1,23 @@
 #include <sindre/general/runtime.h>
 
 #include <sindre/general/system.h>
-#include <fstream>
+
+#include <cmath>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#if defined(__linux__) || defined(__APPLE__)
+#include <pthread.h>
+#endif
+#include <dlfcn.h>
+#endif
 
 namespace sindre::general {
-bool deadline_expired(const std::chrono::steady_clock::time_point &deadline) noexcept {
+bool is_deadline_expired(const std::chrono::steady_clock::time_point &deadline) noexcept {
     return deadline != std::chrono::steady_clock::time_point{} && std::chrono::steady_clock::now() >= deadline;
 }
 namespace detail {
@@ -17,130 +30,319 @@ CancellationToken::CancellationToken()
 CancellationToken::CancellationToken(std::shared_ptr<std::atomic<bool>> state)
     : state_(std::move(state)) {}
 
-bool CancellationToken::cancelled() const noexcept {
+bool CancellationToken::is_cancelled() const noexcept {
     return state_ && state_->load(std::memory_order_acquire);
 }
 
-bool CancellationToken::is_cancelled() const noexcept { return cancelled(); }
-
-CancellationToken CancellationSource::token() const { return CancellationToken(state_); }
+CancellationToken CancellationSource::get_token() const noexcept { return CancellationToken(state_); }
 
 CancellationSource::CancellationSource()
     : state_(std::make_shared<std::atomic<bool>>(false)) {}
 
 void CancellationSource::cancel() noexcept {
-    state_->store(true, std::memory_order_release);
+    if (state_) state_->store(true, std::memory_order_release);
 }
 
-bool CancellationSource::cancelled() const noexcept {
-    return state_->load(std::memory_order_acquire);
+bool CancellationSource::is_cancelled() const noexcept {
+    return state_ && state_->load(std::memory_order_acquire);
 }
 
-ThreadPool::ThreadPool(std::size_t workers) {
+namespace runtime {
+
+Result<void> set_thread_name(std::string_view name) noexcept {
+    if (name.empty()) {
+        return Result<void>::failure(
+            std::make_error_code(std::errc::invalid_argument),
+            "Thread name is empty", "runtime.set_thread_name");
+    }
+#if !defined(SINDRE_NO_EXCEPTIONS)
+    try {
+#endif
+#if defined(_WIN32)
+        const int required = MultiByteToWideChar(
+            CP_UTF8, MB_ERR_INVALID_CHARS, name.data(), static_cast<int>(name.size()),
+            nullptr, 0);
+        if (required <= 0) {
+            return Result<void>::failure(
+                std::make_error_code(std::errc::invalid_argument),
+                "Thread name is not valid UTF-8", "runtime.set_thread_name");
+        }
+        std::wstring wide(static_cast<std::size_t>(required), L'\0');
+        if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, name.data(),
+                                static_cast<int>(name.size()), wide.data(), required) <= 0) {
+            return Result<void>::failure(
+                std::make_error_code(std::errc::invalid_argument),
+                "Cannot convert thread name to UTF-16", "runtime.set_thread_name");
+        }
+        using SetThreadDescriptionFunction = HRESULT(WINAPI *)(HANDLE, PCWSTR);
+        const auto kernel32 = GetModuleHandleW(L"Kernel32.dll");
+        const auto set_thread_description = kernel32 == nullptr ? nullptr :
+            reinterpret_cast<SetThreadDescriptionFunction>(
+                GetProcAddress(kernel32, "SetThreadDescription"));
+        if (set_thread_description == nullptr) {
+            return Result<void>::failure(
+                std::make_error_code(std::errc::function_not_supported),
+                "Windows thread naming is not supported", "runtime.set_thread_name");
+        }
+        const HRESULT result = set_thread_description(GetCurrentThread(), wide.c_str());
+        if (FAILED(result)) {
+            return Result<void>::failure(
+                std::error_code(static_cast<int>(result), std::system_category()),
+                "Cannot set Windows thread name", "runtime.set_thread_name");
+        }
+        return Result<void>::success();
+#elif defined(__linux__)
+        const std::string value(name);
+        const int result = pthread_setname_np(pthread_self(), value.c_str());
+        if (result != 0) {
+            return Result<void>::failure(
+                std::error_code(result, std::system_category()),
+                "Cannot set Linux thread name", "runtime.set_thread_name");
+        }
+        return Result<void>::success();
+#elif defined(__APPLE__)
+        const std::string value(name);
+        const int result = pthread_setname_np(value.c_str());
+        if (result != 0) {
+            return Result<void>::failure(
+                std::error_code(result, std::system_category()),
+                "Cannot set macOS thread name", "runtime.set_thread_name");
+        }
+        return Result<void>::success();
+#else
+        return Result<void>::failure(
+            std::make_error_code(std::errc::function_not_supported),
+            "Thread naming is not supported on this platform",
+            "runtime.set_thread_name");
+#endif
+#if !defined(SINDRE_NO_EXCEPTIONS)
+    } catch (const std::exception &error) {
+        return Result<void>::failure(
+            std::make_error_code(std::errc::io_error), error.what(),
+            "runtime.set_thread_name");
+    } catch (...) {
+        return Result<void>::failure(
+            std::make_error_code(std::errc::io_error),
+            "Unknown thread naming failure", "runtime.set_thread_name");
+    }
+#endif
+}
+
+} // namespace runtime
+
+Result<void> sleep(double seconds, TaskOptions options) {
+    if (!std::isfinite(seconds) || seconds < 0.0) {
+        return Result<void>::failure(
+            detail::async_error(std::errc::invalid_argument,
+                                "Sleep duration must be a finite non-negative number of seconds"));
+    }
+
+    if (options.token.is_cancelled()) {
+        return Result<void>::failure(
+            detail::async_error(std::errc::operation_canceled,
+                                "Sleep cancelled"));
+    }
+    if (is_deadline_expired(options.deadline)) {
+        return Result<void>::failure(
+            detail::async_error(std::errc::timed_out,
+                                "Sleep deadline expired"));
+    }
+
+    const long double ticks =
+        static_cast<long double>(seconds) *
+        static_cast<long double>(std::chrono::steady_clock::period::den) /
+        static_cast<long double>(std::chrono::steady_clock::period::num);
+    if (ticks > static_cast<long double>(
+                    std::chrono::steady_clock::duration::max().count())) {
+        return Result<void>::failure(
+            detail::async_error(std::errc::invalid_argument,
+                                "Sleep duration is too large"));
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    const auto sleep_duration = std::chrono::duration_cast<
+        std::chrono::steady_clock::duration>(std::chrono::duration<long double>(seconds));
+    const auto end = now + sleep_duration;
+    while (std::chrono::steady_clock::now() < end) {
+        if (options.token.is_cancelled()) {
+            return Result<void>::failure(
+                detail::async_error(std::errc::operation_canceled,
+                                    "Sleep cancelled"));
+        }
+        if (is_deadline_expired(options.deadline)) {
+            return Result<void>::failure(
+                detail::async_error(std::errc::timed_out,
+                                    "Sleep deadline expired"));
+        }
+        const auto current = std::chrono::steady_clock::now();
+        auto remaining = end - current;
+        if (options.deadline != std::chrono::steady_clock::time_point{}) {
+            remaining = std::min(remaining, options.deadline - current);
+        }
+        if (remaining <= std::chrono::steady_clock::duration::zero()) break;
+        std::this_thread::sleep_for(std::min(
+            remaining,
+            std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::milliseconds(10))));
+    }
+    if (options.token.is_cancelled()) {
+        return Result<void>::failure(
+            detail::async_error(std::errc::operation_canceled,
+                                "Sleep cancelled"));
+    }
+    if (is_deadline_expired(options.deadline) &&
+        std::chrono::steady_clock::now() < end) {
+        return Result<void>::failure(
+            detail::async_error(std::errc::timed_out,
+                                "Sleep deadline expired"));
+    }
+    return Result<void>::success();
+}
+
+ThreadPool::ThreadPool(std::size_t workers)
+    : state_(std::make_shared<State>()) {
     if (workers == 0) workers = 1;
 #if defined(SINDRE_NO_EXCEPTIONS)
-    for (std::size_t i = 0; i < workers; ++i) workers_.emplace_back([this] { worker_loop(); });
+    for (std::size_t i = 0; i < workers; ++i) {
+        auto state = state_;
+        state_->workers.emplace_back([state] { worker_loop(state); });
+    }
+    state_->initialized = true;
 #else
     try {
-        for (std::size_t i = 0; i < workers; ++i) workers_.emplace_back([this] { worker_loop(); });
+        for (std::size_t i = 0; i < workers; ++i) {
+            auto state = state_;
+            state_->workers.emplace_back([state] { worker_loop(state); });
+        }
+        state_->initialized = true;
+    } catch (const std::exception &error) {
+        state_->initialization_error = Error::make(
+            std::errc::resource_unavailable_try_again, error.what(),
+            "general.thread_pool.create");
+        stop_state(state_);
+        throw;
     } catch (...) {
-        stop();
+        state_->initialization_error = Error::make(
+            std::errc::resource_unavailable_try_again,
+            "Cannot create thread-pool worker", "general.thread_pool.create");
+        stop_state(state_);
+        throw;
+    }
+#endif
+}
+
+Result<ThreadPool> ThreadPool::create(std::size_t workers) noexcept {
+#if !defined(SINDRE_NO_EXCEPTIONS)
+    try {
+#endif
+        ThreadPool pool(workers);
+        if (!pool.is_running()) return Result<ThreadPool>::failure(pool.get_error());
+        return Result<ThreadPool>::success(std::move(pool));
+#if !defined(SINDRE_NO_EXCEPTIONS)
+    } catch (const std::exception &error) {
+        return Result<ThreadPool>::failure(
+            Error::make(std::errc::resource_unavailable_try_again,
+                        error.what(), "general.thread_pool.create"));
+    } catch (...) {
+        return Result<ThreadPool>::failure(
+            Error::make(std::errc::resource_unavailable_try_again,
+                        "Cannot create thread pool", "general.thread_pool.create"));
     }
 #endif
 }
 
 ThreadPool::~ThreadPool() { stop(); }
 
-void ThreadPool::stop() noexcept {
+void ThreadPool::stop_state(const std::shared_ptr<State> &state) noexcept {
+    if (!state) return;
+    std::lock_guard<std::mutex> lifecycle_lock(state->lifecycle_mutex);
+    std::vector<QueuedTask> pending;
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (stopping_) return;
-        stopping_ = true;
+        std::lock_guard<std::mutex> lock(state->queue_mutex);
+        if (state->stopping) return;
+        state->stopping = true;
+        state->shutdown->store(true, std::memory_order_release);
+        while (!state->queue.empty()) {
+            pending.emplace_back(std::move(state->queue.front()));
+            state->queue.pop();
+        }
     }
-    condition_.notify_all();
-    for (auto &worker : workers_) if (worker.joinable()) worker.join();
-    workers_.clear();
+    for (auto &task : pending) {
+#if !defined(SINDRE_NO_EXCEPTIONS)
+        try {
+#endif
+            task.cancel();
+#if !defined(SINDRE_NO_EXCEPTIONS)
+        } catch (...) {
+        }
+#endif
+    }
+    state->condition.notify_all();
+    const auto current_id = std::this_thread::get_id();
+    for (auto &worker : state->workers) {
+        if (!worker.joinable()) continue;
+        if (worker.get_id() == current_id) {
+            worker.detach();
+        } else {
+            worker.join();
+        }
+    }
+    state->workers.clear();
 }
 
-void ThreadPool::worker_loop() noexcept {
+void ThreadPool::stop() noexcept { stop_state(state_); }
+
+bool ThreadPool::is_running() const noexcept {
+    if (!state_) return false;
+    std::lock_guard<std::mutex> lock(state_->queue_mutex);
+    return state_->initialized && !state_->stopping;
+}
+
+Error ThreadPool::get_error() const {
+    if (!state_) return Error::make(
+        std::errc::operation_canceled, "Thread pool is not initialized",
+        "general.thread_pool");
+    std::lock_guard<std::mutex> lock(state_->queue_mutex);
+    return state_->initialization_error;
+}
+
+void ThreadPool::worker_loop(const std::shared_ptr<State> &state) noexcept {
     for (;;) {
-        std::function<void()> task;
+        QueuedTask task;
         {
-            std::unique_lock<std::mutex> lock(mutex_);
-            condition_.wait(lock, [this] { return stopping_ || !queue_.empty(); });
-            if (stopping_ && queue_.empty()) return;
-            task = std::move(queue_.front());
-            queue_.pop();
+            std::unique_lock<std::mutex> lock(state->queue_mutex);
+            state->condition.wait(lock, [&] {
+                return state->stopping || !state->queue.empty();
+            });
+            if (state->stopping && state->queue.empty()) return;
+            task = std::move(state->queue.front());
+            state->queue.pop();
         }
 #if defined(SINDRE_NO_EXCEPTIONS)
-        task();
+        task.run();
 #else
-        try { task(); } catch (...) {}
+        try {
+            task.run();
+        } catch (...) {
+        }
 #endif
 }
 }
 } // namespace sindre::general
 
-namespace sindre::general::startup {
-
-Result<std::filesystem::path> location(std::string_view name) noexcept {
-    if (name.empty()) return Result<std::filesystem::path>::failure(
-        std::make_error_code(std::errc::invalid_argument), "Startup name is empty", "startup.location");
-#if defined(_WIN32)
-    auto base = system::environment("APPDATA");
-    if (!base) return Result<std::filesystem::path>::failure(base.error());
-    return Result<std::filesystem::path>::success(
-        std::filesystem::path(base.value()) / "Microsoft/Windows/Start Menu/Programs/Startup" /
-        (std::string(name) + ".cmd"));
-#else
-    auto home = system::environment("HOME");
-    if (!home) return Result<std::filesystem::path>::failure(home.error());
-    return Result<std::filesystem::path>::success(
-        std::filesystem::path(home.value()) / ".config/systemd/user" / (std::string(name) + ".service"));
-#endif
-}
-
-Result<void> enable(std::string name, std::string command) noexcept {
-    if (command.empty()) return Result<void>::failure(
-        std::make_error_code(std::errc::invalid_argument), "Startup command is empty", "startup.enable");
-    auto entry = location(name);
-    if (!entry) return Result<void>::failure(entry.error());
-#if !defined(SINDRE_NO_EXCEPTIONS)
-    try {
-#endif
-        std::filesystem::create_directories(entry.value().parent_path());
-        std::ofstream output(entry.value(), std::ios::trunc);
-#if defined(_WIN32)
-        output << "@echo off\n" << command << "\n";
-#else
-        output << "[Unit]\nDescription=" << name << "\nAfter=graphical-session.target\n"
-               << "[Service]\nType=simple\nExecStart=" << command << "\n"
-               << "[Install]\nWantedBy=default.target\n";
-#endif
-        if (!output) return Result<void>::failure(
-            std::make_error_code(std::errc::permission_denied), "Cannot write startup entry", "startup.enable");
-        return Result<void>::success();
-#if !defined(SINDRE_NO_EXCEPTIONS)
-    } catch (const std::exception &error) {
-        return Result<void>::failure(std::make_error_code(std::errc::io_error), error.what(), "startup.enable");
-    } catch (...) {
-        return Result<void>::failure(std::make_error_code(std::errc::io_error), "Cannot write startup entry", "startup.enable");
-    }
-#endif
-}
-
-Result<void> disable(std::string_view name) noexcept {
-    auto entry = location(name);
-    if (!entry) return Result<void>::failure(entry.error());
-    std::error_code error;
-    std::filesystem::remove(entry.value(), error);
-    if (error) return Result<void>::failure(error, "Cannot remove startup entry", "startup.disable");
-    return Result<void>::success();
-}
-
-} // namespace sindre::general::startup
-
 namespace sindre::general::dynamic_library {
+
+namespace detail {
+void *get_symbol_address(void *handle, std::string_view name) noexcept {
+    if (!handle || name.empty()) return nullptr;
+#if defined(_WIN32)
+    return reinterpret_cast<void *>(::GetProcAddress(
+        reinterpret_cast<HMODULE>(handle), std::string(name).c_str()));
+#else
+    return ::dlsym(handle, std::string(name).c_str());
+#endif
+}
+} // namespace detail
 
 Library::Library(Library &&other) noexcept : handle_(std::exchange(other.handle_, nullptr)) {}
 Library &Library::operator=(Library &&other) noexcept {
@@ -152,7 +354,7 @@ Library::~Library() { close(); }
 Result<Library> Library::open(const std::filesystem::path &path) noexcept {
     Library result;
 #if defined(_WIN32)
-    result.handle_ = ::LoadLibraryW(path.c_str());
+    result.handle_ = reinterpret_cast<void *>(::LoadLibraryW(path.c_str()));
 #else
     result.handle_ = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
 #endif
@@ -164,7 +366,7 @@ Result<Library> Library::open(const std::filesystem::path &path) noexcept {
 void Library::close() noexcept {
     if (!handle_) return;
 #if defined(_WIN32)
-    ::FreeLibrary(handle_);
+    ::FreeLibrary(reinterpret_cast<HMODULE>(handle_));
 #else
     ::dlclose(handle_);
 #endif
@@ -260,7 +462,7 @@ Error failure(std::errc code, std::string message, std::string context = "proces
     Output result;
     const auto started = std::chrono::steady_clock::now();
     for (;;) {
-        if (options.token.cancelled()) {
+        if (options.token.is_cancelled()) {
             ::TerminateProcess(process.hProcess, static_cast<UINT>(ERROR_CANCELLED));
             ::WaitForSingleObject(process.hProcess, INFINITE);
             ::CloseHandle(process.hThread); ::CloseHandle(process.hProcess);
@@ -313,7 +515,14 @@ Error failure(std::errc code, std::string message, std::string context = "proces
             failure(std::errc::resource_unavailable_try_again, "Cannot fork process"));
     }
     if (child == 0) {
-        if (!options.working_directory.empty()) ::chdir(options.working_directory.c_str());
+        if (!options.working_directory.empty() &&
+            ::chdir(options.working_directory.c_str()) != 0) {
+            // 子进程无法返回 Result；通过标准错误和约定退出码把失败传回父进程。
+            constexpr char message[] = "Cannot change process working directory\n";
+            const auto written = ::write(STDERR_FILENO, message, sizeof(message) - 1);
+            (void)written;
+            ::_exit(126);
+        }
         if (options.capture_output) {
             ::dup2(output_pipe[1], STDOUT_FILENO);
             ::dup2(error_pipe[1], STDERR_FILENO);
@@ -343,7 +552,7 @@ Error failure(std::errc code, std::string message, std::string context = "proces
             if (options.capture_output) { ::close(output_pipe[0]); ::close(error_pipe[0]); }
             return ::sindre::general::Result<Output>::failure(failure(std::errc::io_error, "Cannot wait for process"));
         }
-        if (options.token.cancelled()) {
+        if (options.token.is_cancelled()) {
             ::kill(child, SIGTERM); ::waitpid(child, &status, 0);
             if (options.capture_output) { ::close(output_pipe[0]); ::close(error_pipe[0]); }
             return ::sindre::general::Result<Output>::failure(failure(std::errc::operation_canceled, "Process cancelled"));
