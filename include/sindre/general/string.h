@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <filesystem>
 #include <initializer_list>
 #include <limits>
 #include <memory>
@@ -120,17 +121,94 @@ public:
     static constexpr size_type npos = std::numeric_limits<size_type>::max();
 
     BasicString() = default;
+    explicit BasicString(bool value) : BasicString(value ? "true" : "false") {}
+    explicit BasicString(char value) : BasicString(std::string(1, value)) {}
+    template <class Integer,
+              std::enable_if_t<std::is_integral_v<Integer> &&
+                               !std::is_same_v<Integer, bool> &&
+                               !std::is_same_v<Integer, char>, int> = 0>
+    explicit BasicString(Integer value) : BasicString(std::to_string(value)) {}
+    template <class Floating,
+              std::enable_if_t<std::is_floating_point_v<Floating>, int> = 0>
+    explicit BasicString(Floating value) : BasicString(std::to_string(value)) {}
     explicit BasicString(const char *text)
         : value_(native_type::fromUtf8(text ? text : "")) {}
+    explicit BasicString(const char16_t *text)
+        : BasicString(std::u16string_view(text ? text : u"")) {}
+    explicit BasicString(const char32_t *text)
+        : BasicString(std::u32string_view(text ? text : U"")) {}
+    explicit BasicString(const wchar_t *text)
+        : BasicString(std::wstring_view(text ? text : L"")) {}
     explicit BasicString(std::string_view text)
         : value_(native_type::fromUtf8(text.data(), static_cast<typename native_type::size_type>(text.size()))) {}
     explicit BasicString(std::u16string_view text)
         : value_(native_type::fromUtf16(text.data(), static_cast<typename native_type::size_type>(text.size()))) {}
+    explicit BasicString(std::u32string_view text)
+        : value_(from_code_points(text.data(), text.size())) {}
+    explicit BasicString(std::wstring_view text)
+        : value_(from_wide(text)) {}
     template <std::size_t Size>
     explicit BasicString(const char16_t (&text)[Size])
         : BasicString(std::u16string_view(text, Size > 0 ? Size - 1 : 0)) {}
     explicit BasicString(const native_type &value) : value_(value) {}
     explicit BasicString(native_type &&value) noexcept : value_(std::move(value)) {}
+
+    static Result<BasicString> from(std::string_view text) noexcept {
+        return try_create_utf8(text);
+    }
+    static Result<BasicString> from(const char *text) noexcept {
+        return from(std::string_view(text ? text : ""));
+    }
+    static Result<BasicString> from(std::u16string_view text) noexcept {
+        return try_create_utf16(text);
+    }
+    static Result<BasicString> from(const char16_t *text) noexcept {
+        return from(std::u16string_view(text ? text : u""));
+    }
+    static Result<BasicString> from(std::u32string_view text) noexcept {
+        return detail::try_invoke([&] { return BasicString(text); }, "string.from_utf32");
+    }
+    static Result<BasicString> from(const char32_t *text) noexcept {
+        return from(std::u32string_view(text ? text : U""));
+    }
+    static Result<BasicString> from(std::wstring_view text) noexcept {
+        return detail::try_invoke([&] { return BasicString(text); }, "string.from_wide");
+    }
+    static Result<BasicString> from(const wchar_t *text) noexcept {
+        return from(std::wstring_view(text ? text : L""));
+    }
+    static Result<BasicString> from(const std::filesystem::path &path) noexcept {
+        return detail::try_invoke([&] {
+#if defined(_WIN32)
+            const auto native = path.native();
+            return BasicString(std::wstring_view(native));
+#else
+            const auto native = path.native();
+            return BasicString(std::string_view(native.data(), native.size()));
+#endif
+        }, "string.from_path");
+    }
+    static Result<BasicString> from(const BasicString &text) noexcept {
+        return detail::try_invoke([&] { return BasicString(text); }, "string.from_string");
+    }
+    static Result<BasicString> from(bool value) noexcept {
+        return detail::try_invoke([&] { return BasicString(value); }, "string.from_bool");
+    }
+    static Result<BasicString> from(char value) noexcept {
+        return detail::try_invoke([&] { return BasicString(value); }, "string.from_char");
+    }
+    template <class Integer,
+              std::enable_if_t<std::is_integral_v<Integer> &&
+                               !std::is_same_v<Integer, bool> &&
+                               !std::is_same_v<Integer, char>, int> = 0>
+    static Result<BasicString> from(Integer value) noexcept {
+        return detail::try_invoke([&] { return BasicString(value); }, "string.from_int");
+    }
+    template <class Floating,
+              std::enable_if_t<std::is_floating_point_v<Floating>, int> = 0>
+    static Result<BasicString> from(Floating value) noexcept {
+        return detail::try_invoke([&] { return BasicString(value); }, "string.from_float");
+    }
 
     static Result<BasicString> try_create_utf8(std::string_view text) noexcept {
         return detail::try_invoke([&] { return BasicString(text); }, "string.create_utf8");
@@ -205,10 +283,7 @@ public:
     Result<void> try_replace(size_type index, size_type count, const BasicString &replacement) noexcept {
         if (index > size()) return Result<void>::failure(
             std::make_error_code(std::errc::invalid_argument), "String index is out of range", "string.replace");
-        return detail::try_invoke([&] {
-            value_.replace(static_cast<typename native_type::size_type>(index),
-                           static_cast<typename native_type::size_type>(count), replacement.value_);
-        }, "string.replace");
+        return detail::try_invoke([&] { replace_range_unchecked(index, count, replacement); }, "string.replace");
     }
     Result<void> try_replace_all(const BasicString &from, const BasicString &to) noexcept {
         if (from.empty()) return Result<void>::success();
@@ -217,11 +292,23 @@ public:
             while (cursor <= size()) {
                 const auto match = find(from, cursor);
                 if (match == npos) break;
-                value_.replace(static_cast<typename native_type::size_type>(match),
-                               static_cast<typename native_type::size_type>(from.size()), to.value_);
+                replace_range_unchecked(match, from.size(), to);
                 cursor = match + to.size();
             }
         }, "string.replace_all");
+    }
+    /// @brief 按 Unicode code point 修改自身；必要时允许后端重新分配内存。
+    Result<void> replace(size_type index, size_type count, const BasicString &replacement) noexcept {
+        return try_replace(index, count, replacement);
+    }
+    /// @brief 原地替换的显式命名版本。
+    Result<void> replace_in_place(size_type index, size_type count,
+                                  const BasicString &replacement) noexcept {
+        return try_replace(index, count, replacement);
+    }
+    /// @brief 修改自身并替换全部非重叠匹配。
+    Result<void> replace_all(const BasicString &from, const BasicString &to) noexcept {
+        return try_replace_all(from, to);
     }
     Result<void> try_push_back(code_point_type code_point) noexcept {
         return detail::try_invoke([&] { value_.push_back(code_point); }, "string.push_back");
@@ -320,6 +407,41 @@ public:
     std::string to_utf8() const { return try_to_utf8().value(); }
     /// @brief Explicit UTF-16 interop for Windows and UTF-16 based APIs.
     std::u16string to_utf16() const { return try_to_utf16().value(); }
+    /// @brief Return the single Unicode code point represented by this string.
+    Result<char32_t> to_code_point() const noexcept {
+        if (size() != 1) return Result<char32_t>::failure(
+            std::make_error_code(std::errc::invalid_argument),
+            "String must contain exactly one Unicode code point", "string.to_code_point");
+        const auto code_point = get_code_point(0);
+        if (!code_point) return Result<char32_t>::failure(code_point.error());
+        return Result<char32_t>::success(static_cast<char32_t>(code_point.value().unicode()));
+    }
+    /// @brief Convert to a single ASCII char; non-ASCII code points fail.
+    Result<char> to_char() const noexcept {
+        const auto code_point = to_code_point();
+        if (!code_point) return Result<char>::failure(code_point.error());
+        if (code_point.value() > 0x7F) return Result<char>::failure(
+            std::make_error_code(std::errc::illegal_byte_sequence),
+            "Unicode code point does not fit in char", "string.to_char");
+        return Result<char>::success(static_cast<char>(code_point.value()));
+    }
+    /// @brief Convert to a single Unicode code point.
+    Result<char32_t> to_char32() const noexcept { return to_code_point(); }
+    /// @brief Convert to the standard narrow string representation (UTF-8).
+    std::string to_stdstr() const { return to_utf8(); }
+    std::string to_std_string() const { return to_utf8(); }
+    /// @brief Convert to the platform standard filesystem path.
+    Result<std::filesystem::path> to_path() const noexcept {
+        const auto converted = try_to_utf8();
+        if (!converted) return Result<std::filesystem::path>::failure(converted.error());
+        return detail::try_invoke([&] {
+#if defined(_WIN32)
+            return std::filesystem::u8path(converted.value());
+#else
+            return std::filesystem::path(converted.value());
+#endif
+        }, "string.to_path");
+    }
     /// @brief Parse the string as a strict integer.
     Result<std::int64_t> to_int(int base = 10) const noexcept {
         const auto converted = try_to_utf8();
@@ -352,6 +474,31 @@ public:
     }
 
 private:
+    void replace_range_unchecked(size_type index, size_type count,
+                                 const BasicString &replacement) {
+        const auto suffix_start = count > size() - index ? size() : index + count;
+        auto result = value_.substr(0, static_cast<typename native_type::size_type>(index));
+        result += replacement.value_;
+        result += value_.substr(static_cast<typename native_type::size_type>(suffix_start), native_type::npos);
+        value_ = std::move(result);
+    }
+    static native_type from_wide(std::wstring_view text) {
+        if constexpr (sizeof(wchar_t) == sizeof(char16_t)) {
+            return native_type::fromUtf16(
+                reinterpret_cast<const char16_t *>(text.data()),
+                static_cast<typename native_type::size_type>(text.size()));
+        } else {
+            return from_code_points(
+                reinterpret_cast<const char32_t *>(text.data()),
+                text.size());
+        }
+    }
+    static native_type from_code_points(const char32_t *data, size_type count) {
+        native_type result;
+        for (size_type index = 0; index < count; ++index)
+            result.push_back(code_point_type(data[index]));
+        return result;
+    }
     static bool is_ascii_space(code_point_type code_point) noexcept {
         const auto value = code_point.unicode();
         return value == ' ' || value == '\t' || value == '\n' || value == '\r' || value == '\f' || value == '\v';

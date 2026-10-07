@@ -107,6 +107,30 @@ int main() {
     CHECK(string_float && std::abs(string_float.value() - 3.125) < 1e-12);
     CHECK(string_bool && string_bool.value());
     CHECK(!sindre::general::string::String("maybe").to_bool());
+    const sindre::general::string::String integer_text(123);
+    const sindre::general::string::String floating_text(3.5);
+    const sindre::general::string::String bool_text(true);
+    const sindre::general::string::String code_point_text(U"中");
+    CHECK(integer_text.to_stdstr() == "123");
+    CHECK(floating_text.to_std_string().find("3.5") == 0);
+    CHECK(bool_text.to_utf8() == "true");
+    CHECK(code_point_text.to_utf8() == "中");
+    const auto code_point = code_point_text.to_code_point();
+    CHECK(code_point && code_point.value() == U'中');
+    CHECK(code_point_text.to_char32() && code_point_text.to_char32().value() == U'中');
+    CHECK(sindre::general::string::String("A").to_char() &&
+          sindre::general::string::String("A").to_char().value() == 'A');
+    CHECK(!code_point_text.to_char());
+    const auto from_literal = sindre::general::string::String::from("literal");
+    CHECK(from_literal && from_literal.value().to_utf8() == "literal");
+    const auto from_integer = sindre::general::string::String::from(456);
+    CHECK(from_integer && from_integer.value().to_int() && from_integer.value().to_int().value() == 456);
+    sindre::general::string::String replacement_text("a中文a");
+    CHECK(replacement_text.replace(1, 2, sindre::general::string::String("世界")));
+    CHECK(replacement_text.to_utf8() == "a世界a");
+    CHECK(replacement_text.replace_all(sindre::general::string::String("a"),
+                                       sindre::general::string::String("x")));
+    CHECK(replacement_text.to_utf8() == "x世界x");
     const auto converted_utf16 = python_text.try_to_utf16();
     CHECK(converted_utf16 && converted_utf16.value() == u"a,b,中文");
     const sindre::general::string::String converted_back(converted_utf16.value());
@@ -176,6 +200,11 @@ int main() {
     CHECK(!sindre::general::codec::simple_decompress(std::vector<std::uint8_t>{1}));
     const auto unicode_path = sindre::general::path::from_utf8(
         sindre::general::path::to_utf8(std::filesystem::temp_directory_path() / L"sindre-监控.txt"));
+    const auto path_text = sindre::general::string::String::from(unicode_path);
+    CHECK(path_text);
+    const auto path_roundtrip = path_text.value().to_path();
+    CHECK(path_roundtrip && sindre::general::path::to_utf8(path_roundtrip.value()) ==
+          sindre::general::path::to_utf8(unicode_path));
     std::filesystem::remove(unicode_path);
     std::promise<void> changed;
     auto changed_future = changed.get_future();

@@ -62,11 +62,13 @@ using sindre::general::string::String;
 
 String text("中文");
 String windows_text(u"中文");
+String number_text(42);
 auto utf8 = windows_text.to_utf8();
 auto utf16 = text.to_utf16();
-auto number = String("42").to_int();
+auto number = number_text.to_int();
 auto ratio = String("3.14").to_float();
 auto enabled = String("yes").to_bool();
+auto path = text.to_path();
 ```
 
 `String` 的 `size()`、索引、查找和截取按 Unicode code point 工作。构造函数可以
@@ -74,7 +76,21 @@ auto enabled = String("yes").to_bool();
 `to_utf16()`，不提供隐式 `std::string` 转换；类型解析直接使用 `to_int()`、
 `to_float()`、`to_bool()`。可能失败的转换和操作返回带有 `code`、`message` 和
 `context` 的 `Result`，编码互操作还提供 `try_to_utf8()`/`try_to_utf16()` 形式。
+也可以使用 `String::from(value)` 创建受检查的字符串；支持数字、布尔值、路径以及
+UTF-8/UTF-16/UTF-32/宽字符串输入。`to_code_point()` 用于取得只有一个 Unicode
+code point 的字符串；`to_char()` 只接受 ASCII，Unicode 字符使用 `to_char32()`。
 公共 API 不暴露 `BasicString`、`String16` 或 CsString 编码别名。
+
+修改接口按 Unicode code point 索引：
+
+```cpp
+String value("a中文a");
+auto status = value.replace(1, 2, String("世界"));
+auto all_status = value.replace_all(String("a"), String("x"));
+```
+
+`replace()` 和 `replace_in_place()` 都修改当前对象，后端在替换长度变化时可以重新
+分配内存；它们不承诺对 UTF-8 字节执行不安全的原地覆盖。
 
 ## CMake
 
