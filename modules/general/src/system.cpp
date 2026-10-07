@@ -1493,47 +1493,6 @@ Result<std::filesystem::path> require_file(const std::filesystem::path &value) {
 
 } // namespace sindre::general::path
 
-namespace sindre::general::desktop {
-
-bool is_elevated() noexcept {
-#if defined(_WIN32)
-    HANDLE token = nullptr;
-    if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
-    TOKEN_ELEVATION elevation{};
-    DWORD size = 0;
-    const bool result = ::GetTokenInformation(token, TokenElevation, &elevation,
-                                              sizeof(elevation), &size) != FALSE &&
-                        elevation.TokenIsElevated != 0;
-    ::CloseHandle(token);
-    return result;
-#else
-    return ::geteuid() == 0;
-#endif
-}
-
-Result<void> request_elevation(std::string_view) noexcept {
-    return Result<void>::failure(std::make_error_code(std::errc::function_not_supported),
-        "Elevation requires an application-specific launcher", "desktop.elevation");
-}
-Result<void> set_clipboard_text(std::string_view) noexcept {
-    return Result<void>::failure(std::make_error_code(std::errc::function_not_supported),
-        "Clipboard backend is not enabled", "desktop.clipboard");
-}
-Result<std::string> get_clipboard_text() noexcept {
-    return Result<std::string>::failure(std::make_error_code(std::errc::function_not_supported),
-        "Clipboard backend is not enabled", "desktop.clipboard");
-}
-Result<void> send_notification(std::string_view, std::string_view) noexcept {
-    return Result<void>::failure(std::make_error_code(std::errc::function_not_supported),
-        "Notification backend is not enabled", "desktop.notify");
-}
-Result<void> start_tray(std::string_view) noexcept {
-    return Result<void>::failure(std::make_error_code(std::errc::function_not_supported),
-        "Tray backend is not enabled", "desktop.tray");
-}
-
-} // namespace sindre::general::desktop
-
 namespace sindre::general::file_watch {
 
 struct Watcher::Impl {

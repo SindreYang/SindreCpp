@@ -119,7 +119,7 @@ int main() {
     std::filesystem::remove(temporary_path);
 
     CHECK(sindre::general::startup::get_startup_location("sindre-system-test"));
-    CHECK(!sindre::general::desktop::send_notification("title", "body"));
+    // Interactive desktop backends are covered by platform-specific smoke tests.
 
 #if defined(SINDRE_WITH_JSON)
     const auto defaults = sindre::general::config::Config::create_with_defaults({

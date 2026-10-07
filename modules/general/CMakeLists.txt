@@ -10,6 +10,7 @@ if(SINDRE_GENERAL_BUILD_LIBRARY)
         src/runtime.cpp
         src/cli.cpp
         src/string.cpp
+        src/system_desktop.cpp
         src/network_common.cpp
         src/url.cpp
         src/http.cpp
@@ -32,7 +33,7 @@ if(SINDRE_GENERAL_BUILD_LIBRARY)
         "${SINDRE_THIRDS_DIR}/general/sources/cs_string/string-1.4.1/cs_string-string-1.4.1/src")
     target_link_libraries(sindre_general_runtime PUBLIC sindre_base)
     if(WIN32)
-        target_link_libraries(sindre_general_runtime PRIVATE advapi32 shell32)
+        target_link_libraries(sindre_general_runtime PRIVATE advapi32 shell32 user32 comdlg32 ole32)
     endif()
     target_compile_definitions(sindre_general_runtime PRIVATE SINDRE_GENERAL_BUILDING_LIBRARY=1)
     foreach(feature IN ITEMS LOG HTTP JSON CLI RE2 CRASHPAD ZLIB)
