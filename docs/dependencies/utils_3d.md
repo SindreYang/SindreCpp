@@ -1,11 +1,12 @@
 # utils_3d dependencies
 
-本文面向维护者，列出 Math、VTK 以及内部算法后端的要求；这些依赖不会被自动下载，
-也不会出现在 `utils_3d` 的公共 C++ API 中。
+本文面向维护者，列出 Math、nanoflann、VTK 以及内部算法后端的要求；这些依赖不会
+出现在 `utils_3d` 的公共 C++ API 中。
 
 | Capability | Dependency | Source | Requirement |
 | --- | --- | --- | --- |
 | mesh/math core | [Math](../modules/math.md) | fixed `sindre::math` target | Eigen 3.4.1 + OpenBLAS 0.3.34 |
+| nearest-neighbor search | nanoflann 1.8.0 | fixed source recipe in `3rdparty/nanoflann/` | header-only KD-tree backend |
 | mesh I/O/filtering | VTK | installed official SDK | VTK 9.7.1 verified |
 | internal mesh implementation | VTK | installed package | private module implementation |
 | mesh algorithms | CGAL 6.2.1 | installed package/config | enabled by default with `SINDRE_UTILS_3D_CGAL`; no source build |
@@ -23,6 +24,10 @@ of the `utils_3d` target;
 no third-party source tree is copied into this repository and no backend is
 fetched or compiled by this module. Set `SINDRE_UTILS_3D_CGAL=OFF` or
 `SINDRE_UTILS_3D_PCL=OFF` only for a deliberate reduced-capability build.
+
+nanoflann is the exception: it is a fixed header-only build dependency fetched
+by the module's `3rdparty` recipe. The public `NearestNeighborIndex` API does
+not expose nanoflann types.
 
 Applications must include only `<sindre/utils_3d.h>`. They do not include VTK,
 CGAL or PCL headers and do not select a backend at runtime.

@@ -14,6 +14,7 @@
 #include <sindre/utils_3d/algorithms/segmentation.h>
 #include <sindre/utils_3d/algorithms/feature_smoothing.h>
 #include <sindre/utils_3d/algorithms/fgcf.h>
+#include <sindre/utils_3d/algorithms/nearest_neighbors.h>
 #include <sindre/utils_3d/sindremesh.h>
 
 namespace sindre::utils_3d {

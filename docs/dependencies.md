@@ -22,6 +22,7 @@ General 的平台依赖选择位于：
 ├── imgui/                          # Dear ImGui 配方
 ├── opencv/                         # OpenCV 配方
 ├── vtk/ cgal/ pcl/                 # 3D 配方
+├── nanoflann/                      # 轻量近邻搜索配方
 └── pybind11/                       # Python 配方
 ```
 

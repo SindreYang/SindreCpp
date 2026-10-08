@@ -12,13 +12,15 @@ set(_sindre_utils_3d_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/src/core/point_cloud.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms/algorithms.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms/advanced.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms/nearest_neighbors.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/sindremesh.cpp")
 sindre_add_static_target(utils_3d "${SINDRE_SOURCE_DIR}/include" ${_sindre_utils_3d_sources})
+sindre_3rdparty_setup_nanoflann()
 target_include_directories(sindre_utils_3d PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/private")
 target_compile_definitions(sindre_utils_3d PUBLIC SINDRE_WITH_UTILS_3D=1)
 target_link_libraries(sindre_utils_3d PUBLIC sindre::general sindre::math)
-target_link_libraries(sindre_utils_3d PRIVATE ${VTK_LIBRARIES})
+target_link_libraries(sindre_utils_3d PRIVATE sindre::nanoflann ${VTK_LIBRARIES})
 if(SINDRE_UTILS_3D_NATIVE_ARCH)
     add_library(sindre_utils_3d_native_arch INTERFACE)
     if(MSVC)
@@ -81,6 +83,10 @@ if(SINDRE_BUILD_TESTS)
     endif()
     sindre_copy_target_runtime_dlls(sindre_mesh_tests)
     add_test(NAME sindre.mesh COMMAND sindre_mesh_tests)
+    add_executable(sindre_nearest_neighbors_tests tests/nearest_neighbors_tests.cpp)
+    target_link_libraries(sindre_nearest_neighbors_tests PRIVATE sindre::utils_3d)
+    sindre_copy_target_runtime_dlls(sindre_nearest_neighbors_tests)
+    add_test(NAME sindre.nearest_neighbors COMMAND sindre_nearest_neighbors_tests)
     if(WIN32 AND VTK_DIR)
         if(EXISTS "${_sindre_vtk_runtime_dir}")
             set(_sindre_vtk_path_modification

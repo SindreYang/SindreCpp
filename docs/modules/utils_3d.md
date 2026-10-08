@@ -15,6 +15,7 @@
 - `SindreMesh`：常用网格操作的快捷 façade；
 - 网格清理、修复、简化、平滑、重网格、布尔、采样和空间查询；
 - 点云验证、配准和表面重建。
+- `NearestNeighborIndex`：基于轻量 KD-tree 的 KNN、半径和最近点查询。
 
 公共头文件收敛为三层：
 
@@ -33,7 +34,7 @@ Vedo 风格的 VTK Mesh/Data/Image 基础封装，支撑高层类型和 I/O，�
 
 ## 底层隔离
 
-VTK、CGAL 和 PCL 只作为模块内部实现。用户代码不能看到：
+VTK、CGAL、PCL 和 nanoflann 只作为模块内部实现。用户代码不能看到：
 
 - 第三方对象类型；
 - 底层转换函数；
@@ -127,6 +128,7 @@ Utils_3d 使用 General 的 `sindre::general::log::create_logger` 创建命名 l
 - 数值交换：Eigen/sindre::math；
 - 正式实现后端：VTK、CGAL、PCL；
 - 后端头文件和库通过 `sindre::utils_3d` 的私有实现使用；
+- nanoflann 是 Utils_3d 的固定轻量近邻搜索后端，公共 API 不暴露其类型；
 - 不支持 Open3D、VCG、libigl、MeshLib 作为当前实现后端。
 
 详细示例见 [Mesh 与 PointCloud 指南](../guides/mesh.md)。
