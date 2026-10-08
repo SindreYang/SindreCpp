@@ -18,6 +18,11 @@ endif()
 # archives with the library's fixed /MT profile on Windows.
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "sindrecpp single-config build type" FORCE)
+elseif(MSVC AND NOT CMAKE_CONFIGURATION_TYPES AND
+       NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+        message(FATAL_ERROR
+            "sindrecpp fixed static dependency profiles require CMAKE_BUILD_TYPE=Release "
+            "for single-config generators; got '${CMAKE_BUILD_TYPE}'")
 endif()
 
 option(SINDRE_BUILD_TESTS "Build sindre tests" ${sindre_build_extras_default})
@@ -35,7 +40,6 @@ set(SINDRE_MSVC_STATIC_RUNTIME ON)
 # General is the mandatory foundation. Its public integrations and dependency
 # profile are fixed; they are deliberately not user-selectable feature flags.
 include("${SINDRE_THIRDS_DIR}/general/Dependencies.cmake")
-set(SINDRE_WITH_GENERAL ON)
 set(SINDRE_WITH_MATH ON)
 option(SINDRE_GENERAL_BUILD_LIBRARY "Build the compiled General runtime library" ON)
 option(SINDRE_GENERAL_SHARED "Build General as a shared library" OFF)
@@ -62,18 +66,6 @@ option(SINDRE_WITH_AI "Build the AI module" OFF)
 option(SINDRE_WITH_GUI "Build the GUI module" OFF)
 option(SINDRE_WITH_UTILS_2D "Build OpenCV 2D utilities" OFF)
 option(SINDRE_WITH_UTILS_3D "Build VTK 3D utilities" OFF)
-
-# All General integrations are mandatory and come from the fixed dependency
-# profile declared in thirds/general/Dependencies.cmake.
-set(SINDRE_WITH_LOG ON)
-set(SINDRE_WITH_HTTP ON)
-set(SINDRE_HTTP_OPENSSL ON)
-set(SINDRE_WITH_JSON ON)
-set(SINDRE_WITH_CLI ON)
-set(SINDRE_WITH_RE2 ON)
-set(SINDRE_WITH_CRASHPAD ON)
-set(SINDRE_WITH_ZLIB ON)
-set(SINDRE_WITH_CRYPTO ON)
 
 # Python/NumPy utilities. This is a standalone module because it has a
 # separate interpreter/extension dependency profile from General.
@@ -107,16 +99,9 @@ if(NOT SINDRE_ONNXRUNTIME_ROOT
 endif()
 
 # Utils_3d options.
-option(SINDRE_UTILS_3D_SHOW "Enable standalone show_mesh rendering" OFF)
-option(SINDRE_UTILS_3D_VTK_DATA "Enable VTK datasets and image processing" OFF)
-foreach(backend IN ITEMS MESHLIB CGAL OPEN3D IGL VCG)
-    option(SINDRE_UTILS_3D_${backend} "Enable optional ${backend} geometry algorithms" OFF)
-endforeach()
-set(SINDRE_VCG_ROOT "" CACHE PATH "VCGlib source root")
-set(SINDRE_IGL_ROOT "" CACHE PATH "libigl source root")
-set(SINDRE_MESHLIB_ROOT "" CACHE PATH "MeshLib SDK root")
-set(SINDRE_OPEN3D_ROOT "" CACHE PATH "Open3D SDK root")
-foreach(sindre_utils_3d_sdk IN ITEMS MESHLIB OPEN3D)
+option(SINDRE_UTILS_3D_CGAL "Enable CGAL mesh algorithms" ON)
+option(SINDRE_UTILS_3D_PCL "Enable PCL point-cloud algorithms" ON)
+foreach(sindre_utils_3d_sdk IN ITEMS PCL)
     string(TOLOWER "${sindre_utils_3d_sdk}" _sindre_utils_3d_sdk_lower)
     set(_sindre_utils_3d_default_root
         "${SINDRE_THIRDS_DIR}/utils_3d/${_sindre_utils_3d_sdk_lower}")
@@ -130,8 +115,6 @@ foreach(sindre_utils_3d_sdk IN ITEMS MESHLIB OPEN3D)
     endif()
 endforeach()
 option(SINDRE_UTILS_3D_NATIVE_ARCH "Optimize utils_3d for the build machine" OFF)
-set(SINDRE_UTILS_3D_IGL_PACKAGE_FOUND OFF CACHE INTERNAL
-    "Whether Utils_3d uses an installed libigl package")
 option(SINDRE_BUILD_UTILS_3D_BENCHMARKS "Build the utils_3d benchmark" OFF)
 
 if(SINDRE_WITH_UTILS_2D OR SINDRE_WITH_UTILS_3D OR SINDRE_WITH_UTILS_PY)

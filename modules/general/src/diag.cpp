@@ -269,6 +269,53 @@ Result<void> init_log(std::string name, Level level, std::string_view pattern,
 #endif
 }
 
+Result<LoggerPtr> create_logger(std::string name, Level level) noexcept {
+    if (name.empty()) {
+        return Result<LoggerPtr>::failure(
+            std::make_error_code(std::errc::invalid_argument),
+            "Logger name must not be empty", "log.create_logger");
+    }
+
+#if !defined(SINDRE_NO_EXCEPTIONS)
+    try {
+#endif
+        std::lock_guard lock(log_mutex);
+        if (auto existing = spdlog::get(name))
+            return Result<LoggerPtr>::success(std::move(existing));
+
+        const auto default_logger = spdlog::default_logger();
+        if (!default_logger) {
+            return Result<LoggerPtr>::failure(
+                std::make_error_code(std::errc::io_error),
+                "Default logger is not available", "log.create_logger");
+        }
+
+        auto logger = default_logger->clone(std::move(name));
+        if (!logger) {
+            return Result<LoggerPtr>::failure(
+                std::make_error_code(std::errc::io_error),
+                "Cannot clone default logger", "log.create_logger");
+        }
+        logger->set_level(level);
+        spdlog::register_logger(logger);
+        return Result<LoggerPtr>::success(std::move(logger));
+#if !defined(SINDRE_NO_EXCEPTIONS)
+    } catch (const std::bad_alloc &) {
+        return Result<LoggerPtr>::failure(
+            std::make_error_code(std::errc::not_enough_memory),
+            "Not enough memory", "log.create_logger");
+    } catch (const std::exception &error) {
+        return Result<LoggerPtr>::failure(
+            std::make_error_code(std::errc::io_error), error.what(),
+            "log.create_logger");
+    } catch (...) {
+        return Result<LoggerPtr>::failure(
+            std::make_error_code(std::errc::io_error),
+            "Unknown logger creation failure", "log.create_logger");
+    }
+#endif
+}
+
 ::sindre::general::Result<void> initialize(
     LoggerPtr logger, Level level) noexcept {
     if (!logger) return init_log("sindre", level);

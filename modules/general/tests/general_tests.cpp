@@ -20,32 +20,135 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 #define CHECK(condition) do { if (!(condition)) { \
     std::cerr << "Check failed at " << __FILE__ << ':' << __LINE__ << ": " #condition << '\n'; \
     return EXIT_FAILURE; \
 } } while (false)
 
+template <class ResultType, class = void>
+struct has_rvalue_data : std::false_type {};
+
+template <class ResultType>
+struct has_rvalue_data<ResultType,
+                       std::void_t<decltype(std::declval<ResultType &&>().data())>>
+    : std::true_type {};
+
+template <class ResultType, class = void>
+struct has_rvalue_error_ptr : std::false_type {};
+
+template <class ResultType>
+struct has_rvalue_error_ptr<ResultType,
+                           std::void_t<decltype(std::declval<ResultType &&>().error_ptr())>>
+    : std::true_type {};
+
+static_assert(!has_rvalue_data<sindre::general::Result<int>>::value);
+static_assert(!has_rvalue_error_ptr<sindre::general::Result<int>>::value);
+static_assert(!has_rvalue_error_ptr<sindre::general::Result<void>>::value);
+static_assert(std::is_same_v<decltype(std::declval<sindre::general::Result<int> &&>().error()),
+                             sindre::general::Error>);
+static_assert(std::is_same_v<decltype(std::declval<sindre::general::Result<void> &&>().error()),
+                             sindre::general::Error>);
+
 int main() {
     auto value = sindre::general::Result<int>::success(42);
     CHECK(value);
     CHECK(value.value() == 42);
+    CHECK(value.data() != nullptr && *value.data() == 42);
+    CHECK(*value == 42);
+    CHECK(*value.operator->() == 42);
 
     auto failure = sindre::general::Result<int>::failure({{}, "expected failure", {}});
     CHECK(!failure);
     CHECK(failure.error().message == "expected failure");
+    CHECK(failure.data() == nullptr);
     auto detailed_failure = sindre::general::Result<int>::failure(
         std::make_error_code(std::errc::invalid_argument), "bad value", "general.test");
     CHECK(detailed_failure.error().context == "general.test" &&
           detailed_failure.error().describe().find("general.test") != std::string::npos);
+
+    const auto const_value = sindre::general::Result<std::string>::success("const value");
+    CHECK(const_value && const_value->size() == 11 && const_value.data() != nullptr &&
+          (*const_value == "const value"));
+
+    auto result_move_only = sindre::general::Result<std::unique_ptr<int>>::success(
+        std::make_unique<int>(73));
+    CHECK(result_move_only && result_move_only->get() != nullptr && **result_move_only == 73);
+
+    auto moved_error_result = sindre::general::Result<int>::failure(
+        sindre::general::Error::make(std::errc::permission_denied, "denied", "move.error"));
+    auto moved_error = std::move(moved_error_result).error();
+    CHECK(moved_error.code == std::make_error_code(std::errc::permission_denied) &&
+          moved_error.context == "move.error");
+    const auto const_error_result = sindre::general::Result<int>::failure(
+        sindre::general::Error::make(std::errc::permission_denied, "denied", "const.error"));
+    auto copied_error = std::move(const_error_result).error();
+    CHECK(copied_error.message == "denied" && copied_error.context == "const.error");
+
+    auto chained = value.and_then([](int number) {
+        return sindre::general::Result<std::string>::success(std::to_string(number));
+    });
+    CHECK(chained && chained.value() == "42");
+
+    const auto const_chain_source = sindre::general::Result<int>::success(5);
+    auto const_chained = const_chain_source.and_then([](const int number) {
+        return sindre::general::Result<int>::success(number * 2);
+    });
+    CHECK(const_chained && const_chained.value() == 10);
+
+    auto moved_chain = sindre::general::Result<std::string>::success("move").and_then(
+        [](std::string text) {
+            return sindre::general::Result<std::size_t>::success(text.size());
+        });
+    CHECK(moved_chain && moved_chain.value() == 4);
+
+    auto chain_failure_source = sindre::general::Result<int>::failure(
+        sindre::general::Error::make(std::errc::invalid_argument, "chain failed", "chain.source"));
+    auto chain_failure = chain_failure_source.and_then([](int) {
+        return sindre::general::Result<int>::success(99);
+    });
+    CHECK(!chain_failure && chain_failure.error().message == "chain failed" &&
+          chain_failure.error().context == "chain.source");
+
+#if !defined(SINDRE_NO_EXCEPTIONS)
+    auto thrown_chain = sindre::general::Result<int>::success(1).and_then([](int) ->
+        sindre::general::Result<int> {
+        throw std::runtime_error("continuation failed");
+    });
+    CHECK(!thrown_chain && thrown_chain.error().code ==
+              std::make_error_code(std::errc::invalid_argument) &&
+          thrown_chain.error().message == "continuation failed" &&
+          thrown_chain.error().context == "result.and_then");
+#endif
 
     auto no_value = sindre::general::Result<void>::success();
     CHECK(no_value);
     auto no_value_error = sindre::general::Result<void>::failure({{}, "failed", {}});
     CHECK(!no_value_error);
     CHECK(no_value_error.error().message == "failed");
+    CHECK(no_value_error.error_ptr() != nullptr &&
+          no_value_error.error_ptr()->message == "failed");
+    const auto const_no_value_error = sindre::general::Result<void>::failure(
+        sindre::general::Error::make(std::errc::io_error, "io failed", "void.error"));
+    CHECK(const_no_value_error.error_ptr() != nullptr &&
+          const_no_value_error.error_ptr()->context == "void.error");
+
+    auto void_chained = no_value.and_then([] {
+        return sindre::general::Result<int>::success(11);
+    });
+    CHECK(void_chained && void_chained.value() == 11);
+
+    auto void_chain_failure = no_value_error.and_then([] {
+        return sindre::general::Result<int>::success(12);
+    });
+    CHECK(!void_chain_failure && void_chain_failure.error().message == "failed");
     CHECK(std::string(sindre::general::library_abi()) == "sindre.general.cxx17");
     CHECK(sindre::general::string::trim(" \t hello\r\n") == "hello");
     CHECK(sindre::general::string::trim(" \t\r\n").empty());
@@ -586,8 +689,49 @@ int main() {
 #endif
 
 #if defined(SINDRE_WITH_LOG)
+    auto preinitialized_logger_result = sindre::general::log::create_logger(
+        "sindre.test.preinitialized", sindre::general::log::Level::info);
+    CHECK(preinitialized_logger_result);
+    CHECK(sindre::general::log::native::default_logger()->name() !=
+          "sindre.test.preinitialized");
+    preinitialized_logger_result.value()->info("未初始化全局日志也可以使用");
+    preinitialized_logger_result.value().reset();
+    sindre::general::log::native::drop("sindre.test.preinitialized");
+
     CHECK(sindre::general::log::init_log("sindre"));
     CHECK(sindre::general::log::init_log("sindre"));
+    const auto default_logger_before_module =
+        sindre::general::log::native::default_logger();
+    auto module_logger_result = sindre::general::log::create_logger(
+        "sindre.test.module", sindre::general::log::Level::debug);
+    CHECK(module_logger_result);
+    auto module_logger = std::move(module_logger_result).value();
+    CHECK(module_logger->name() == "sindre.test.module" &&
+          module_logger->level() == sindre::general::log::Level::debug &&
+          module_logger->sinks().size() == default_logger_before_module->sinks().size());
+    CHECK(sindre::general::log::native::default_logger() == default_logger_before_module);
+
+    auto reused_logger_result = sindre::general::log::create_logger(
+        "sindre.test.module", sindre::general::log::Level::err);
+    CHECK(reused_logger_result && reused_logger_result.value() == module_logger &&
+          module_logger->level() == sindre::general::log::Level::debug);
+
+    std::mutex concurrent_logger_mutex;
+    std::vector<sindre::general::log::LoggerPtr> concurrent_loggers;
+    std::vector<std::thread> logger_threads;
+    for (int index = 0; index < 8; ++index) {
+        logger_threads.emplace_back([&] {
+            auto result = sindre::general::log::create_logger("sindre.test.concurrent");
+            if (!result) return;
+            std::lock_guard lock(concurrent_logger_mutex);
+            concurrent_loggers.push_back(std::move(result).value());
+        });
+    }
+    for (auto& thread : logger_threads) thread.join();
+    CHECK(concurrent_loggers.size() == 8);
+    for (const auto& concurrent_logger : concurrent_loggers)
+        CHECK(concurrent_logger == concurrent_loggers.front());
+
     sindre::general::log::info("中文初始化日志");
     const auto log_path = std::filesystem::temp_directory_path() / L"sindre-中文日志.log";
     auto logger_result = sindre::general::log::try_rotating_file("sindre-general-test", log_path);
@@ -598,6 +742,10 @@ int main() {
     CHECK(std::filesystem::is_regular_file(log_path));
     logger.reset();
     sindre::general::log::native::drop("sindre-general-test");
+    module_logger.reset();
+    concurrent_loggers.clear();
+    sindre::general::log::native::drop("sindre.test.module");
+    sindre::general::log::native::drop("sindre.test.concurrent");
     std::filesystem::remove(log_path);
     CHECK(!sindre::general::log::rotating_file("sindre-null-filename", nullptr));
     CHECK(sindre::general::log::shutdown());

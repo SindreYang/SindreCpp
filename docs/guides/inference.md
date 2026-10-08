@@ -37,19 +37,27 @@ close 停止异步提交并排空已接收任务；同步 infer 仍可调用。
 ```cpp
 #include <sindre/ai.h>
 #include <sindre/utils_2d.h>
+#include <stdexcept>
 
 using namespace sindre;
 auto model = std::make_shared<ai::onnxruntime::Model>("model.onnx");
 ai::Pipeline<utils_2d::Image, ai::Tensors, ai::Tensors> pipeline(
     [](utils_2d::Image image) {
-        auto boxed = utils_2d::letterbox(image, {640, 640});
-        auto tensor = utils_2d::to_tensor(boxed.image);
-        return ai::Tensors{ai::Tensor{std::move(tensor.shape), std::move(tensor.data)}};
+        auto boxed = utils_2d::create_letterbox(image, {640, 640});
+        if (!boxed) throw std::runtime_error(boxed.error().describe());
+        auto tensor = utils_2d::convert_to_tensor(boxed.value().image);
+        if (!tensor) throw std::runtime_error(tensor.error().describe());
+        return ai::Tensors{ai::Tensor{std::move(tensor.value().shape),
+                                      std::move(tensor.value().data)}};
     },
     [model](ai::Tensors input) { return model->infer(input); },
     8); // 最多8项已接收且未完成的工作
-auto first = pipeline.infer_async(utils_2d::load("first.jpg"));
-auto second = pipeline.infer_async(utils_2d::load("second.jpg"));
+auto first_image = utils_2d::load_image("first.jpg");
+auto second_image = utils_2d::load_image("second.jpg");
+if (!first_image || !second_image)
+    throw std::runtime_error("input image load failed");
+auto first = pipeline.infer_async(first_image.value());
+auto second = pipeline.infer_async(second_image.value());
 auto output = first.get();
 pipeline.close(); // 排空已接收任务，second.get() 仍有效
 ```
@@ -210,12 +218,29 @@ Windows配置SDK的DLL目录到PATH；Linux配置动态库路径/RPATH。
 
 ## 图像预处理
 
-load默认BGR；save(value,destination)。resize改变宽高，letterbox保留比例并补边。
+`load_image` 默认返回 BGR；`save_image` 写入目标路径；`resize_image` 改变宽高，
+`create_letterbox` 保留比例并补边。所有失败通过 `Result` 返回。
 crop严格检查并返回独立副本；normalize=pixel*scale+offset。
-to_tensor=(pixel*scale-mean)/std，默认RGB/NCHW/float32/1/255，参数按输出通道顺序。
+convert_to_tensor=(pixel*scale-mean)/std，默认RGB/NCHW/float32/1/255，参数按输出通道顺序。
 支持非连续ROI，不修改原图，不自动resize。
 预测坐标逆变换先减left/top再除scale，整数缩放有亚像素舍入误差。
 不自动附加某个模型的NMS，前后处理由业务确认。
+
+常用 OpenCV 图像流程可以使用 `sindre::utils_2d::SindreImage`。它是对现有
+`Image=cv::Mat` 和自由函数的高级 facade，操作仍通过 `Result` 返回：
+
+```cpp
+auto loaded = sindre::utils_2d::SindreImage::load("input.png");
+if (!loaded) return;
+
+if (auto status = loaded->resize({640, 640}); !status) return;
+auto tensor = loaded->to_tensor();
+if (!tensor) return;
+```
+
+`clone()` 会进行深拷贝，`show()` 依赖 OpenCV HighGUI 并可能阻塞等待窗口；
+生产推理和无桌面服务应使用 `save()`、`to_tensor()`，不要把 `show()`
+放入后台服务路径。
 
 ## 验证
 

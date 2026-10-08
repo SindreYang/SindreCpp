@@ -1,9 +1,16 @@
 #pragma once
+
+// Vedo-style VTK mesh wrapper. This file is intentionally private: it is the
+// implementation core behind public Mesh/SindreMesh and must never be installed
+// or included by applications.
 #if !defined(SINDRE_WITH_UTILS_3D)
 #error "Enable SINDRE_WITH_UTILS_3D and link sindre::utils_3d."
 #endif
 
+#include <sindre/utils_3d/types.h>
+
 #include <Eigen/Core>
+#include <Eigen/Eigenvalues>
 #include <Eigen/Geometry>
 #include <Eigen/LU>
 #include <algorithm>
@@ -14,6 +21,8 @@
 #include <filesystem>
 #include <limits>
 #include <map>
+#include <numeric>
+#include <random>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -48,15 +57,12 @@
 #include <vtkTrivialProducer.h>
 #include <vtkXMLPolyDataReader.h>
 #include <vtkXMLPolyDataWriter.h>
-#if defined(SINDRE_UTILS_3D_SHOW)
-#include "show.h"
-#endif
 
 namespace sindre::utils_3d::detail::legacy {
-using Vertices = ::sindre::utils_3d::core::Vertices;
-using Faces = ::sindre::utils_3d::core::Faces;
-using Matrix = ::sindre::utils_3d::core::Matrix;
-using Labels = ::sindre::utils_3d::core::Labels;
+using Vertices = ::sindre::utils_3d::Vertices;
+using Faces = ::sindre::utils_3d::Faces;
+using Matrix = ::sindre::utils_3d::Matrix;
+using Labels = ::sindre::utils_3d::Labels;
 inline std::string path_to_utf8(const std::filesystem::path& path) {
 #if defined(__cpp_char8_t)
     const auto value = path.u8string();
@@ -65,7 +71,7 @@ inline std::string path_to_utf8(const std::filesystem::path& path) {
     return path.u8string();
 #endif
 }
-using MeshNormals = ::sindre::utils_3d::core::MeshNormals;
+using MeshNormals = ::sindre::utils_3d::MeshNormals;
 
 // Value semantics: copies and filter results never share mutable VTK storage.
 #define SindreMesh Mesh
@@ -161,11 +167,6 @@ class SindreMesh {
     Eigen::Index npoints() const { return mesh_->GetNumberOfPoints(); }
     Eigen::Index nfaces() const { return mesh_->GetNumberOfPolys(); }
     bool empty() const { return npoints() == 0; }
-#if defined(SINDRE_UTILS_3D_SHOW)
-    ShowMesh show(const ShowOptions &options = {}) const {
-        return show_mesh(mesh_.GetPointer(), options);
-    }
-#endif
     Eigen::Matrix<double, 2, 3, Eigen::RowMajor> bounds() const {
         if (empty())
             throw std::invalid_argument("Empty mesh has no bounds");
@@ -174,6 +175,163 @@ class SindreMesh {
         Eigen::Matrix<double, 2, 3, Eigen::RowMajor> result;
         result << b[0], b[2], b[4], b[1], b[3], b[5];
         return result;
+    }
+    Aabb get_aabb() const {
+        const auto b = bounds();
+        Aabb result;
+        result.minimum = b.row(0).transpose();
+        result.maximum = b.row(1).transpose();
+        result.dimensions = result.maximum - result.minimum;
+        result.center = (result.minimum + result.maximum) * 0.5;
+        return result;
+    }
+    Obb get_obb() const {
+        if (empty())
+            throw std::invalid_argument("Empty mesh has no oriented bounds");
+        const auto points = vertices();
+        const auto mean = points.colwise().mean().transpose();
+        const Eigen::MatrixXd centered = points.rowwise() - mean.transpose();
+        const Eigen::Matrix3d covariance =
+            centered.transpose() * centered / static_cast<double>(points.rows());
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(covariance);
+        if (solver.info() != Eigen::Success)
+            throw std::runtime_error("Oriented bounds covariance decomposition failed");
+
+        Eigen::Matrix3d axes;
+        axes.col(0) = solver.eigenvectors().col(2);
+        axes.col(1) = solver.eigenvectors().col(1);
+        if (axes.col(0).cross(axes.col(1)).dot(solver.eigenvectors().col(0)) < 0.0)
+            axes.col(1) = -axes.col(1);
+        axes.col(2) = axes.col(0).cross(axes.col(1)).normalized();
+
+        const Eigen::MatrixXd local = centered * axes;
+        const auto minimum = local.colwise().minCoeff().transpose();
+        const auto maximum = local.colwise().maxCoeff().transpose();
+        const auto local_center = (minimum + maximum) * 0.5;
+
+        Obb result;
+        result.axes = axes;
+        result.center = mean + axes * local_center;
+        result.half_extents = (maximum - minimum) * 0.5;
+        return result;
+    }
+    BoundingSphere get_min_sphere() const {
+        if (empty())
+            throw std::invalid_argument("Empty mesh has no minimum sphere");
+        const auto points = vertices();
+        using Point = Eigen::Vector3d;
+        struct Sphere {
+            Point center = Point::Zero();
+            double radius = -1.0;
+        };
+
+        const auto contains = [](const Sphere &sphere, const Point &point) {
+            if (sphere.radius < 0.0)
+                return false;
+            const double tolerance =
+                1e-11 * std::max({1.0, sphere.radius, point.norm()});
+            return (point - sphere.center).squaredNorm() <=
+                (sphere.radius + tolerance) * (sphere.radius + tolerance);
+        };
+        const auto sphere_from_points = [&](const std::vector<Point> &support) {
+            Sphere result;
+            if (support.empty())
+                return result;
+            if (support.size() == 1) {
+                result.center = support[0];
+                result.radius = 0.0;
+                return result;
+            }
+            if (support.size() == 2) {
+                result.center = (support[0] + support[1]) * 0.5;
+                result.radius = (support[1] - support[0]).norm() * 0.5;
+                return result;
+            }
+            if (support.size() == 3) {
+                const Point a = support[1] - support[0];
+                const Point b = support[2] - support[0];
+                const Point normal = a.cross(b);
+                const double normal_squared = normal.squaredNorm();
+                if (normal_squared <= 1e-24)
+                    return result;
+                result.center = support[0] +
+                    (b.cross(normal) * a.squaredNorm() +
+                     normal.cross(a) * b.squaredNorm()) /
+                        (2.0 * normal_squared);
+                result.radius = (result.center - support[0]).norm();
+                return result;
+            }
+            if (support.size() == 4) {
+                Eigen::Matrix3d matrix;
+                Eigen::Vector3d right_hand_side;
+                for (int i = 0; i < 3; ++i) {
+                    const Point delta = support[static_cast<std::size_t>(i + 1)] - support[0];
+                    matrix.row(i) = (2.0 * delta).transpose();
+                    right_hand_side[i] =
+                        support[static_cast<std::size_t>(i + 1)].squaredNorm() -
+                        support[0].squaredNorm();
+                }
+                Eigen::FullPivLU<Eigen::Matrix3d> solver(matrix);
+                if (solver.rank() < 3)
+                    return result;
+                result.center = solver.solve(right_hand_side);
+                result.radius = (result.center - support[0]).norm();
+                return result;
+            }
+            return result;
+        };
+        const auto minimum_support_sphere = [&](const std::vector<Point> &support) {
+            Sphere best;
+            const auto subset_count = std::size_t{1} << support.size();
+            for (std::size_t mask = 1; mask < subset_count; ++mask) {
+                std::vector<Point> subset;
+                for (std::size_t i = 0; i < support.size(); ++i)
+                    if (mask & (std::size_t{1} << i))
+                        subset.push_back(support[i]);
+                const auto candidate = sphere_from_points(subset);
+                if (candidate.radius < 0.0 ||
+                    !std::all_of(support.begin(), support.end(), [&](const Point &point) {
+                        return contains(candidate, point);
+                    }))
+                    continue;
+                if (best.radius < 0.0 || candidate.radius < best.radius)
+                    best = candidate;
+            }
+            return best;
+        };
+
+        std::vector<Eigen::Index> order(static_cast<std::size_t>(points.rows()));
+        std::iota(order.begin(), order.end(), Eigen::Index{0});
+        std::mt19937_64 generator(0x53494e4452455346ULL);
+        std::shuffle(order.begin(), order.end(), generator);
+        Sphere sphere;
+        for (std::size_t ii = 0; ii < order.size(); ++ii) {
+            const Point pi = points.row(order[ii]).transpose();
+            if (contains(sphere, pi))
+                continue;
+            sphere = minimum_support_sphere({pi});
+            for (std::size_t jj = 0; jj < ii; ++jj) {
+                const Point pj = points.row(order[jj]).transpose();
+                if (contains(sphere, pj))
+                    continue;
+                sphere = minimum_support_sphere({pi, pj});
+                for (std::size_t kk = 0; kk < jj; ++kk) {
+                    const Point pk = points.row(order[kk]).transpose();
+                    if (contains(sphere, pk))
+                        continue;
+                    sphere = minimum_support_sphere({pi, pj, pk});
+                    for (std::size_t ll = 0; ll < kk; ++ll) {
+                        const Point pl = points.row(order[ll]).transpose();
+                        if (!contains(sphere, pl))
+                            sphere = minimum_support_sphere({pi, pj, pk, pl});
+                    }
+                }
+            }
+        }
+        if (sphere.radius < 0.0 || !sphere.center.allFinite() ||
+            !std::isfinite(sphere.radius))
+            throw std::runtime_error("Minimum sphere computation failed");
+        return BoundingSphere{sphere.center, sphere.radius};
     }
     Eigen::Vector3d dimensions() const {
         auto b = bounds();
@@ -815,23 +973,48 @@ class SindreMesh {
         }
         return x;
     }
-    Eigen::VectorXd get_curvature(bool mean = true) const {
+    Eigen::VectorXd get_curvature(CurvatureType type = CurvatureType::mean) const {
         if (!nfaces())
             throw std::invalid_argument("Curvature requires faces");
-        vtkNew<vtkCurvatures> c;
-        c->SetInputData(mesh_);
-        if (mean)
-            c->SetCurvatureTypeToMean();
-        else
-            c->SetCurvatureTypeToGaussian();
-        c->Update();
-        auto *a = c->GetOutput()->GetPointData()->GetScalars();
-        if (!a)
-            throw std::runtime_error("Curvature computation failed");
-        Eigen::VectorXd x(npoints());
-        for (Eigen::Index i = 0; i < x.size(); ++i)
-            x[i] = a->GetComponent(i, 0);
-        return x;
+        const auto calculate = [&](bool mean) {
+            vtkNew<vtkCurvatures> c;
+            c->SetInputData(mesh_);
+            if (mean)
+                c->SetCurvatureTypeToMean();
+            else
+                c->SetCurvatureTypeToGaussian();
+            c->Update();
+            auto *a = c->GetOutput()->GetPointData()->GetScalars();
+            if (!a)
+                throw std::runtime_error("Curvature computation failed");
+            Eigen::VectorXd output(npoints());
+            for (Eigen::Index i = 0; i < output.size(); ++i)
+                output[i] = a->GetComponent(i, 0);
+            return output;
+        };
+
+        switch (type) {
+        case CurvatureType::mean:
+            return calculate(true);
+        case CurvatureType::gaussian:
+            return calculate(false);
+        case CurvatureType::minimum_principal:
+        case CurvatureType::maximum_principal: {
+            const auto mean = calculate(true);
+            const auto gaussian = calculate(false);
+            Eigen::VectorXd output(npoints());
+            for (Eigen::Index i = 0; i < output.size(); ++i) {
+                const auto discriminant = std::max(0.0,
+                    mean[i] * mean[i] - gaussian[i]);
+                const auto root = std::sqrt(discriminant);
+                output[i] = type == CurvatureType::minimum_principal
+                    ? mean[i] - root : mean[i] + root;
+            }
+            return output;
+        }
+        default:
+            throw std::invalid_argument("Unknown curvature type");
+        }
     }
 };
 #undef SindreMesh

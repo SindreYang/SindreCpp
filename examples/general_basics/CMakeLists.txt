@@ -6,7 +6,6 @@ project(sindreExampleGeneralBasics LANGUAGES CXX)
 if(NOT TARGET sindre::general)
     set(SINDRE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(SINDRE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(SINDRE_WITH_GENERAL ON CACHE BOOL "" FORCE)
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../.." "${CMAKE_BINARY_DIR}/sindre")
 endif()
 

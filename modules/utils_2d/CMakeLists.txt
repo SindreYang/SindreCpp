@@ -1,9 +1,18 @@
 sindre_add_static_target(utils_2d "${SINDRE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/utils_2d.cpp")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/utils_2d.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/image.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms.cpp")
 target_compile_definitions(sindre_utils_2d PUBLIC SINDRE_WITH_UTILS_2D=1)
 include("${SINDRE_THIRDS_DIR}/utils_2d/Dependencies.cmake")
-find_package(OpenCV ${SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION}
-    REQUIRED COMPONENTS ${SINDRE_THIRD_UTILS_2D_OPENCV_COMPONENTS})
+find_package(OpenCV CONFIG REQUIRED COMPONENTS ${SINDRE_THIRD_UTILS_2D_OPENCV_COMPONENTS})
+if(NOT DEFINED OpenCV_VERSION)
+    message(FATAL_ERROR "OpenCV package did not provide OpenCV_VERSION")
+endif()
+if(OpenCV_VERSION VERSION_LESS SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION)
+    message(FATAL_ERROR
+        "Utils_2d requires OpenCV >= ${SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION}; "
+        "found ${OpenCV_VERSION}")
+endif()
 set(_sindre_opencv_targets)
 foreach(component IN LISTS SINDRE_THIRD_UTILS_2D_OPENCV_COMPONENTS)
     if(TARGET opencv_${component})
@@ -49,4 +58,12 @@ if(SINDRE_BUILD_TESTS)
         sindre_copy_runtime_dirs(sindre_utils_2d_tests "${_sindre_opencv_runtime_dir}")
     endif()
     add_test(NAME sindre.utils_2d COMMAND sindre_utils_2d_tests)
+
+    add_executable(sindre_utils_2d_algorithms_tests tests/algorithms_tests.cpp)
+    target_link_libraries(sindre_utils_2d_algorithms_tests PRIVATE sindre::utils_2d)
+    sindre_copy_target_runtime_dlls(sindre_utils_2d_algorithms_tests)
+    if(_sindre_opencv_runtime_dir)
+        sindre_copy_runtime_dirs(sindre_utils_2d_algorithms_tests "${_sindre_opencv_runtime_dir}")
+    endif()
+    add_test(NAME sindre.utils_2d.algorithms COMMAND sindre_utils_2d_algorithms_tests)
 endif()

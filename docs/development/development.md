@@ -34,10 +34,10 @@ sindrecpp/
 新增功能时，优先按用户看到的功能放置：
 
 - 字符串处理放在 `sindre/general/string.h` 的 `sindre::general::string` 能力中
-- `sindre/utils_3d/` 按 vedo 的模块思路组织 VTK 核心对象：`mesh.h`、`data.h`、`image.h`、`plot.h`、`show.h`，并由 `sindre/utils_3d/vtk.h` 统一导出
-- `sindre/utils_3d/sindremesh.h` 是用户快速使用入口；复杂算法和第三方后端集中在 `sindre/utils_3d/algorithms.h`
-- 显示、数据集、图像和绘图实现位于 `sindre/utils_3d/`，由核心统一入口按开关导出；数学交换使用 `sindre::math`
-- `SINDRE_UTILS_3D_SHOW` 与 `SINDRE_UTILS_3D_VTK_DATA` 分别按需开启；不要把原生 VTK 可访问性当作封装完成，覆盖清单见 [VTK 指南](../guides/vtk.md)
+- `sindre/utils_3d/` 对外只提供后端无关的 `Mesh`、`PointCloud`、`SindreMesh` 和算法接口；VTK、CGAL、PCL 只能放在模块私有实现中
+- `sindre/utils_3d/sindremesh.h` 是用户快速使用入口；算法按领域放在 `sindre/utils_3d/algorithms/`
+- 网格和点云算法实现位于 `modules/utils_3d/`；数学交换使用 `sindre::math`，第三方实现只允许出现在模块私有目录
+- 不得在 `utils_3d` 公共头、Options、Result 或报告中暴露 VTK、CGAL、PCL 类型、后端枚举和原生转换函数
 - 日志、诊断和 Crashpad 通过 General 的 `sindre/general/diag.h` 暴露，具体实现位于 `modules/general/src/`；该目录只放 `.cpp`，不放私有头
 - 媒体能力未来放在预留的 `utils_av` 模块
 - 图像能力应放在 `modules/utils_2d`，入口为 `sindre/utils_2d.h`
@@ -56,10 +56,17 @@ sindrecpp 的顶层组织跟随 Sindre：
 通用错误约定：新接口优先返回 `sindre::general::Result<T>`；`sindre::general::Error` 同时保存 code、message
 和 context，调用方可用 `describe()` 生成日志文本。字符串数值解析、`json::parse()`
 和 `json::stringify()` 遵循这一约定，不要求调用方通过异常控制普通失败路径。
+`Result<T>` 在确认成功后支持 `result->member()`、`(*result).member()` 和 `result.data()`；
+其中 `data()` 在失败状态返回 `nullptr`，前两种未检查失败状态时与 `value()` 一样确定性终止。
+`data()`、`value_ptr()` 和 `error_ptr()` 必须使用左值 `Result`，禁止从临时结果保存内部指针；
+临时结果的 `error()` 和 `Result<T>::value()` 返回独立值。`and_then()` 只能连接返回
+`Result<U>` 的回调，并且必须标记 `[[nodiscard]]` 的结果；异常构建会把回调异常转换为
+`result.and_then` 错误，无异常构建不得引入异常捕获代码。`Result<void>` 的 const、
+右值链式调用必须与 `Result<T>` 保持一致，独立测试入口为 `sindre.general.result`。
 进程、动态库、临时文件、环境、URL、版本、自启动、桌面能力、scope guard、ranges 和诊断
 封装也必须沿用该约定；平台或第三方后端未启用时返回 `function_not_supported`，不得静默成功。
-- `utils_2d`：OpenCV 图像和推理预处理；
-- `utils_3d`：VTK SindreMesh、几何算法和 Math 数学交换；后端独立按需开启，详见 [网格指南](../guides/mesh.md)；
+- `utils_2d`：OpenCV 图像、传统视觉算法和推理预处理；
+- `utils_3d`：后端无关的 Mesh、PointCloud、SindreMesh 和几何算法；VTK/CGAL/PCL 仅作为私有实现按需开启，详见 [网格指南](../guides/mesh.md)；
 - `utilsav`：音视频能力，预留；
 - `ai`：ONNX Runtime CPU/CUDA 和独立 TensorRT 推理；
 - `general` 对外按用户用途提供 `core.h`、`system.h`、`runtime.h`、`cli.h`、`string.h`、`network.h` 和 `diag.h`；实现集中在 `modules/general/src/`，内部头不作为稳定公共 API；
@@ -122,6 +129,10 @@ SINDRE_MATH_OPENBLAS_ROOT=/opt/OpenBLAS ./scripts/build.sh
 也可以把额外的 CMake 选项直接传给脚本，例如
 `scripts\build.bat -DSINDRE_WITH_UTILS_2D=ON` 或
 `./scripts/build.sh -DSINDRE_MATH_NATIVE_ARCH=OFF`。
+
+固定的 Windows 静态依赖使用 Release ABI。Ninja 等单配置生成器如果显式传入
+非 `Release` 的 `CMAKE_BUILD_TYPE` 会在配置阶段直接失败，避免把 Debug CRT 或
+iterator-debug ABI 与固定 Release 包混链；多配置生成器应构建 `Release` 配置。
 
 ## 安装包消费者验证
 
@@ -216,6 +227,8 @@ namespace native = spdlog;
 
 - 前缀后必须紧跟具体对象，例如 `get_name()`、`set_level()`，不要使用裸动词；
 - `get_` 只用于读取，`set_` 只用于赋值；有转换或状态迁移语义时使用 `change_`；
+- `utils_2d::SindreImage` 的可失败成员操作直接使用 `load()`、`resize()`、`save()` 等
+  对象动作名，因为返回类型已经是 `Result`；不再叠加 `try_` 前缀；
 - 会创建资源的函数使用 `create_`，不会用 `get_` 伪装创建行为；
 - 可能失败但不应抛异常穿透公共边界的函数优先使用 `try_`，返回统一 `Result`；
 - 同一对象的一组 API 使用一致对象名，例如 `get_timeout()`、`set_timeout()`、

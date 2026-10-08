@@ -21,7 +21,7 @@ FetchContent 下载到构建目录 `_deps/`；宿主项目也可以按模块规�
 | [ai](dependencies/ai.md) | ONNX Runtime、TensorRT、CUDA、cuDNN |
 | [gui](dependencies/gui.md) | Dear ImGui、GLFW、OpenGL |
 | [utils_2d](dependencies/utils_2d.md) | OpenCV |
-| [utils_3d](dependencies/utils_3d.md) | Math 提供的 Eigen/OpenBLAS、VTK，以及可选几何后端 |
+| [utils_3d](dependencies/utils_3d.md) | Math 提供的 Eigen/OpenBLAS、VTK，以及可选的私有几何后端 |
 
 ## 来源规则
 

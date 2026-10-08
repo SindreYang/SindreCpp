@@ -1,6 +1,8 @@
 sindre_add_interface_target(general "${SINDRE_SOURCE_DIR}/include")
 target_include_directories(sindre_general INTERFACE
     $<INSTALL_INTERFACE:include>)
+target_include_directories(sindre_general SYSTEM BEFORE INTERFACE
+    $<BUILD_INTERFACE:${SINDRE_GENERAL_PACKAGE_ROOT}/include>)
 target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_GENERAL=1)
 
 # General 的默认产物是静态库，并且在 Windows 上固定使用静态 CRT 与
@@ -38,7 +40,8 @@ if(SINDRE_GENERAL_BUILD_LIBRARY)
     target_include_directories(sindre_general_runtime PUBLIC
         $<BUILD_INTERFACE:${SINDRE_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>)
-    target_include_directories(sindre_general_runtime SYSTEM PRIVATE
+    target_include_directories(sindre_general_runtime SYSTEM BEFORE PRIVATE
+        "${SINDRE_GENERAL_PACKAGE_ROOT}/include"
         "${SINDRE_THIRDS_DIR}/general/sources/simdjson/v4.6.11/simdjson-4.6.11/include"
         "${SINDRE_THIRDS_DIR}/general/sources/spdlog/v1.17.0/spdlog-1.17.0/include"
         "${SINDRE_THIRDS_DIR}/general/sources/cpp_httplib/v0.56.0/cpp-httplib-0.56.0"
@@ -48,12 +51,15 @@ if(SINDRE_GENERAL_BUILD_LIBRARY)
         target_link_libraries(sindre_general_runtime PRIVATE advapi32 shell32 user32 comdlg32 ole32 iphlpapi ws2_32)
     endif()
     target_compile_definitions(sindre_general_runtime PRIVATE SINDRE_GENERAL_BUILDING_LIBRARY=1)
-    foreach(feature IN ITEMS LOG HTTP JSON CLI RE2 CRASHPAD ZLIB CRYPTO)
-        if(SINDRE_WITH_${feature})
-            target_compile_definitions(sindre_general_runtime PRIVATE
-                SINDRE_WITH_${feature}=1)
-        endif()
-    endforeach()
+    target_compile_definitions(sindre_general_runtime PRIVATE
+        SINDRE_WITH_LOG=1
+        SINDRE_WITH_HTTP=1
+        SINDRE_WITH_JSON=1
+        SINDRE_WITH_CLI=1
+        SINDRE_WITH_RE2=1
+        SINDRE_WITH_CRASHPAD=1
+        SINDRE_WITH_ZLIB=1
+        SINDRE_WITH_CRYPTO=1)
     if(SINDRE_GENERAL_SHARED)
         target_compile_definitions(sindre_general INTERFACE SINDRE_GENERAL_SHARED=1)
     endif()
@@ -92,7 +98,6 @@ install(DIRECTORY "${csstring_SOURCE_DIR}/src/"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/cs_string"
     FILES_MATCHING PATTERN "*.h")
 
-if(SINDRE_WITH_LOG)
     set(SINDRE_SPDLOG_BUNDLED OFF)
     if(NOT TARGET spdlog::spdlog)
         sindre_thirds_declare_local(spdlog
@@ -116,19 +121,11 @@ if(SINDRE_WITH_LOG)
     if(TARGET spdlog AND DEFINED spdlog_SOURCE_DIR)
         install(TARGETS spdlog EXPORT sindrecppTargets)
     endif()
-endif()
 
-if(SINDRE_WITH_CRYPTO)
-    find_package(OpenSSL 3.3.0 EXACT CONFIG REQUIRED COMPONENTS Crypto
-        PATHS "${SINDRE_GENERAL_PACKAGE_ROOT}" NO_DEFAULT_PATH)
-endif()
+find_package(OpenSSL 3.3.0 EXACT CONFIG REQUIRED COMPONENTS SSL Crypto
+    PATHS "${SINDRE_GENERAL_PACKAGE_ROOT}" NO_DEFAULT_PATH)
 
-if(SINDRE_WITH_HTTP)
     set(SINDRE_HTTPLIB_BUNDLED OFF)
-    if(SINDRE_HTTP_OPENSSL AND NOT TARGET OpenSSL::SSL)
-        find_package(OpenSSL 3.3.0 EXACT CONFIG REQUIRED COMPONENTS SSL Crypto
-            PATHS "${SINDRE_GENERAL_PACKAGE_ROOT}" NO_DEFAULT_PATH)
-    endif()
     if(NOT TARGET httplib::httplib)
         set(HTTPLIB_INSTALL OFF CACHE BOOL "Disable installation of cpp-httplib from General" FORCE)
         sindre_thirds_declare_local(cpp_httplib
@@ -140,7 +137,7 @@ if(SINDRE_WITH_HTTP)
         sindre_make_available(cpp_httplib
             HTTPLIB_TEST=OFF
             HTTPLIB_INSTALL=OFF
-            HTTPLIB_USE_OPENSSL_IF_AVAILABLE=${SINDRE_HTTP_OPENSSL}
+            HTTPLIB_USE_OPENSSL_IF_AVAILABLE=ON
             HTTPLIB_USE_NON_BLOCKING_GETADDRINFO=${_sindre_httplib_nonblocking})
         set(SINDRE_HTTPLIB_BUNDLED ON)
     endif()
@@ -162,10 +159,8 @@ if(SINDRE_WITH_HTTP)
             target_compile_definitions(sindre_general_httplib INTERFACE
                 CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO)
         endif()
-        if(SINDRE_HTTP_OPENSSL)
-            target_compile_definitions(sindre_general_httplib INTERFACE
-                CPPHTTPLIB_OPENSSL_SUPPORT)
-        endif()
+        target_compile_definitions(sindre_general_httplib INTERFACE
+            CPPHTTPLIB_OPENSSL_SUPPORT)
         target_link_libraries(sindre_general_httplib INTERFACE
             $<BUILD_INTERFACE:httplib::httplib>)
         if(TARGET sindre_general_runtime)
@@ -179,23 +174,12 @@ if(SINDRE_WITH_HTTP)
             target_compile_definitions(sindre_general_runtime PRIVATE SINDRE_WITH_HTTP=1)
         endif()
     endif()
-    if(SINDRE_HTTP_OPENSSL)
-        target_link_libraries(sindre_general INTERFACE OpenSSL::SSL OpenSSL::Crypto)
-        if(TARGET sindre_general_runtime)
-            target_link_libraries(sindre_general_runtime PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-        endif()
+    target_link_libraries(sindre_general INTERFACE OpenSSL::SSL OpenSSL::Crypto)
+    if(TARGET sindre_general_runtime)
+        target_link_libraries(sindre_general_runtime PRIVATE OpenSSL::SSL OpenSSL::Crypto)
     endif()
     target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_HTTP=1)
-endif()
 
-if(SINDRE_WITH_CRYPTO AND NOT (SINDRE_WITH_HTTP AND SINDRE_HTTP_OPENSSL))
-    target_link_libraries(sindre_general INTERFACE OpenSSL::Crypto)
-    if(TARGET sindre_general_runtime)
-        target_link_libraries(sindre_general_runtime PRIVATE OpenSSL::Crypto)
-    endif()
-endif()
-
-if(SINDRE_WITH_JSON)
     # General always uses the pinned upstream release. This keeps the public
     # JSON ABI and headers identical across MSVC, clang-cl and GCC instead of
     # silently selecting a different system/vcpkg simdjson version.
@@ -260,9 +244,7 @@ if(SINDRE_WITH_JSON)
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     endif()
     set(SINDRE_SIMDJSON_BUNDLED ${SINDRE_SIMDJSON_BUNDLED} PARENT_SCOPE)
-endif()
 
-if(SINDRE_WITH_CLI)
     set(SINDRE_CLI_USE_ARGPARSE OFF)
     if(NOT SINDRE_NO_EXCEPTIONS)
         set(SINDRE_CLI_USE_ARGPARSE ON)
@@ -296,9 +278,7 @@ if(SINDRE_WITH_CLI)
         install(FILES "${argparse_SOURCE_DIR}/include/argparse/argparse.hpp"
             DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/argparse")
     endif()
-endif()
 
-if(SINDRE_WITH_RE2)
     find_package(re2 11.0.0 EXACT CONFIG REQUIRED
         PATHS "${SINDRE_GENERAL_PACKAGE_ROOT}" NO_DEFAULT_PATH)
     if(TARGET re2::re2)
@@ -318,9 +298,7 @@ if(SINDRE_WITH_RE2)
     if(TARGET sindre_general_runtime)
         target_compile_definitions(sindre_general_runtime PRIVATE SINDRE_WITH_RE2=1)
     endif()
-endif()
 
-if(SINDRE_WITH_CRASHPAD)
     set(_sindre_crashpad_metadata
         "${SINDRE_GENERAL_PACKAGE_ROOT}/share/crashpad/vcpkg.spdx.json")
     if(NOT EXISTS "${_sindre_crashpad_metadata}")
@@ -358,9 +336,7 @@ if(SINDRE_WITH_CRASHPAD)
         target_compile_definitions(sindre_general_runtime PRIVATE SINDRE_WITH_CRASHPAD=1 SINDRE_CRASHPAD_READY=1)
     endif()
     install(TARGETS sindre_general_crashpad EXPORT sindrecppTargets)
-endif()
 
-if(SINDRE_WITH_ZLIB)
     find_package(ZLIB REQUIRED MODULE)
     if(NOT ZLIB_VERSION_STRING STREQUAL "1.3.1")
         message(FATAL_ERROR
@@ -372,9 +348,11 @@ if(SINDRE_WITH_ZLIB)
         target_link_libraries(sindre_general_runtime PRIVATE ZLIB::ZLIB)
         target_compile_definitions(sindre_general_runtime PRIVATE SINDRE_WITH_ZLIB=1)
     endif()
-endif()
 
 if(SINDRE_BUILD_TESTS)
+    add_executable(sindre_general_result_tests tests/result_tests.cpp)
+    target_link_libraries(sindre_general_result_tests PRIVATE sindre::general)
+    add_test(NAME sindre.general.result COMMAND sindre_general_result_tests)
     add_executable(sindre_general_tests tests/general_tests.cpp)
     target_link_libraries(sindre_general_tests PRIVATE sindre::general)
     sindre_copy_target_runtime_dlls(sindre_general_tests)
@@ -382,36 +360,26 @@ if(SINDRE_BUILD_TESTS)
         sindre_copy_runtime_dirs(sindre_general_tests
             "${SINDRE_GENERAL_PACKAGE_ROOT}/bin")
     endif()
-    if(SINDRE_WITH_JSON)
-        target_compile_definitions(sindre_general_tests PRIVATE SIMDJSON_EXCEPTIONS=0)
-    endif()
-    if(SINDRE_WITH_HTTP)
-        target_include_directories(sindre_general_tests PRIVATE
-            "${SINDRE_THIRDS_DIR}/general/sources/cpp_httplib/v0.56.0/cpp-httplib-0.56.0")
-        target_compile_definitions(sindre_general_tests PRIVATE CPPHTTPLIB_ZLIB_SUPPORT)
-        if(NOT (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))
-            target_compile_definitions(sindre_general_tests PRIVATE CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO)
-        endif()
-        if(SINDRE_HTTP_OPENSSL)
-            target_compile_definitions(sindre_general_tests PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
-        endif()
+    target_compile_definitions(sindre_general_tests PRIVATE SIMDJSON_EXCEPTIONS=0)
+    target_include_directories(sindre_general_tests PRIVATE
+        "${SINDRE_THIRDS_DIR}/general/sources/cpp_httplib/v0.56.0/cpp-httplib-0.56.0")
+    target_compile_definitions(sindre_general_tests PRIVATE
+        CPPHTTPLIB_ZLIB_SUPPORT CPPHTTPLIB_OPENSSL_SUPPORT)
+    if(NOT (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))
+        target_compile_definitions(sindre_general_tests PRIVATE CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO)
     endif()
     add_test(NAME sindre.general COMMAND sindre_general_tests)
-    if(SINDRE_WITH_HTTP)
-        add_executable(sindre_general_network_tests tests/network_tests.cpp)
-        target_link_libraries(sindre_general_network_tests PRIVATE sindre::general)
-        target_include_directories(sindre_general_network_tests PRIVATE
-            "${SINDRE_THIRDS_DIR}/general/sources/cpp_httplib/v0.56.0/cpp-httplib-0.56.0")
-        target_compile_definitions(sindre_general_network_tests PRIVATE CPPHTTPLIB_ZLIB_SUPPORT)
-        if(NOT (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))
-            target_compile_definitions(sindre_general_network_tests PRIVATE CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO)
-        endif()
-        if(SINDRE_HTTP_OPENSSL)
-            target_compile_definitions(sindre_general_network_tests PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
-        endif()
-        sindre_copy_target_runtime_dlls(sindre_general_network_tests)
-        add_test(NAME sindre.general.network COMMAND sindre_general_network_tests)
+    add_executable(sindre_general_network_tests tests/network_tests.cpp)
+    target_link_libraries(sindre_general_network_tests PRIVATE sindre::general)
+    target_include_directories(sindre_general_network_tests PRIVATE
+        "${SINDRE_THIRDS_DIR}/general/sources/cpp_httplib/v0.56.0/cpp-httplib-0.56.0")
+    target_compile_definitions(sindre_general_network_tests PRIVATE
+        CPPHTTPLIB_ZLIB_SUPPORT CPPHTTPLIB_OPENSSL_SUPPORT)
+    if(NOT (WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"))
+        target_compile_definitions(sindre_general_network_tests PRIVATE CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO)
     endif()
+    sindre_copy_target_runtime_dlls(sindre_general_network_tests)
+    add_test(NAME sindre.general.network COMMAND sindre_general_network_tests)
     add_executable(sindre_general_system_tests tests/system_tests.cpp)
     target_link_libraries(sindre_general_system_tests PRIVATE sindre::general)
     sindre_copy_target_runtime_dlls(sindre_general_system_tests)
@@ -419,9 +387,7 @@ if(SINDRE_BUILD_TESTS)
         sindre_copy_runtime_dirs(sindre_general_system_tests
             "${SINDRE_GENERAL_PACKAGE_ROOT}/bin")
     endif()
-    if(SINDRE_WITH_JSON)
-        target_compile_definitions(sindre_general_system_tests PRIVATE SIMDJSON_EXCEPTIONS=0)
-    endif()
+    target_compile_definitions(sindre_general_system_tests PRIVATE SIMDJSON_EXCEPTIONS=0)
     add_test(NAME sindre.general.system COMMAND sindre_general_system_tests)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_tests.cpp")
         add_executable(sindre_general_cli_tests tests/cli_tests.cpp)

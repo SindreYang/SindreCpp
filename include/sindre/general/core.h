@@ -7,17 +7,48 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <functional>
 #include <iterator>
 #include <memory>
+#include <new>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace sindre::general {
+
+template <class T> class Result;
+
+namespace detail {
+template <class> struct is_result : std::false_type {};
+template <class T> struct is_result<Result<T>> : std::true_type {};
+
+template <class Next, class Function, class... Args>
+Next invoke_result_continuation(Function &&function, Args &&...args) {
+#if defined(SINDRE_NO_EXCEPTIONS)
+    return std::invoke(std::forward<Function>(function), std::forward<Args>(args)...);
+#else
+    try {
+        return std::invoke(std::forward<Function>(function), std::forward<Args>(args)...);
+    } catch (const std::bad_alloc &) {
+        return Next::failure(std::make_error_code(std::errc::not_enough_memory),
+                             "Result continuation ran out of memory", "result.and_then");
+    } catch (const std::system_error &error) {
+        return Next::failure(error.code(), error.what(), "result.and_then");
+    } catch (const std::exception &error) {
+        return Next::failure(std::make_error_code(std::errc::invalid_argument),
+                             error.what(), "result.and_then");
+    } catch (...) {
+        return Next::failure(std::make_error_code(std::errc::invalid_argument),
+                             "Unknown result continuation failure", "result.and_then");
+    }
+#endif
+}
+} // namespace detail
 
 /// @brief 可跨模块传递的结构化错误。
 ///
@@ -55,50 +86,84 @@ struct Error {
 template <class T>
 /// @brief 表示成功值或结构化错误的非异常结果。
 class Result {
+    static_assert(!std::is_reference_v<T> && !std::is_array_v<T> &&
+                      !std::is_void_v<T>,
+                  "Result<T> requires a non-reference, non-array, non-void value type");
+
 public:
     [[nodiscard]] static Result success(T value) {
-        return Result(std::in_place_index<0>, std::move(value));
+        return Result(success_tag{}, std::move(value));
     }
     [[nodiscard]] static Result failure(Error error) {
-        return Result(std::in_place_index<1>, std::move(error));
+        return Result(failure_tag{}, std::move(error));
     }
     [[nodiscard]] static Result failure(
         std::error_code code, std::string message, std::string context = {}) {
         return failure(Error{code, std::move(message), std::move(context)});
     }
-    [[nodiscard]] bool has_value() const noexcept { return value_.index() == 0; }
+    [[nodiscard]] bool has_value() const noexcept { return value_.has_value(); }
     [[nodiscard]] explicit operator bool() const noexcept { return has_value(); }
     // Accessors require the matching Result state.  Termination is deliberate:
     // it keeps misuse deterministic in both exception-enabled and no-exception builds.
     T &value() & noexcept {
-        auto *value = std::get_if<0>(&value_);
-        if (!value) std::terminate();
-        return *value;
+        if (!value_) std::terminate();
+        return *value_;
     }
     const T &value() const & noexcept {
-        const auto *value = std::get_if<0>(&value_);
-        if (!value) std::terminate();
-        return *value;
+        if (!value_) std::terminate();
+        return *value_;
     }
-    T &&value() && noexcept {
-        auto *value = std::get_if<0>(&value_);
-        if (!value) std::terminate();
-        return std::move(*value);
+    [[nodiscard]] T value() && {
+        if (!value_) std::terminate();
+        return std::move(*value_);
     }
+    [[nodiscard]] T value() const && {
+        if (!value_) std::terminate();
+        return *value_;
+    }
+    /// @brief 返回值指针；失败状态返回 nullptr。
+    [[nodiscard]] T *data() & noexcept { return value_ptr(); }
+    [[nodiscard]] const T *data() const & noexcept { return value_ptr(); }
+    T *data() && = delete;
+    const T *data() const && = delete;
+    /// @brief 成功结果的指针式访问。
+    /// @details 失败状态下与 value() 一样确定性终止，避免产生空指针解引用。
+    T *operator->() & noexcept { return std::addressof(value()); }
+    const T *operator->() const & noexcept { return std::addressof(value()); }
+    T *operator->() && = delete;
+    const T *operator->() const && = delete;
+    T &operator*() & noexcept { return value(); }
+    const T &operator*() const & noexcept { return value(); }
+    T &&operator*() && = delete;
+    const T &&operator*() const && = delete;
     Error &error() & noexcept {
-        auto *error = std::get_if<1>(&value_);
-        if (!error) std::terminate();
-        return *error;
+        if (value_) std::terminate();
+        return error_;
     }
     const Error &error() const & noexcept {
-        const auto *error = std::get_if<1>(&value_);
-        if (!error) std::terminate();
-        return *error;
+        if (value_) std::terminate();
+        return error_;
     }
-    [[nodiscard]] T *value_ptr() noexcept { return std::get_if<0>(&value_); }
-    [[nodiscard]] const T *value_ptr() const noexcept { return std::get_if<0>(&value_); }
-    [[nodiscard]] Error *error_ptr() noexcept { return std::get_if<1>(&value_); }
-    [[nodiscard]] const Error *error_ptr() const noexcept { return std::get_if<1>(&value_); }
+    Error error() && noexcept {
+        if (value_) std::terminate();
+        return std::move(error_);
+    }
+    Error error() const && {
+        if (value_) std::terminate();
+        return error_;
+    }
+    [[nodiscard]] T *value_ptr() & noexcept { return value_ ? std::addressof(*value_) : nullptr; }
+    [[nodiscard]] const T *value_ptr() const & noexcept {
+        return value_ ? std::addressof(*value_) : nullptr;
+    }
+    T *value_ptr() && = delete;
+    const T *value_ptr() const && = delete;
+    [[nodiscard]] Error *error_ptr() & noexcept { return value_ ? nullptr : std::addressof(error_); }
+    [[nodiscard]] const Error *error_ptr() const & noexcept {
+        return value_ ? nullptr : std::addressof(error_);
+    }
+    Error *error_ptr() && = delete;
+    const Error *error_ptr() const && = delete;
     [[nodiscard]] T value_or(T fallback) const & {
         const auto *value = value_ptr();
         return value ? *value : std::move(fallback);
@@ -107,14 +172,36 @@ public:
         auto *value = value_ptr();
         return value ? std::move(*value) : std::move(fallback);
     }
+    template <class Function, class Next = std::invoke_result_t<Function, T &>,
+              std::enable_if_t<detail::is_result<Next>::value, int> = 0>
+    [[nodiscard]] Next and_then(Function &&function) & {
+        if (!has_value()) return Next::failure(*error_ptr());
+        return detail::invoke_result_continuation<Next>(
+            std::forward<Function>(function), *value_ptr());
+    }
+    template <class Function, class Next = std::invoke_result_t<Function, const T &>,
+              std::enable_if_t<detail::is_result<Next>::value, int> = 0>
+    [[nodiscard]] Next and_then(Function &&function) const & {
+        if (!has_value()) return Next::failure(*error_ptr());
+        return detail::invoke_result_continuation<Next>(
+            std::forward<Function>(function), *value_ptr());
+    }
+    template <class Function, class Next = std::invoke_result_t<Function, T &&>,
+              std::enable_if_t<detail::is_result<Next>::value, int> = 0>
+    [[nodiscard]] Next and_then(Function &&function) && {
+        if (!has_value()) return Next::failure(std::move(error_));
+        return detail::invoke_result_continuation<Next>(
+            std::forward<Function>(function), std::move(*value_ptr()));
+    }
 private:
-    template <class... Args>
-    explicit Result(std::in_place_index_t<0> tag, Args &&...args)
-        : value_(tag, std::forward<Args>(args)...) {}
-    template <class... Args>
-    explicit Result(std::in_place_index_t<1> tag, Args &&...args)
-        : value_(tag, std::forward<Args>(args)...) {}
-    std::variant<T, Error> value_;
+    struct success_tag {};
+    struct failure_tag {};
+
+    explicit Result(success_tag, T value) : value_(std::move(value)) {}
+    explicit Result(failure_tag, Error error) : error_(std::move(error)) {}
+
+    std::optional<T> value_;
+    Error error_;
 };
 
 template <>
@@ -129,6 +216,7 @@ public:
     }
     [[nodiscard]] bool has_value() const noexcept { return ok_; }
     [[nodiscard]] explicit operator bool() const noexcept { return ok_; }
+    void value() const noexcept { if (!ok_) std::terminate(); }
     // The error accessor is valid only for a failed Result.
     Error &error() & noexcept {
         if (ok_) std::terminate();
@@ -138,8 +226,36 @@ public:
         if (ok_) std::terminate();
         return error_;
     }
-    [[nodiscard]] Error *error_ptr() noexcept { return ok_ ? nullptr : &error_; }
-    [[nodiscard]] const Error *error_ptr() const noexcept { return ok_ ? nullptr : &error_; }
+    Error error() && noexcept {
+        if (ok_) std::terminate();
+        return std::move(error_);
+    }
+    Error error() const && {
+        if (ok_) std::terminate();
+        return error_;
+    }
+    [[nodiscard]] Error *error_ptr() & noexcept { return ok_ ? nullptr : &error_; }
+    [[nodiscard]] const Error *error_ptr() const & noexcept { return ok_ ? nullptr : &error_; }
+    Error *error_ptr() && = delete;
+    const Error *error_ptr() const && = delete;
+    template <class Function, class Next = std::invoke_result_t<Function>,
+              std::enable_if_t<detail::is_result<Next>::value, int> = 0>
+    [[nodiscard]] Next and_then(Function &&function) & {
+        if (!ok_) return Next::failure(error_);
+        return detail::invoke_result_continuation<Next>(std::forward<Function>(function));
+    }
+    template <class Function, class Next = std::invoke_result_t<Function>,
+              std::enable_if_t<detail::is_result<Next>::value, int> = 0>
+    [[nodiscard]] Next and_then(Function &&function) const & {
+        if (!ok_) return Next::failure(error_);
+        return detail::invoke_result_continuation<Next>(std::forward<Function>(function));
+    }
+    template <class Function, class Next = std::invoke_result_t<Function>,
+              std::enable_if_t<detail::is_result<Next>::value, int> = 0>
+    [[nodiscard]] Next and_then(Function &&function) && {
+        if (!ok_) return Next::failure(std::move(error_));
+        return detail::invoke_result_continuation<Next>(std::forward<Function>(function));
+    }
 private:
     Result(bool ok, Error error) : ok_(ok), error_(std::move(error)) {}
     bool ok_;

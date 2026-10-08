@@ -1,45 +1,23 @@
 include("${SINDRE_THIRDS_DIR}/utils_3d/Dependencies.cmake")
 set(_sindre_vtk_components CommonCore CommonDataModel CommonTransforms
     FiltersCore FiltersGeneral FiltersGeometry FiltersModeling IOGeometry IOLegacy IOPLY IOXML)
-if(SINDRE_UTILS_3D_SHOW OR SINDRE_UTILS_3D_VTK_DATA)
-    enable_language(C)
-endif()
-if(SINDRE_UTILS_3D_SHOW)
-    list(APPEND _sindre_vtk_components RenderingCore RenderingOpenGL2 RenderingFreeType
-        RenderingAnnotation InteractionStyle IOImage)
-endif()
-if(SINDRE_UTILS_3D_VTK_DATA)
-    list(APPEND _sindre_vtk_components FiltersFlowPaths FiltersSources ImagingCore ImagingGeneral ImagingMath ImagingMorphological)
-    if(SINDRE_UTILS_3D_SHOW)
-        list(APPEND _sindre_vtk_components RenderingVolumeOpenGL2 RenderingContextOpenGL2
-            RenderingContext2D ChartsCore ViewsContext2D)
-    endif()
-endif()
 set(SINDRE_UTILS_3D_VTK_COMPONENTS "${_sindre_vtk_components}" CACHE INTERNAL
     "VTK components required by the installed Utils_3d target")
 find_package(VTK ${SINDRE_THIRD_UTILS_3D_VTK_MIN_VERSION}
     REQUIRED COMPONENTS ${_sindre_vtk_components})
 set(_sindre_utils_3d_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/src/utils_3d.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/mesh.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/mesh.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/point_cloud.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms/algorithms.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms/advanced.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/sindremesh.cpp")
-if(SINDRE_UTILS_3D_VTK_DATA)
-    list(APPEND _sindre_utils_3d_sources
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/data.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/image.cpp")
-endif()
-if(SINDRE_UTILS_3D_SHOW)
-    list(APPEND _sindre_utils_3d_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/show.cpp")
-    if(SINDRE_UTILS_3D_VTK_DATA)
-        list(APPEND _sindre_utils_3d_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/plot.cpp")
-    endif()
-endif()
 sindre_add_static_target(utils_3d "${SINDRE_SOURCE_DIR}/include" ${_sindre_utils_3d_sources})
 target_include_directories(sindre_utils_3d PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/private")
 target_compile_definitions(sindre_utils_3d PUBLIC SINDRE_WITH_UTILS_3D=1)
-target_link_libraries(sindre_utils_3d PUBLIC sindre::general sindre::math ${VTK_LIBRARIES})
+target_link_libraries(sindre_utils_3d PUBLIC sindre::general sindre::math)
+target_link_libraries(sindre_utils_3d PRIVATE ${VTK_LIBRARIES})
 if(SINDRE_UTILS_3D_NATIVE_ARCH)
     add_library(sindre_utils_3d_native_arch INTERFACE)
     if(MSVC)
@@ -51,17 +29,11 @@ if(SINDRE_UTILS_3D_NATIVE_ARCH)
     install(TARGETS sindre_utils_3d_native_arch EXPORT sindrecppTargets)
 endif()
 
-foreach(backend IN ITEMS MESHLIB CGAL OPEN3D IGL VCG)
+foreach(backend IN ITEMS CGAL PCL)
     if(SINDRE_UTILS_3D_${backend})
-        target_compile_definitions(sindre_utils_3d PUBLIC SINDRE_UTILS_3D_${backend}=1)
+        target_compile_definitions(sindre_utils_3d PRIVATE SINDRE_UTILS_3D_${backend}=1)
     endif()
 endforeach()
-if(SINDRE_UTILS_3D_SHOW)
-    target_compile_definitions(sindre_utils_3d PUBLIC SINDRE_UTILS_3D_SHOW=1)
-endif()
-if(SINDRE_UTILS_3D_VTK_DATA)
-    target_compile_definitions(sindre_utils_3d PUBLIC SINDRE_UTILS_3D_VTK_DATA=1)
-endif()
 if(SINDRE_UTILS_3D_CGAL)
     find_package(CGAL ${SINDRE_THIRD_UTILS_3D_CGAL_MIN_VERSION}
         CONFIG REQUIRED)
@@ -70,87 +42,21 @@ if(SINDRE_UTILS_3D_CGAL)
             "The fixed CGAL ${SINDRE_THIRD_UTILS_3D_CGAL_MIN_VERSION} profile is not verified with clang-cl; "
             "use the MSVC compiler or a newer CGAL SDK with a passing backend test.")
     endif()
-    target_link_libraries(sindre_utils_3d PUBLIC CGAL::CGAL)
+    target_link_libraries(sindre_utils_3d PRIVATE CGAL::CGAL)
 endif()
-if(SINDRE_UTILS_3D_OPEN3D)
-    find_package(Open3D CONFIG REQUIRED
-        HINTS "${SINDRE_OPEN3D_ROOT}" "${SINDRE_OPEN3D_ROOT}/lib/cmake")
-    target_link_libraries(sindre_utils_3d PUBLIC Open3D::Open3D)
-endif()
-if(SINDRE_UTILS_3D_MESHLIB)
-    # MeshLib 3.1.4 is built with and explicitly requires C++20.  Keep the
-    # repository baseline at C++17 while raising only this optional backend's
-    # usage requirement.
-    target_compile_features(sindre_utils_3d PUBLIC cxx_std_20)
-    set_property(TARGET sindre_utils_3d PROPERTY CXX_STANDARD 20)
-    set_property(TARGET sindre_utils_3d PROPERTY CXX_STANDARD_REQUIRED ON)
-    # MeshLib's official Windows distribution is a prebuilt DLL/import-library
-    # SDK and, unlike its example plugin, does not ship a CMake package config.
-    # Prefer a package target when one is available, then expose the official
-    # extracted SDK without compiling MeshLib from source.
-    find_package(meshlib CONFIG QUIET
-        HINTS "${SINDRE_MESHLIB_ROOT}" "${SINDRE_MESHLIB_ROOT}/lib/cmake")
-    if(TARGET MeshLib::MRMesh)
-        target_link_libraries(sindre_utils_3d PUBLIC MeshLib::MRMesh)
-    elseif(TARGET MRMesh)
-        target_link_libraries(sindre_utils_3d PUBLIC MRMesh)
-    else()
-        find_path(_sindre_meshlib_include
-            MRMesh/MRMesh.h
-            HINTS "${SINDRE_MESHLIB_ROOT}"
-            PATH_SUFFIXES include)
-        find_library(_sindre_meshlib_import
-            NAMES MRMesh
-            HINTS "${SINDRE_MESHLIB_ROOT}"
-            PATH_SUFFIXES lib/Release lib)
-        find_file(_sindre_meshlib_runtime
-            NAMES MRMesh.dll
-            HINTS "${SINDRE_MESHLIB_ROOT}"
-            PATH_SUFFIXES app/Release bin)
-        if(NOT _sindre_meshlib_include OR NOT _sindre_meshlib_import OR
-           NOT _sindre_meshlib_runtime)
-            message(FATAL_ERROR
-                "MeshLib SDK must provide include/MRMesh/MRMesh.h, "
-                "lib/Release/MRMesh.lib, and app/Release/MRMesh.dll; "
-                "set SINDRE_MESHLIB_ROOT to the extracted official SDK root")
-        endif()
-        if(NOT TARGET MeshLib::MRMesh)
-            add_library(MeshLib::MRMesh SHARED IMPORTED GLOBAL)
-            set_target_properties(MeshLib::MRMesh PROPERTIES
-                IMPORTED_IMPLIB "${_sindre_meshlib_import}"
-                IMPORTED_LOCATION "${_sindre_meshlib_runtime}"
-                INTERFACE_INCLUDE_DIRECTORIES "${_sindre_meshlib_include}")
-        endif()
-        get_filename_component(_sindre_meshlib_runtime_dir
-            "${_sindre_meshlib_runtime}" DIRECTORY)
-        set(SINDRE_MESHLIB_RUNTIME_DIR "${_sindre_meshlib_runtime_dir}" CACHE INTERNAL
-            "MeshLib runtime directory selected from the extracted SDK" FORCE)
-        target_link_libraries(sindre_utils_3d PUBLIC MeshLib::MRMesh)
+if(SINDRE_UTILS_3D_PCL)
+    find_package(PCL ${SINDRE_THIRD_UTILS_3D_PCL_MIN_VERSION} CONFIG REQUIRED
+        COMPONENTS common features filters registration search segmentation surface)
+    if(PCL_INCLUDE_DIRS)
+        target_include_directories(sindre_utils_3d SYSTEM PRIVATE ${PCL_INCLUDE_DIRS})
     endif()
-endif()
-if(SINDRE_UTILS_3D_IGL)
-    # Prefer an installed libigl CMake package.  The package is header-only,
-    # but its target carries Eigen/Threads and optional copyleft components.
-    # Keep the include-root fallback for a source checkout supplied through
-    # SINDRE_IGL_ROOT.
-    set(SINDRE_UTILS_3D_IGL_PACKAGE_FOUND OFF CACHE INTERNAL
-        "Whether Utils_3d uses an installed libigl package" FORCE)
-    find_package(libigl CONFIG QUIET
-        HINTS "${SINDRE_IGL_ROOT}" "${SINDRE_IGL_ROOT}/lib/cmake")
-    if(TARGET igl::igl_core)
-        set(SINDRE_UTILS_3D_IGL_PACKAGE_FOUND ON CACHE INTERNAL
-            "Whether Utils_3d uses an installed libigl package" FORCE)
-        target_link_libraries(sindre_utils_3d PUBLIC igl::igl_core)
-    else()
-        find_path(_sindre_igl_include igl/harmonic.h
-            HINTS "${SINDRE_IGL_ROOT}" "${SINDRE_IGL_ROOT}/include"
-            REQUIRED)
-        target_include_directories(sindre_utils_3d SYSTEM PRIVATE ${_sindre_igl_include})
+    if(PCL_LIBRARY_DIRS)
+        target_link_directories(sindre_utils_3d PRIVATE ${PCL_LIBRARY_DIRS})
     endif()
-endif()
-if(SINDRE_UTILS_3D_VCG)
-    find_path(_sindre_vcg_include vcg/complex/complex.h HINTS ${SINDRE_VCG_ROOT} REQUIRED)
-    target_include_directories(sindre_utils_3d SYSTEM PRIVATE ${_sindre_vcg_include})
+    if(PCL_DEFINITIONS)
+        target_compile_options(sindre_utils_3d PRIVATE ${PCL_DEFINITIONS})
+    endif()
+    target_link_libraries(sindre_utils_3d PRIVATE ${PCL_LIBRARIES})
 endif()
 
 if(WIN32 AND VTK_DIR)
@@ -169,21 +75,11 @@ if(SINDRE_BUILD_TESTS)
     add_test(NAME sindre.utils_3d COMMAND sindre_utils_3d_tests)
     add_executable(sindre_mesh_tests tests/mesh_tests.cpp)
     target_link_libraries(sindre_mesh_tests PRIVATE sindre::utils_3d)
+    if(SINDRE_UTILS_3D_CGAL)
+        target_compile_definitions(sindre_mesh_tests PRIVATE SINDRE_UTILS_3D_CGAL=1)
+    endif()
     sindre_copy_target_runtime_dlls(sindre_mesh_tests)
     add_test(NAME sindre.mesh COMMAND sindre_mesh_tests)
-    if(SINDRE_UTILS_3D_VTK_DATA)
-        add_executable(sindre_vtk_data_tests tests/vtk_data_tests.cpp)
-        target_link_libraries(sindre_vtk_data_tests PRIVATE sindre::utils_3d)
-        sindre_copy_target_runtime_dlls(sindre_vtk_data_tests)
-        add_test(NAME sindre.vtk_data COMMAND sindre_vtk_data_tests)
-    endif()
-    if(SINDRE_UTILS_3D_SHOW)
-        add_executable(sindre_show_mesh_tests tests/show_mesh_tests.cpp)
-        target_link_libraries(sindre_show_mesh_tests PRIVATE sindre::utils_3d)
-        sindre_copy_target_runtime_dlls(sindre_show_mesh_tests)
-        add_test(NAME sindre.show_mesh COMMAND sindre_show_mesh_tests)
-    endif()
-
     if(WIN32 AND VTK_DIR)
         if(EXISTS "${_sindre_vtk_runtime_dir}")
             set(_sindre_vtk_path_modification
@@ -195,18 +91,6 @@ if(SINDRE_BUILD_TESTS)
                         "${_sindre_vtk_runtime_dir}")
                 endif()
             endforeach()
-            if(SINDRE_UTILS_3D_VTK_DATA)
-                list(APPEND _sindre_vtk_tests sindre.vtk_data)
-            endif()
-            if(SINDRE_UTILS_3D_MESHLIB AND SINDRE_MESHLIB_RUNTIME_DIR)
-                sindre_copy_runtime_dirs(sindre_utils_3d_tests
-                    "${SINDRE_MESHLIB_RUNTIME_DIR}")
-                sindre_copy_runtime_dirs(sindre_mesh_tests
-                    "${SINDRE_MESHLIB_RUNTIME_DIR}")
-            endif()
-            if(SINDRE_UTILS_3D_SHOW)
-                list(APPEND _sindre_vtk_tests sindre.show_mesh)
-            endif()
             set_tests_properties(${_sindre_vtk_tests} PROPERTIES
                 ENVIRONMENT_MODIFICATION "${_sindre_vtk_path_modification}")
         endif()

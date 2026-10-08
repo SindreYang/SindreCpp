@@ -106,6 +106,11 @@ fixed OpenBLAS profile is:
 `SINDRE_MATH_OPENBLAS_ROOT` selects the fixed OpenBLAS root. `AUTO`, MKL, and
 unregistered BLAS backends are not supported.
 
+The native-architecture flag is exported as a compiler-dependent generator
+expression: MSVC consumers receive `/arch:AVX2`, while Clang and GCC consumers
+receive `-march=native`. This prevents a package configured with clang-cl from
+leaking `/clang:` options into a later MSVC consumer.
+
 On Windows, Math consumers and tests copy the selected OpenBLAS DLL next to
 the executable through the common runtime-copy helper.
 

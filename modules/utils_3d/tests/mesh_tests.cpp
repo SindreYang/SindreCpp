@@ -1,293 +1,512 @@
-#include "vtk_coverage.h"
-#include <chrono>
-#include <cmath>
-#include <filesystem>
-#include <iostream>
 #include <sindre/utils_3d.h>
-#include <vtkNew.h>
-#include <vtkTriangleFilter.h>
+
+#include <algorithm>
+#include <cmath>
+#include <iostream>
+#include <stdexcept>
 
 using namespace sindre::utils_3d;
 namespace math = sindre::math;
-static void check(bool condition, const char *message) {
+
+namespace {
+void check(bool condition, const char *message) {
     if (!condition)
         throw std::runtime_error(message);
 }
-template <class F> static void rejects(F f) {
-    bool rejected = false;
-    try {
-        f();
-    } catch (const std::exception &) {
-        rejected = true;
-    }
-    check(rejected, "Invalid input was accepted");
+
+Mesh create_tetrahedron() {
+    Vertices vertices(4, 3);
+    vertices << 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1;
+    Faces faces(4, 3);
+    faces << 0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3;
+    return Mesh(vertices, faces);
 }
+
+Mesh create_open_square() {
+    Vertices vertices(4, 3);
+    vertices << 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0;
+    Faces faces(2, 3);
+    faces << 0, 1, 2, 0, 2, 3;
+    return Mesh(vertices, faces);
+}
+
+Mesh create_grid(std::int64_t side) {
+    const auto count = (side + 1) * (side + 1);
+    Vertices vertices(count, 3);
+    for (std::int64_t y = 0; y <= side; ++y)
+        for (std::int64_t x = 0; x <= side; ++x) {
+            const auto id = y * (side + 1) + x;
+            vertices(id, 0) = static_cast<double>(x);
+            vertices(id, 1) = static_cast<double>(y);
+            vertices(id, 2) = 0.0;
+        }
+    Faces faces(2 * side * side, 3);
+    std::int64_t face = 0;
+    for (std::int64_t y = 0; y < side; ++y)
+        for (std::int64_t x = 0; x < side; ++x) {
+            const auto a = y * (side + 1) + x;
+            const auto b = a + 1;
+            const auto c = a + side + 1;
+            const auto d = c + 1;
+            faces.row(face++) << a, b, d;
+            faces.row(face++) << a, d, c;
+        }
+    return Mesh(vertices, faces);
+}
+}
+
 int main() {
     try {
-        Vertices v(4, 3);
-        v << 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1;
-        Faces f(4, 3);
-        f << 0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3;
-        SindreMesh mesh(v, f);
-        auto fluent = mesh.clone();
-        fluent.clean().compute_normals();
-        SmoothOptions fluent_smoothing;
-        fluent_smoothing.backend = Backend::vtk;
-        fluent.smooth(fluent_smoothing);
-        check(fluent.nfaces() == 4 && fluent.vertex_normals().rows() == 4,
-              "SindreMesh fluent workflow");
-        SindreMesh empty_mesh;
-        empty_mesh.shift_xyz(math::Vector3::Ones());
-        check(empty_mesh.empty() && empty_mesh.vertex_normals().rows() == 0,
-              "Empty mesh transformations must be safe");
-        check(mesh.dimensions().isApprox(math::Vector3::Ones()), "Mesh bounds");
-        auto movable = mesh.clone();
-        auto moved = std::move(movable);
-        check(movable.empty() && moved.vertices().isApprox(v),
-              "Mesh move transfers geometry and empties source");
-        Matrix property(4, 1);
-        property << 0, 1, 2, 3;
-        moved.set_data("quality", property, false);
-        Matrix updated_property(4, 1);
-        updated_property << 10, 11, 12, 13;
-        moved.set_data("quality", updated_property, false);
-        check(moved.get_celldata("quality").isApprox(updated_property),
-              "Replacing an existing mesh attribute");
-        moved.set_data("quality", property, false);
-        moved.rename_data("quality", "score", false);
-        check(moved.has_data("score", false), "Rename attribute");
-        check(moved.extract_region("score", 1, 2).nfaces() == 2, "Scalar region extraction");
-        moved.remove_data("score", false);
-        check(!moved.has_data("score", false), "Remove attribute");
-        Matrix uv_values(4, 2);
-        uv_values << 0, 0, 1, 0, 0, 1, 1, 1;
-        moved.set_uv(uv_values);
-        check(moved.get_uv().isApprox(uv_values), "Texture coordinates");
-        vtkNew<vtkTriangleFilter> filter;
-        check(moved.filtered(filter).nfaces() == 4, "Generic VTK filter");
-        auto pipeline = moved.pipeline_source();
-        filter->SetInputConnection(pipeline->GetOutputPort());
-        filter->Update();
-        moved.shift_xyz(math::Vector3::Ones());
-        check(filter->GetOutput()->GetNumberOfPoints() == 4, "Caller-owned pipeline source");
-        check(append_meshes({mesh, mesh}).nfaces() == 8, "Append meshes");
-        rejects([&] { (void)append_meshes({mesh}, true, -1); });
-        check(slice_plane(mesh, math::Vector3(.2, 0, 0), math::Vector3::UnitX())
-                      ->GetNumberOfLines() > 0,
-              "Plane section curves");
-        check(clip_box(mesh, math::Vector3(-1, -1, -1), math::Vector3(2, 2, 2)).nfaces() == 4,
-              "Box clipping");
-        check(clip_sphere(mesh, math::Vector3::Zero(), 2).nfaces() == 4, "Sphere clipping");
-        check(mesh.feature_edges(20)->GetNumberOfLines() > 0, "Sharp feature edges");
-        check(mesh.npoints() == 4 && mesh.nfaces() == 4, "Mesh size");
-        check(mesh.is_watertight() && mesh.get_boundary().empty(), "Closed tetrahedron");
-        check(mesh.get_edges().size() == 6, "Unique edges");
-        check(mesh.get_curvature().allFinite() && mesh.get_curvature(false).allFinite(),
-              "Mean/Gaussian curvature");
-        check(mesh.get_face_adj_list()[0].size() == 3, "Face adjacency");
-        check((mesh.faces_barycentre().row(0) - math::eigen::RowVector3d(1. / 3, 1. / 3, 0)).norm() <
-                  1e-12,
-              "Face center");
-        check(std::abs(mesh.faces_area()[0] - .5) < 1e-12, "Area");
-        mesh.compute_normals();
-        auto flipped_normals = mesh.clone();
-        MeshNormals normal_options;
-        normal_options.flip = true;
-        flipped_normals.compute_normals(normal_options);
-        check(flipped_normals.get_celldata("Normals").isApprox(-mesh.get_celldata("Normals")),
-              "Normal flip option");
-        check(mesh.vertex_normals().rows() == 4, "Normals");
-        Labels labels(4);
-        labels << 1, 2, 3, (std::int64_t{1} << 54) + 3;
-        mesh.set_vertex_labels(labels);
-        mesh.set_faces_labels(labels);
-        check(mesh.get_vertex_labels() == labels, "Integer labels preserve 64 bits");
-        auto selection = mesh.clone();
-        selection.update_faces({true, false, true, false});
-        check(selection.nfaces() == 2 && selection.get_faces_labels()[1] == labels[2],
-              "Face selection preserves original labels");
-        selection = mesh.clone();
-        selection.update_vertex({true, true, true, false});
-        check(selection.npoints() == 3 && selection.nfaces() == 1 &&
-                  selection.get_vertex_labels()[2] == labels[2] &&
-                  selection.get_faces_labels()[0] == labels[0],
-              "Vertex selection remaps labels");
-        check(mesh.check().edge_closed && mesh.check().unused_vertices == 0, "Geometry report");
-        check(std::abs(mesh.signed_volume() - 1. / 6) < 1e-12, "Signed volume");
-        auto copy = mesh.clone();
-        copy.shift_xyz(math::Vector3(2, 3, 4));
-        check(mesh.vertices().isApprox(v), "Clone must not mutate source");
-        check(copy.get_vertex_labels() == labels, "Transforms preserve labels");
-        auto transform = get_normalize(mesh).transform;
-        copy = mesh.clone();
-        copy.apply_transform(transform).apply_inv_transform(transform);
-        check(copy.vertices().isApprox(v), "Normalization round trip");
+        auto mesh = create_tetrahedron();
+        check(static_cast<bool>(validate_mesh(mesh)), "Mesh validation");
+        check(mesh.npoints() == 4 && mesh.nfaces() == 4 && mesh.npoint() == 4 &&
+                  mesh.nface() == 4,
+              "Mesh dimensions");
+        const auto aabb = mesh.get_aabb();
+        check(aabb.minimum.isApprox(math::Vector3::Zero()) &&
+                  aabb.maximum.isApprox(math::Vector3::Ones()) &&
+                  aabb.dimensions.isApprox(math::Vector3::Ones()),
+              "Axis-aligned bounding box");
+        const auto obb = mesh.get_obb();
+        for (Eigen::Index i = 0; i < mesh.npoints(); ++i) {
+            const auto local = obb.axes.transpose() *
+                (mesh.vertices().row(i).transpose() - obb.center);
+            check((local.array().abs() <=
+                   (obb.half_extents.array() + 1e-10)).all(),
+                  "Oriented bounding box must contain vertices");
+        }
+        const auto sphere = mesh.get_min_sphere();
+        check(std::abs(sphere.radius - std::sqrt(2.0 / 3.0)) < 1e-10,
+              "Minimum bounding sphere radius");
+        for (Eigen::Index i = 0; i < mesh.npoints(); ++i)
+            check((mesh.vertices().row(i).transpose() - sphere.center).norm() <=
+                      sphere.radius + 1e-10,
+                  "Minimum bounding sphere must contain vertices");
+        check(mesh.is_watertight(), "Tetrahedron must be closed");
+        check(mesh.get_boundary().empty(), "Closed mesh boundary");
+        check(mesh.get_edges().size() == 6, "Unique mesh edges");
+        check(std::abs(mesh.area() - (std::sqrt(3.0) + 3.0) / 2.0) < 1e-12,
+              "Tetrahedron area");
+        check(std::abs(mesh.signed_volume() - 1.0 / 6.0) < 1e-12,
+              "Tetrahedron volume");
+
+        auto open_square = SindreMesh(create_open_square());
+        auto ordered_boundary = open_square.boundary();
+        check(ordered_boundary && ordered_boundary.value().size() == 1,
+              "Ordered boundary loop count");
+        check(ordered_boundary.value()[0].size() == 4,
+              "Ordered boundary loop vertices");
+        for (std::size_t i = 0; i < ordered_boundary.value()[0].size(); ++i) {
+            const auto left = ordered_boundary.value()[0][i];
+            const auto right = ordered_boundary.value()[0][(i + 1) % 4];
+            check((left == 0 && (right == 1 || right == 3)) ||
+                      (left == 1 && (right == 0 || right == 2)) ||
+                      (left == 2 && (right == 1 || right == 3)) ||
+                      (left == 3 && (right == 0 || right == 2)),
+                  "Boundary points must be connected in order");
+        }
+        auto unordered_boundary = open_square.boundary(false, false);
+        check(unordered_boundary && unordered_boundary.value().size() == 1 &&
+                  std::is_sorted(unordered_boundary.value()[0].begin(),
+                                 unordered_boundary.value()[0].end()),
+              "Unordered boundary loop must be stable");
+
+        auto elevated_square_vertices = create_open_square().vertices();
+        elevated_square_vertices.col(2).setConstant(1.0);
+        auto elevated_square = Mesh(elevated_square_vertices, create_open_square().faces());
+        JoinStripsOptions strip_options;
+        auto joined_strips = join_mesh_strips(open_square.mesh(), elevated_square, strip_options);
+        check(joined_strips && joined_strips.value().value.npoints() == 10 &&
+                  joined_strips.value().value.nfaces() == 8,
+              "VTK triangle strips between matching boundaries");
+        auto facade_strips = open_square.join_with_strips(SindreMesh(elevated_square));
+        check(facade_strips && facade_strips.value().nfaces() == 8,
+              "SindreMesh join_with_strips facade");
+
+        std::vector<Vertices> first_lines{open_square.vertices()};
+        std::vector<Vertices> second_lines{elevated_square.vertices()};
+        strip_options.closed = false;
+        auto open_strips = join_mesh_strips(first_lines, second_lines, strip_options);
+        check(open_strips && open_strips.value().value.nfaces() == 6,
+              "Open VTK triangle strip");
+        auto invalid_strips = join_mesh_strips(
+            first_lines, std::vector<Vertices>{elevated_square.vertices(), elevated_square.vertices()});
+        check(!invalid_strips && invalid_strips.error().code ==
+                  std::make_error_code(std::errc::invalid_argument),
+              "Mismatched strip counts must fail");
+
+        auto clean = clean_mesh(mesh);
+        check(clean && clean.value().value.nfaces() == 4, "Mesh cleaning");
+
+        Vertices unused_vertices(5, 3);
+        unused_vertices << 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 99, 99, 99;
+        auto cleaned_unused = clean_mesh(Mesh(unused_vertices, mesh.faces()));
+        check(cleaned_unused && cleaned_unused.value().value.npoints() == 4,
+              "Cleaning must remove unused vertices");
+
+        Faces broken_faces(6, 3);
+        broken_faces << 0, 2, 1, 0, 2, 1, 0, 0, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3;
+        auto fixed = fix_mesh(Mesh(mesh.vertices(), broken_faces));
+        check(fixed && fixed.value().value.nfaces() == 4,
+              "Mesh fix must remove duplicate and degenerate faces");
+
+        auto filled = open_square.fill_hole();
+        check(filled && filled.value().nfaces() >= open_square.nfaces(),
+              "Fast hole filling");
+        FillHolesOptions targeted_hole;
+        targeted_hole.method = FillHoleMethod::ear_clipping;
+        targeted_hole.boundary_vertices = {0, 1, 2, 3, 0};
+        auto targeted_fill = fill_mesh_holes(open_square.mesh(), targeted_hole);
+        check(targeted_fill && targeted_fill.value().value.nfaces() == 4,
+              "Targeted ordered hole filling");
+        CgalFillHolesOptions cgal_options;
+#if defined(SINDRE_UTILS_3D_CGAL)
+        cgal_options.method = CgalHoleFillMethod::triangulate;
+        auto cgal_fill = open_square.fill_holes_by_cgal(cgal_options);
+        check(cgal_fill && cgal_fill.value().nfaces() == 4,
+              "CGAL hole filling");
+#else
+        auto cgal_fill = open_square.fill_holes_by_cgal(cgal_options);
+        check(!cgal_fill &&
+                  cgal_fill.error().code ==
+                      std::make_error_code(std::errc::function_not_supported),
+              "CGAL hole filling must report an unavailable backend");
+#endif
+
+        RemeshOptions remesh_options;
+        remesh_options.edge_length = 1.0;
+        remesh_options.iterations = 1;
+        auto remeshed = SindreMesh(mesh).remesh(remesh_options);
+        check(remeshed && remeshed.value().nfaces() >= mesh.nfaces(),
+              "VTK feature-preserving remesh");
+
+        auto uniformized = SindreMesh(mesh).uniformize();
+        check(uniformized && uniformized.value().nfaces() >= mesh.nfaces(),
+              "VTK mesh uniformization");
+        auto global_subdivision = SindreMesh(mesh).subdivide(1);
+        check(global_subdivision && global_subdivision.value().nfaces() == 16,
+              "Global mesh subdivision");
+        auto local_subdivision = SindreMesh(mesh).subdivide_faces({0});
+        check(local_subdivision && local_subdivision.value().nfaces() == 10,
+              "Conforming local mesh subdivision");
+
+        SmoothOptions smooth_options;
+        smooth_options.iterations = 1;
+        auto smooth = smooth_mesh(mesh, smooth_options);
+        check(smooth && smooth.value().value.npoints() == 4, "Mesh smoothing");
+
+        FeatureSmoothingOptions feature_smoothing_options;
+        feature_smoothing_options.iterations = 2;
+        feature_smoothing_options.feature_angle = 30.0;
+        auto feature_smoothing = smooth_mesh_features(create_grid(2), feature_smoothing_options);
+        check(feature_smoothing && feature_smoothing.value().value.npoints() == 9 &&
+                  feature_smoothing.value().value.nfaces() == 8 &&
+                  feature_smoothing.value().value.vertices().allFinite(),
+              "Feature-preserving VTK smoothing");
+
+        Vertices fgcf_curve(4, 3);
+        fgcf_curve << 0.1, 0.1, 0.0,
+            0.7, 0.1, 0.0,
+            0.7, 0.2, 0.0,
+            0.1, 0.7, 0.0;
+        FgcfOptions fgcf_options;
+        fgcf_options.iterations = 3;
+        auto fgcf = smooth_curve_by_fgcf(mesh, fgcf_curve, fgcf_options);
+        check(fgcf && fgcf.value().value.curve.rows() == fgcf_curve.rows() &&
+                  fgcf.value().value.curve.allFinite() &&
+                  fgcf.value().value.final_length > 0.0,
+              "FGCF curve flow");
+        auto fgcf_projection = project_mesh_points(mesh, fgcf.value().value.curve);
+        check(fgcf_projection && fgcf_projection.value().distances.maxCoeff() < 1e-10,
+              "FGCF output must remain on the mesh");
+
+        CgalSegmentationOptions segmentation_options;
+#if defined(SINDRE_UTILS_3D_CGAL)
+        auto segmentation = segment_mesh_by_cgal(mesh, segmentation_options);
+        check(segmentation &&
+                  segmentation.value().value.face_labels.rows() == mesh.nfaces() &&
+                  segmentation.value().value.segment_count > 0,
+              "CGAL SDF graph-cut segmentation");
+#else
+        auto segmentation = segment_mesh_by_cgal(mesh, segmentation_options);
+        check(!segmentation && segmentation.error().code ==
+                  std::make_error_code(std::errc::function_not_supported),
+              "CGAL segmentation must report an unavailable backend");
+#endif
+
+        SmoothOptions local_smooth_options;
+        local_smooth_options.scope = SmoothScope::local;
+        local_smooth_options.vertex_indices = {0};
+        local_smooth_options.iterations = 2;
+        auto local_smooth = smooth_mesh(mesh, local_smooth_options);
+        check(local_smooth && local_smooth.value().value.npoints() == mesh.npoints() &&
+                  local_smooth.value().value.nfaces() == mesh.nfaces() &&
+                  (local_smooth.value().value.vertices().row(1) -
+                       mesh.vertices().row(1)).norm() == 0.0,
+              "Local vertex smoothing");
+
+        SmoothOptions local_face_smooth_options;
+        local_face_smooth_options.scope = SmoothScope::local;
+        local_face_smooth_options.face_indices = {0};
+        local_face_smooth_options.preserve_volume = false;
+        auto local_face_smooth = smooth_mesh(mesh, local_face_smooth_options);
+        check(local_face_smooth && local_face_smooth.value().value.npoints() == mesh.npoints() &&
+                  (local_face_smooth.value().value.vertices().row(3) -
+                       mesh.vertices().row(3)).norm() == 0.0,
+              "Local face smoothing");
+
+        SmoothOptions invalid_local_smooth;
+        invalid_local_smooth.scope = SmoothScope::local;
+        auto missing_local_selection = smooth_mesh(mesh, invalid_local_smooth);
+        check(!missing_local_selection &&
+                  missing_local_selection.error().code ==
+                      std::make_error_code(std::errc::invalid_argument),
+              "Local smoothing requires a selection");
+
+        auto deformation_source = mesh.vertices();
+        auto deformation_target = deformation_source;
+        for (Eigen::Index i = 0; i < deformation_target.rows(); ++i)
+            deformation_target(i, 0) += 0.25;
+        auto deformed = deform_mesh(mesh, deformation_source, deformation_target);
+        check(deformed &&
+                  (deformed.value().value.vertices() - deformation_target).norm() < 1e-8,
+              "Global thin-plate deformation");
+
+        DeformationOptions local_deformation_options;
+        local_deformation_options.scope = DeformationScope::local;
+        local_deformation_options.vertex_indices = {0, 1, 2};
+        auto locally_deformed = deform_mesh(
+            mesh, deformation_source, deformation_target, local_deformation_options);
+        check(locally_deformed &&
+                  (locally_deformed.value().value.vertices().row(3) -
+                       mesh.vertices().row(3)).norm() == 0.0 &&
+                  (locally_deformed.value().value.vertices().row(0) -
+                       deformation_target.row(0)).norm() < 1e-8,
+              "Local thin-plate deformation");
+
+        auto facade_deformed = SindreMesh(mesh).deform(
+            deformation_source, deformation_target);
+        check(facade_deformed && facade_deformed.value().npoints() == mesh.npoints(),
+              "SindreMesh thin-plate deformation facade");
+
+        Matrix vertex_probabilities = Matrix::Zero(mesh.npoints(), 3);
+        vertex_probabilities(0, 0) = 1.0;
+        vertex_probabilities(1, 1) = 1.0;
+        vertex_probabilities(2, 2) = 1.0;
+        vertex_probabilities(3, 1) = 1.0;
+        GraphCutOptions expansion_options;
+        expansion_options.label_level = GraphCutLabelLevel::vertex;
+        expansion_options.algorithm = GraphCutAlgorithm::expansion;
+        expansion_options.smooth_factor = 0.0;
+        expansion_options.keep_label = false;
+        auto expansion_labels = optimize_mesh_labels(mesh, vertex_probabilities,
+                                                     expansion_options);
+        check(expansion_labels && expansion_labels.value().label_level ==
+                  GraphCutLabelLevel::vertex && expansion_labels.value().labels.size() ==
+                  mesh.npoints() && expansion_labels.value().class_count == 3 &&
+                  expansion_labels.value().labels(0) == 0 &&
+                  expansion_labels.value().labels(1) == 1 &&
+                  expansion_labels.value().labels(2) == 2 &&
+                  expansion_labels.value().labels(3) == 1,
+              "Alpha-expansion must preserve zero-smoothing unary labels");
+
+        GraphCutOptions smoothed_options = expansion_options;
+        smoothed_options.smooth_factor = -1.0;
+        auto smoothed_labels = optimize_mesh_labels(mesh, vertex_probabilities,
+                                                    smoothed_options);
+        check(smoothed_labels && std::isfinite(smoothed_labels.value().energy_before) &&
+                  std::isfinite(smoothed_labels.value().energy_after) &&
+                  smoothed_labels.value().energy_after <=
+                      smoothed_labels.value().energy_before + 1e-8,
+              "Alpha-expansion must not increase the graph-cut energy");
+
+        GraphCutOptions swap_options = expansion_options;
+        swap_options.algorithm = GraphCutAlgorithm::swap;
+        auto swap_labels = optimize_mesh_labels(mesh, vertex_probabilities, swap_options);
+        check(swap_labels && swap_labels.value().labels == expansion_labels.value().labels,
+              "Alpha-beta swap must preserve zero-smoothing unary labels");
+
+        GraphCutOptions face_options;
+        face_options.label_level = GraphCutLabelLevel::face;
+        face_options.class_count = 2;
+        face_options.smooth_factor = 0.0;
+        Labels face_labels(mesh.nfaces());
+        face_labels << 0, 1, 0, 1;
+        auto optimized_face_labels = optimize_mesh_labels(mesh, face_labels, face_options);
+        check(optimized_face_labels && optimized_face_labels.value().label_level ==
+                  GraphCutLabelLevel::face && optimized_face_labels.value().labels == face_labels,
+              "Face hard-label graph cut");
+        auto facade_labels = SindreMesh(mesh).optimize_labels(
+            vertex_probabilities, expansion_options);
+        check(facade_labels && facade_labels.value().labels == expansion_labels.value().labels,
+              "SindreMesh graph-cut facade");
+
+        Matrix invalid_probabilities = vertex_probabilities;
+        invalid_probabilities(0, 0) = -1.0;
+        auto invalid_graph_cut = optimize_mesh_labels(mesh, invalid_probabilities);
+        check(!invalid_graph_cut && invalid_graph_cut.error().code ==
+                  std::make_error_code(std::errc::invalid_argument),
+              "Graph-cut must reject negative probabilities");
+        GraphCutOptions invalid_temperature;
+        invalid_temperature.temperature = 0.0;
+        auto invalid_temperature_result = optimize_mesh_labels(
+            mesh, vertex_probabilities, invalid_temperature);
+        check(!invalid_temperature_result && invalid_temperature_result.error().code ==
+                  std::make_error_code(std::errc::invalid_argument),
+              "Graph-cut must reject invalid temperature");
+
+        DecimateOptions decimate_options;
+        decimate_options.target_faces = 3;
+        auto decimated = decimate_mesh(mesh, decimate_options);
+        check(decimated && decimated.value().value.nfaces() <= 4, "Mesh decimation");
+
+        SimplifyOptions simplify_options;
+        auto simplified = simplify_mesh(mesh, 3, simplify_options);
+        check(simplified && simplified.value().value.nfaces() <= 4,
+              "Default VTK mesh simplification");
+        check(simplified.value().report.output_faces ==
+                  static_cast<std::size_t>(simplified.value().value.nfaces()),
+              "Simplification face report");
+
+        simplify_options.algorithm = SimplifyAlgorithm::quadric_decimation;
+        auto quadric = simplify_mesh(mesh, 3, simplify_options);
+        check(quadric && quadric.value().value.nfaces() <= 4,
+              "Quadric mesh simplification");
+        simplify_options.algorithm = SimplifyAlgorithm::quadric_clustering;
+        auto clustered = simplify_mesh(mesh, 3, simplify_options);
+        check(clustered && clustered.value().value.nfaces() <= 4,
+              "Quadric clustering simplification");
+
+        auto sampled = sample_mesh_surface(mesh, 32);
+        check(sampled && sampled.value().rows() == 32 && sampled.value().allFinite(),
+              "Surface sampling");
+        SampleOptions random_sampling;
+        random_sampling.algorithm = SampleAlgorithm::random;
+        random_sampling.seed = 42;
+        auto random_samples = SindreMesh(mesh).sample(12, random_sampling);
+        check(random_samples && random_samples.value().rows() == 12,
+              "Fixed-count random sampling");
+        SampleOptions farthest_sampling;
+        farthest_sampling.algorithm = SampleAlgorithm::farthest_point;
+        farthest_sampling.candidate_count = 32;
+        auto farthest_samples = sample_mesh_surface(mesh, 8, farthest_sampling);
+        check(farthest_samples && farthest_samples.value().rows() == 8,
+              "Farthest-point sampling");
+
         Vertices query(2, 3);
         query << .1, .1, -1, 0, 0, 0;
-        auto projection = project_points(mesh, query);
-        check(std::abs(projection.distances[0] - 1) < 1e-10, "Surface projection");
-        check(labels_mapping(v, v, labels) == labels, "Label transfer");
-        auto face_labels = vertex_labels_to_face_labels(f, labels);
-        check(face_labels.size() == 4, "Vertex/face labels");
-        check(face_labels_to_vertex_labels(f, face_labels, 4).size() == 4, "Face/vertex labels");
-        auto heat = get_gaussian_heatmap(v, v, .5, true);
-        check(std::abs(heat(0, 0) - 1) < 1e-12, "Heatmap");
-        check(subdivide(mesh, 1).nfaces() == 16, "Subdivision");
-        SmoothOptions smoothing;
-        smoothing.backend = Backend::vtk;
-        check(smooth(mesh, smoothing).npoints() == 4, "VTK smoothing");
-        check(reverse_faces(mesh).nfaces() == 4, "Reverse winding");
-        check(cut_plane(mesh, math::Vector3(.2, 0, 0), math::Vector3::UnitX()).nfaces() > 0,
-              "Plane clipping");
-        Faces open_faces = f.topRows(3);
-        SindreMesh open(v, open_faces);
-        check(open.boundary_loops().size() == 1 && open.boundary_loops()[0].size() == 3,
-              "Ordered boundary loop");
-        check(!open.get_boundary().empty(), "Open boundary");
-        check(fill_holes(open, Backend::vtk).is_watertight(), "VTK hole fill");
-        check(mesh.split_component_by_faces().size() == 1, "Components");
-        auto path =
-            std::filesystem::temp_directory_path() /
-            ("sindre-mesh-" +
-             std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".vtp");
-        mesh.save(path);
-        SindreMesh loaded(path);
-        check(loaded.vertices().isApprox(v) && loaded.faces() == f, "VTP round trip");
-        check(loaded.get_vertex_labels() == labels, "VTP integer attributes");
-        std::filesystem::remove(path);
-        const auto unicode_path = std::filesystem::temp_directory_path() / L"sindre-中文网格.vtp";
-        mesh.save(unicode_path);
-        SindreMesh unicode_loaded(unicode_path);
-        check(unicode_loaded.vertices().isApprox(v) && unicode_loaded.faces() == f,
-              "Unicode VTP path round trip");
-        std::filesystem::remove(unicode_path);
-        auto json_path = path;
-        json_path.replace_extension(".json");
-        mesh.set_data("质量\"\\", property, true);
-        mesh.save(json_path);
-        check(std::filesystem::is_regular_file(json_path), "JSON mesh export");
-        std::filesystem::remove(json_path);
-        const auto unicode_json_path = std::filesystem::temp_directory_path() / L"sindre-中文网格.json";
-        mesh.save(unicode_json_path);
-        check(std::filesystem::is_regular_file(unicode_json_path), "Unicode JSON path export");
-        std::filesystem::remove(unicode_json_path);
-        for (const char *extension : {".stl", ".ply", ".obj"}) {
-            auto interchange = path;
-            interchange.replace_extension(extension);
-            mesh.save(interchange);
-            SindreMesh roundtrip(interchange);
-            check(roundtrip.nfaces() == 4 &&
-                      roundtrip.dimensions().isApprox(math::Vector3::Ones()),
-                  "Mesh interchange geometry");
-            std::filesystem::remove(interchange);
+        auto projection = project_mesh_points(mesh, query);
+        check(projection && projection.value().points.rows() == 2,
+              "Mesh projection");
+        Vertices line(3, 3);
+        line << .1, .1, 2, .5, .2, -1, .9, .8, 3;
+        auto projected_line = SindreMesh(mesh).project_line(line);
+        check(projected_line && projected_line.value().rows() == 3,
+              "Ordered mesh line projection");
+
+        auto path = SindreMesh(mesh).find_path(0, 3);
+        check(path && path.value().vertices.front() == 0 &&
+                  path.value().vertices.back() == 3 && path.value().length > 0,
+              "VTK Dijkstra path");
+        auto path_cache = MeshPathCache::create(mesh);
+        check(static_cast<bool>(path_cache), "Path cache creation");
+        auto cached_options = PathOptions{};
+        cached_options.cache = std::make_shared<MeshPathCache>(path_cache.value());
+        auto cached_path = find_mesh_path(mesh, 0, 3, cached_options);
+        check(cached_path && cached_path.value().vertices == path.value().vertices,
+              "Cached Dijkstra path");
+        auto distances = calculate_signed_distances(mesh, query);
+        check(distances && distances.value().size() == 2, "Signed distances");
+
+        for (const auto curvature_type : {CurvatureType::mean,
+                                          CurvatureType::gaussian,
+                                          CurvatureType::minimum_principal,
+                                          CurvatureType::maximum_principal}) {
+            auto curvature = calculate_mesh_curvature(mesh, curvature_type);
+            check(curvature && curvature.value().size() == mesh.npoints() &&
+                      curvature.value().allFinite(),
+                  "VTK curvature type");
         }
-        Faces bad = f;
-        bad(0, 0) = -1;
-        rejects([&] { SindreMesh x(v, bad); });
-        rejects([&] { mesh.set_vertex_labels(Labels(2)); });
-        rejects([&] { get_gaussian_heatmap(v, v, 0); });
-        rejects([&] { mesh.apply_inv_transform(math::Matrix4::Zero()); });
-        rejects([&] {
-            SindreMesh x;
-            x.center();
-        });
-        rejects([&] { get_backend(Operation::uv, Backend::vtk); });
-        check(get_backend(Operation::decimate) == Backend::vtk,
-              "Automatic decimation must use the verified VTK baseline");
-        check(get_backend(Operation::smooth) == Backend::vtk,
-              "Automatic smoothing must use the verified VTK baseline");
-        check(get_backend(Operation::fill_holes) == Backend::vtk,
-              "Automatic hole filling must use the verified VTK baseline");
-        check(get_backend(Operation::clean) == Backend::vtk,
-              "Automatic cleaning must use the verified VTK baseline");
+        auto facade_curvature = SindreMesh(mesh).get_curvature(
+            CurvatureType::maximum_principal);
+        check(facade_curvature && facade_curvature.value().size() == mesh.npoints(),
+              "SindreMesh curvature facade");
 #if defined(SINDRE_UTILS_3D_CGAL)
-        check(get_backend(Operation::boolean_op) == Backend::cgal &&
-                  get_backend(Operation::remesh) == Backend::cgal &&
-                  get_backend(Operation::self_intersections) == Backend::cgal,
-              "Automatic topology operations must use the verified CGAL backend");
+        for (const auto curvature_type : {CurvatureType::mean,
+                                          CurvatureType::gaussian,
+                                          CurvatureType::minimum_principal,
+                                          CurvatureType::maximum_principal}) {
+            auto cgal_curvature = get_curvature_by_cgal(mesh, curvature_type);
+            check(cgal_curvature && cgal_curvature.value().size() == mesh.npoints() &&
+                      cgal_curvature.value().allFinite(),
+                  "CGAL curvature type");
+        }
+#else
+        auto cgal_curvature = SindreMesh(mesh).get_curvature_by_cgal();
+        check(!cgal_curvature &&
+                  cgal_curvature.error().code ==
+                      std::make_error_code(std::errc::function_not_supported),
+              "CGAL curvature must report an unavailable backend");
 #endif
-        for (auto backend : get_supported_backends(Operation::decimate)) {
-            DecimateOptions o;
-            o.target_faces = 3;
-            o.backend = backend;
-            auto out = decimate(mesh, o);
-            check(out.nfaces() <= mesh.nfaces(), "Decimation grew faces");
-        }
-        for (auto backend : get_supported_backends(Operation::smooth)) {
-            SmoothOptions o;
-            o.backend = backend;
-            auto out = smooth(mesh, o);
-            check(out.npoints() == 4, "Smoothing vertex count");
-        }
-        for (auto backend : get_supported_backends(Operation::fill_holes))
-            check(fill_holes(open, backend).is_watertight(), "Backend hole fill");
-        for (auto backend : get_supported_backends(Operation::self_intersections))
-            check(!has_self_intersections(mesh, backend), "Tetrahedron self intersection");
-        for (auto backend : get_supported_backends(Operation::clean))
-            check(clean(mesh, backend).nfaces() == 4, "Backend clean");
-        if (!get_supported_backends(Operation::boolean_op).empty()) {
-            auto other = mesh.clone();
-            other.shift_xyz(math::Vector3(.2, .2, .2));
-            for (auto backend : get_supported_backends(Operation::boolean_op)) {
-                auto result = boolean_mesh(mesh, other, BooleanOperation::intersect, backend);
-                check(result.nfaces() > 0 && result.is_watertight(), "Boolean intersection");
-            }
-        }
-        for (auto backend : get_supported_backends(Operation::remesh)) {
-            RemeshOptions o;
-            o.backend = backend;
-            o.edge_length = .5;
-            o.iterations = 1;
-            check(remesh(mesh, o).nfaces() > 0, "Remesh");
-        }
-#if defined(SINDRE_UTILS_3D_OPEN3D)
-        auto icp = register_icp(v, v, .5);
-        check(icp.transform.isApprox(math::Matrix4::Identity(), 1e-6) && icp.fitness > .99,
-              "ICP identity");
-        Vertices open3d_vertices(8, 3);
-        open3d_vertices << 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0,
-                           0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1;
-        Faces open3d_faces(12, 3);
-        open3d_faces << 0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6,
-                        0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2,
-                        2, 6, 7, 2, 7, 3, 3, 7, 4, 3, 4, 0;
-        SindreMesh open3d_mesh(open3d_vertices, open3d_faces);
-        DecimateOptions open3d_decimate;
-        open3d_decimate.target_faces = 8;
-        open3d_decimate.backend = Backend::open3d;
-        check(decimate(open3d_mesh, open3d_decimate).nfaces() <= 12, "Open3D decimation");
-        SmoothOptions open3d_smooth;
-        open3d_smooth.backend = Backend::open3d;
-        check(smooth(open3d_mesh, open3d_smooth).npoints() == 8, "Open3D smoothing");
-        check(clean(open3d_mesh, Backend::open3d).nfaces() == 12, "Open3D cleaning");
-        check(sample(open3d_mesh, 10).rows() == 10, "Open3D sampling");
-#endif
-#if defined(SINDRE_UTILS_3D_IGL)
-        Vertices square(4, 3);
-        square << 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0;
-        Faces sf(2, 3);
-        sf << 0, 1, 2, 0, 2, 3;
-        auto uv = get_uv(SindreMesh(square, sf));
-        check(uv.rows() == 4 && uv.cols() == 2 && uv.allFinite(), "UV");
-        Vertices disk(5, 3);
-        disk.topRows(4) = square;
-        disk.row(4) << .5, .5, 0;
-        Faces df(4, 3);
-        df << 0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4;
-        auto interior_uv = get_uv(SindreMesh(disk, df));
-        check(interior_uv.rows() == 5 && interior_uv.allFinite() &&
-                  interior_uv.row(4).norm() < 1e-8,
-              "UV interior harmonic solve");
-#endif
-        check(mesh.vertices().isApprox(v) && mesh.get_vertex_labels() == labels,
-              "Algorithms must retain input");
-        std::cout << "SindreMesh tests passed\n";
-        vtk_coverage("vtk_coverage_mesh.json",
-                     {1,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 26, 27, 28, 29,
-                      30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45});
+
+        auto invalid_boolean = check_boolean_mesh(mesh, open_square.mesh(),
+                                                   BooleanOperation::intersect);
+        check(invalid_boolean && !invalid_boolean.value().can_execute &&
+                  invalid_boolean.value().reason.find("closed") != std::string::npos,
+              "Boolean preflight must reject open surfaces");
+        auto member_preflight = SindreMesh(mesh).check_boolean(
+            open_square, BooleanOperation::intersect);
+        check(member_preflight && !member_preflight.value().can_execute,
+              "SindreMesh boolean preflight");
+        auto boolean_result = SindreMesh(mesh).boolean(
+            open_square, BooleanOperation::intersect);
+        check(!boolean_result, "Unsafe boolean input must not reach the backend");
+
+        auto grid = SindreMesh(create_grid(10));
+        Vertices curve(4, 3);
+        curve << 2.0, 2.0, 0.0, 8.0, 2.0, 0.0, 8.0, 8.0, 0.0, 2.0, 8.0, 0.0;
+        CurveClipOptions curve_options;
+        curve_options.max_projection_distance = 0.01;
+        auto clipped_inside = grid.clip_curve(curve, curve_options);
+        check(clipped_inside && clipped_inside.value().nfaces() > 0 &&
+                  clipped_inside.value().nfaces() < grid.nfaces(),
+              "Graph-cut curve clipping must select the inside region");
+        curve_options.region = CurveClipRegion::outside;
+        auto clipped_outside = clip_mesh_by_curve(grid.mesh(), curve, curve_options);
+        check(clipped_outside && clipped_outside.value().value.nfaces() > 0 &&
+                  clipped_outside.value().value.nfaces() < grid.nfaces(),
+              "Graph-cut curve clipping must select the outside region");
+        Vertices open_curve(2, 3);
+        open_curve << 2.0, 2.0, 0.0, 8.0, 2.0, 0.0;
+        auto invalid_curve = clip_mesh_by_curve(grid.mesh(), open_curve);
+        check(!invalid_curve, "Curve clipping must reject fewer than three points");
+
+        PointCloud cloud;
+        cloud.points = mesh.vertices();
+        cloud.normals = Vertices::Zero(4, 3);
+        cloud.normals->col(2).setOnes();
+        check(static_cast<bool>(cloud.validate()), "Point cloud validation");
+        cloud.labels = Labels::Zero(3);
+        check(!cloud.validate(), "Point cloud attribute mismatch must fail");
+
+        auto facade = SindreMesh(mesh).clean();
+        check(facade && facade.value().nfaces() == 4, "SindreMesh facade");
+        check(SindreMesh(mesh).npoint() == 4 && SindreMesh(mesh).nface() == 4,
+              "SindreMesh count shortcuts");
+        check(SindreMesh(mesh).get_aabb().maximum.isApprox(math::Vector3::Ones()) &&
+                  SindreMesh(mesh).get_obb().half_extents.minCoeff() >= 0.0 &&
+                  SindreMesh(mesh).get_min_sphere().radius > 0.0,
+              "SindreMesh bounding volume shortcuts");
+
+        auto chained = SindreMesh(mesh).clean().and_then([](const SindreMesh &value) {
+            return value.smooth();
+        });
+        check(chained && chained.value().nfaces() == 4, "SindreMesh Result chain");
+
+        std::cout << "utils_3d public API tests passed\n";
         return 0;
-    } catch (const std::exception &e) {
-        std::cerr << e.what() << '\n';
+    } catch (const std::exception &error) {
+        std::cerr << error.what() << '\n';
         return 1;
     }
 }

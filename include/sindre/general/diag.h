@@ -79,6 +79,9 @@ Result<void> init_log(
     std::size_t async_queue_size = default_async_queue_size,
     std::size_t async_worker_threads = default_async_worker_threads,
     AsyncOverflowPolicy async_overflow = AsyncOverflowPolicy::block) noexcept;
+/// @brief 创建或复用命名 logger；继承默认 logger 的 sinks 和格式，但不改变全局默认 logger。
+Result<LoggerPtr> create_logger(
+    std::string name, Level level = spdlog::level::info) noexcept;
 /// @brief 旧初始化接口，保留给已有调用方；新代码使用 init_log。
 Result<void> initialize(LoggerPtr logger = {}, Level level = spdlog::level::info) noexcept;
 /// @brief 释放 General 管理的日志注册状态。

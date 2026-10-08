@@ -78,13 +78,14 @@ if(_sindre_math_blas_backend STREQUAL "OPENBLAS")
 endif()
 
 if(SINDRE_MATH_NATIVE_ARCH)
-    if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        target_compile_options(sindre_math INTERFACE /clang:-march=native)
-    elseif(MSVC)
-        target_compile_options(sindre_math INTERFACE /arch:AVX2)
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-        target_compile_options(sindre_math INTERFACE -march=native)
-    endif()
+    # Keep the option compiler-dependent in the exported interface.  A
+    # package configured with clang-cl can be consumed by cl.exe, and a
+    # producer-side CMAKE_CXX_COMPILER_ID check would leak /clang: into that
+    # MSVC consumer command line.
+    target_compile_options(sindre_math INTERFACE
+        "$<$<CXX_COMPILER_ID:MSVC>:/arch:AVX2>"
+        "$<$<CXX_COMPILER_ID:Clang>:-march=native>"
+        "$<$<CXX_COMPILER_ID:GNU>:-march=native>")
 endif()
 
 message(STATUS "Sindre Math backend: ${_sindre_math_blas_backend}")

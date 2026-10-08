@@ -1,256 +1,477 @@
-# SindreMesh 与几何算法
+# Mesh 与 PointCloud
 
-本文面向需要网格读写、几何算法、Math/NumPy 交换或可选显示能力的 3D 使用者。
-先确认已阅读 [Utils_3d 模块说明](../modules/utils_3d.md)，再按需启用 VTK 功能。
+`utils_3d` 的公共 API 只暴露 `Mesh`、`PointCloud`、`SindreMesh` 和稳定的算法契约。
+VTK、CGAL、PCL 只作为内部实现；简化算法仅通过受控的
+`SimplifyBackend` 和 `SimplifyAlgorithm` 选择策略，不暴露第三方对象、头文件或异常。
 
-`utils_3d` 开启后以 VTK 9 为网格基础，`sindre::math` 为数组交换基础。不开启时不查找任何 3D SDK。
-计算接口不创建渲染窗口。当前算法路径为 CPU；AI 的 CUDA 默认不影响此模块。
-`SindreMesh` 是面向用户的聚合平台；`core` 只提供独立底层包装，由 `SindreMesh` 统一调用。
-显示独立放在 `sindre/utils_3d/show.h`，由 `SindreMesh::show()` 调用，按需开启。
-
-## 网格、算法与显示文件
-
-| 文件 | 职责 |
-| --- | --- |
-| `sindre/utils_3d/sindremesh.h` | 用户快速使用入口，导出 `SindreMesh` |
-| `sindre/utils_3d/vtk.h` | VTK 核心对象统一入口 |
-| `sindre/utils_3d/mesh.h` | `core::Mesh`：VTK 三角网格对象和网格级操作 |
-| `sindre/utils_3d/data.h` | `core::Data`：VTK 通用数据集和场数据 |
-| `sindre/utils_3d/image.h` | `core::Image`：VTK 规则图像和体数据 |
-| `sindre/utils_3d/plot.h` | `core::ShowPlot`：VTK 二维绘图 |
-| `sindre/utils_3d/show.h` | `core::ShowMesh`：VTK 三维显示和交互 |
-| `utils_3d/algorithms.h` | 算法、后端选择及后端网格转换 |
-
-命名参考 Python sindre 的 `SindreMesh`，设计参考 vedo 的简洁调用方式，但不复制 vedo 实现。
-这不是完整 VTK/vedo/Python sindre API 的逐项兼容移植，也不是五个第三方库所有函数的重导出。
-下表是实际已经提供的功能范围；不支持的操作会报错，不提供空壳接口。
-
-## 开启与依赖
+## 构建
 
 ```cmake
 set(SINDRE_WITH_UTILS_3D ON CACHE BOOL "")
-set(SINDRE_UTILS_3D_SHOW ON CACHE BOOL "") # 可选：显示、交互和截图；默认 OFF
-# 默认仅 VTK + Math；以下均默认 OFF，按需求开启。
-set(SINDRE_UTILS_3D_MESHLIB ON CACHE BOOL "")
-set(SINDRE_UTILS_3D_CGAL ON CACHE BOOL "")
-set(SINDRE_UTILS_3D_OPEN3D ON CACHE BOOL "")
-set(SINDRE_UTILS_3D_IGL ON CACHE BOOL "")
-set(SINDRE_UTILS_3D_VCG ON CACHE BOOL "")
-set(SINDRE_IGL_ROOT "/path/to/libigl" CACHE PATH "")
-set(SINDRE_VCG_ROOT "/path/to/vcglib" CACHE PATH "")
-# 安装 SDK 的 CMake package 路径通过 CMAKE_PREFIX_PATH / VTK_DIR / Open3D_DIR 等提供。
-# FetchContent_MakeAvailable(sindrecpp) 后：
 target_link_libraries(my_app PRIVATE sindre::utils_3d)
 ```
 
-VTK/CGAL/Open3D/MeshLib 使用已安装 SDK，不自动从源码构建大型依赖。
-MeshLib 优先使用 `find_package(meshlib CONFIG)`，链接 `MeshLib::MRMesh` 或 `MRMesh`，开启后要求 C++20。
-如果官方 SDK 没有提供 CMake package，可设置：
+后端 SDK 由构建配置决定。简化默认使用 VTK，也可以在调用时选择已经编译的
+CGAL；功能不可用时返回 `Result` 错误。
 
-```bash
--DSINDRE_MESHLIB_ROOT=/path/to/MeshLibDist/install
-```
-
-该目录需要包含 `include/MRMesh` 和 `lib/Debug|Release/MRMesh`。sindrecpp 会自动建立导入 target，并隔离 SDK 自带的 Boost/Eigen/pybind11 头目录，避免覆盖父项目依赖。
-其他接口要求 C++17。本机验证使用 MeshLib v3.1.4.297、libigl v2.5.0、
-VTK 9.7.1、CGAL 5.6.1 和 Open3D 0.20.0 官方 SDK；VCG 仍需调用方提供
-`SINDRE_VCG_ROOT`，不属于固定二进制验证组合。升级 SDK 后应重新运行后端测试。
-Open3D 的 Linux 预编译 SDK 还需要 libc++/libc++abi 运行库；与 MeshLib 共用时需检查 TBB 版本。
-MeshLib 与 Utils_Py 同时开启时，CMake 将独立 pybind11 的头文件放到隔离的构建目录，
-避免 MeshLib SDK 内修改版 pybind11 抢占 NumPy 转换的头文件。
-算法头文件也隔离 MeshLib 的 `_`/`_t` 翻译宏，避免与 CGAL/Boost 的标识符冲突。
-
-## 网格使用
+## 基础数据
 
 ```cpp
 #include <sindre/utils_3d.h>
+
 namespace u3 = sindre::utils_3d;
-u3::SindreMesh mesh("scan.ply");
-// 所有常用操作返回 SindreMesh&，可以连续调用。
-mesh.clean().compute_normals().smooth();
-auto copy = mesh.clone();
-copy.shift_xyz(sindre::math::Vector3(1, 2, 3)).scale_xyz(2.0);
-auto v = copy.vertices(); // N×3 float64 独立副本
-auto f = copy.faces();    // M×3 int64 独立副本
-auto centers = copy.faces_barycentre();
-copy.compute_normals();
-copy.save("scan.vtp");
-copy.save("scan.ply");
-copy.save("scan.json");
+
+u3::Vertices vertices(4, 3);
+vertices << 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1;
+
+u3::Faces faces(4, 3);
+faces << 0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3;
+
+u3::Mesh mesh(vertices, faces);
+auto report = mesh.check();
 ```
 
-## 显示：show_mesh
+`Mesh` 使用 Eigen 双精度坐标和 `int64_t` 面索引。点云使用独立值类型：
 
 ```cpp
-u3::ShowOptions options;
-options.style.edges = true;
-options.style.opacity = .8;
-auto viewer = mesh.show(options); // 默认交互窗口；关闭窗口后返回可继续使用的 viewer
+u3::PointCloud cloud;
+cloud.points = vertices;
+cloud.normals = u3::Vertices::Zero(vertices.rows(), 3);
+cloud.normals->col(2).setOnes();
 
-// 多网格窗口；构造/添加不启动事件循环。
-u3::ShowMesh scene;
-auto id = scene.add(mesh);
-u3::MeshStyle colors;
-colors.color_mode = u3::MeshColorMode::labels;
-colors.array_name = "Labels"; // 保留 int64 标签精度，不通过 double 分类
-scene.style(id, colors).bounds(id).normals(id, true, .1, 10);
-scene.on_pick([](const u3::MeshPick &p) { /* p.mesh / p.face / p.vertex / p.position */ });
-scene.reset_camera().show();
-
-// 离屏 PNG 截图；旧 VTK/X11 环境仍需要 DISPLAY 或 xvfb。
-options.offscreen = true;
-options.interactive = false;
-auto preview = mesh.show(options);
-preview.screenshot("preview.png", 2);
+auto valid = cloud.validate();
+if (!valid) {
+    std::cerr << valid.error().describe();
+}
 ```
 
-`show_mesh(mesh, options)` 可以独立调用；`ShowMesh::add` 也接受原生 `vtkPolyData*`。
-窗口保存输入的深拷贝快照，不借用原网格内存；输入修改不会自动刷新窗口。
-窗口可移动，不可复制；回调状态在移动后仍有效。所有显示调用应在同一 GUI/渲染线程进行。
-离屏模式不创建交互器；`show(false)` 只渲染一次，事件循环由外部调用者管理。
+点云可以附带颜色、强度、标签、有效性掩码、坐标系名称和元数据；属性长度必须与点数一致。
 
-`MeshStyle` 支持颜色、透明度、边线、表面/线框/点、Phong/平面着色、光照参数和背面剔除。
-点/面标量支持灰度、冷暖、Viridis 近似三控制点色图、指定范围和色标；RGB/RGBA 支持 uint8
-或 [0,1] 浮点数组。离散 Labels 用整数哈希配色，无分类图例，不能保证每个标签颜色唯一。
-纹理支持 PNG/JPEG，需 `set_uv(Nx2)`；相机、灯光、法线、边框、文字和显示裁剪平面独立控制。
-拾取只返回窗口快照的元素索引，不能据此假定后续编辑后原网格索引仍相同。
-鼠标/键盘回调异常会结束事件循环并从 `show()` 重新抛出，不穿过 VTK 的事件回调栈。
+## 算法调用
 
-`get_renderer/get_window/get_interactor/get_actor/get_data` 返回借用的原生对象，供尚未封装的
-VTK 功能扩展；原生可访问性不计为高层功能已封装。截图为 RGB PNG，不承诺透明背景。
+算法输入不会被修改，失败统一通过 `Result<T>` 返回：
 
-| 能力 | 接口 |
+```cpp
+u3::DecimateOptions decimate_options;
+decimate_options.target_faces = 10000;
+
+auto result = u3::decimate_mesh(mesh, decimate_options);
+if (!result) {
+    std::cerr << result.error().describe();
+    return 1;
+}
+
+const auto &simplified = result.value().value;
+const auto &quality = result.value().report;
+```
+
+当前公共算法包括：
+
+| 领域 | 算法 |
 | --- | --- |
-| 构造与复制 | 数组、VTK polydata、文件路径；`clone`；复制构造/赋值为深拷贝 |
-| 几何读写 | `vertices`, `faces`, `update_geometry`, `update_vertex`, `update_faces`, `npoints`, `nfaces`, `empty` |
-| 文件 | `load`, `save`：STL / PLY / OBJ / VTP / VTK；`save` 额外支持 JSON 网格交换 |
-| 变换 | `apply_transform`, `apply_inv_transform`, `shift_xyz`, `scale_xyz`, `rotate_xyz` |
-| 属性 | `set_data`, `get_pointdata`, `get_celldata`；顶点/面片 int64 标签 |
-| 几何 | 顶点/面法线、重心、面积、有向体积、中心、半径、曲率；`check` 缺陷计数 |
-| 拓扑 | 唯一边、边对应面、边界边、非流形边、顶点/面邻接列表 |
-| 组件 | `largest_component`, `split_component_by_faces` |
-| 查询 | `get_near_idx`、`project_points`、`signed_distance` |
-| 扩展 | 属性增删/改名/列举、纹理坐标、bounds/dimensions、区域提取、有序边界、特征边 |
-| VTK 流程 | `filtered` 立即执行并复制结果；`pipeline_source` 提供独立快照供用户连接懒执行流水线 |
+| 网格质量 | 清理、修复、孔洞、法线、自交检查、质量报告 |
+| 网格处理 | 简化、平滑、重网格、布尔、细分、平面裁剪、翻面 |
+| 网格分析 | 曲率、投影、符号距离、边界、连通关系、表面采样 |
+| 高级独立算法 | CGAL SDF/图切分割、VTK 特征保持平滑、FGCF 测地曲率流 |
+| 点云处理 | 体素降采样、统计/半径离群点过滤、法线估计 |
+| 点云分割 | RANSAC 平面分割、欧式聚类、标签输出 |
+| 配准 | ICP、残差、RMSE、收敛状态 |
+| 重建 | Poisson 点云重建 |
 
-`rotate_xyz` 使用角度制，绕原点，次序为 X→Y→Z；`apply_transform` 为列向量约定的仿射矩阵。
-`center` 是顶点平均值；`radius` 是到该中心的最大距离。空网格没有中心，零半径不能归一化。
-`update_faces` 保留顶点，按掩码过滤面片与面属性；`update_vertex` 过滤顶点及涉及删除顶点的面，
-重编号并保留相应顶点/面属性。两者移除旧法线，需按需要重新计算。
-`signed_volume` 的实体含义要求方向一致且无自交；`check` 不包含自相交检测，需单独调用算法。
-`get_boundary` 返回原网格顶点索引的无向边，不是已经排序的边界环。
-`is_watertight` 仅检查每条边有两个相邻面，不能证明没有自相交或顶点非流形。
-
-`get_native` 是借用的 VTK 指针，需在所属网格存活期间使用；直接修改后需遵循 VTK Modified 规则。
-同一网格不保证并发修改安全，独立 clone 可独立处理。没有自动后台线程或解释器初始化。
-复制保持深拷贝；移动转移几何，源变为空网格，不再复制大数组。
-`compute_normals(MeshNormals)` 可控制点/面、方向、翻转、特征角和分裂；分裂会改变顶点编号。
-`boundary_loops` 返回不重复闭合端点的无向循环，分叉边界报错；不保证顺/逆时针方向。
-`extract_region` 按标量闭区间选面，点属性可选择三个顶点全部满足或任一满足；返回紧凑网格。
-`filtered` 仅用于单输入 vtkPolyDataAlgorithm 且输出应为三角表面，线/顶点单元会被三角化构造器去掉。
-截面曲线使用 `slice_plane` 返回原生线 vtkPolyData，不能转成 SindreMesh 而保留线单元。
-
-## 算法与选择顺序
-
-每种操作通常只执行一个后端；`automatic` 在已开启且有实现的后端中按下表选第一个。
-默认顺序按本项目已验证的稳定性和通用性排列：VTK 负责常用基础操作，CGAL
-负责可靠的拓扑/布尔操作，MeshLib/Open3D/libigl 作为显式或专用能力后端。
-不适合该操作/没有该封装的后端不会为了优先级强行使用。Open3D Windows SDK 在部分合法小网格上
-可能出现内存分配失败；此时 `decimate/smooth/clean` 会回退到 VTK 的稳定实现，以保持常用流程可用。
-如果业务必须严格验证指定后端，应使用该后端的原生 API 或自行记录实际执行路径。
-`get_backend`、`get_supported_backends`、`get_available_backends` 可检查实际选择。
-
-| 算法 | 接口 | 后端顺序 |
-| --- | --- | --- |
-| 网格简化 | `decimate` | VTK → CGAL → MeshLib → Open3D → libigl |
-| 平滑 | `smooth` | VTK → MeshLib → Open3D |
-| 各向同性重网格 | `remesh` | CGAL → MeshLib |
-| 并/交/差 | `boolean_mesh` | CGAL → MeshLib |
-| 自相交检测 | `has_self_intersections` | CGAL → MeshLib |
-| 补洞 | `fill_holes` | VTK → CGAL → MeshLib |
-| 清理 | `clean` | VTK → MeshLib → Open3D → VCG |
-| 清理+补洞+法线 | `fix_mesh` | 按各步骤选后端；不是任意缺陷的全自动修复保证 |
-| 平均曲率 | `get_curvature` | libigl → VTK |
-| 圆边界调和 UV | `get_uv` | libigl；要求一个边界环，调用方需保证盘拓扑 |
-| ICP 配准 | `register_icp` | Open3D；点到点，返回变换/fitness/RMSE |
-| 面积加权表面采样 | `sample` | Open3D |
-| Poisson 重建 | `reconstruct_poisson` | Open3D；输入需有方向一致的非零法线 |
-| Loop 细分/平面切割/翻面 | `subdivide`, `cut_plane`, `reverse_faces` | VTK |
-| 截面/盒与球裁剪/拼接 | `slice_plane`, `clip_box`, `clip_sphere`, `append_meshes` | VTK；裁剪不封口，拼接仅保留公共兼容属性 |
-| 最近邻标签回映射 | `labels_mapping` | VTK 空间索引 |
-| 顶点↔面标签 | `vertex_labels_to_face_labels`, `face_labels_to_vertex_labels` | 多数投票；平票选较小标签，孤立点默认 -1 |
-| 归一化/高斯热图 | `get_normalize`, `get_gaussian_heatmap` | Eigen/标准数学 |
+复杂算法 Options 只包含算法参数、进度回调、取消回调和点数上限；没有后端字段。
 
 ```cpp
-u3::DecimateOptions options;
-options.target_faces = 10000;
-auto backend = u3::get_backend(u3::Operation::decimate);
-auto result = u3::decimate(mesh, options); // mesh 保持不变
-auto normalized = result.clone();
-auto normalization = u3::get_normalize(result);
-normalized.apply_transform(normalization.transform);
-// 恢复原坐标：normalized.apply_inv_transform(normalization.transform);
+u3::PointCloudFilterOptions filter_options;
+filter_options.method = u3::PointCloudFilter::voxel;
+filter_options.voxel_size = 0.02;
+auto filtered = u3::filter_point_cloud(cloud, filter_options);
+
+u3::NormalEstimationOptions normal_options;
+normal_options.k_neighbors = 30;
+auto with_normals = u3::estimate_point_normals(cloud, normal_options);
+
+auto plane = u3::segment_point_cloud_plane(cloud);
+auto clusters = u3::cluster_point_cloud_euclidean(cloud);
 ```
 
-简化的目标面数是目标，不保证严格达到（拓扑保护、误差与可折叠边限制）。
-平滑参数并非各后端数值等价：VTK strength 为 windowed-sinc pass band；
-MeshLib/Open3D strength 为移动系数。preserve_volume 是减小收缩，不是严格体积约束。
-VTK smooth 不接受 preserve_volume=false。MeshLib 使用 float32 坐标，其他路径通常为 float64。
-CGAL/MeshLib 转换会拒绝不能表示的面，不静默丢面；应先检查或修复输入拓扑。
-CGAL 布尔路径检查自相交，但仍应验证输入是方向正确的有效实体。
-补洞默认尝试所有边界，可能封闭本来有意保留的开口；切平面不自动封口。
-Poisson/采样/配准目前为 Open3D legacy CPU 路径，不承诺 CUDA。
+## SindreMesh 快速入口
 
-Windows 下固定验证组合包括 MSVC + CGAL 5.6.1 + libigl vcpkg port 2.5.0、
-官方 Open3D 0.20.0 和官方 MeshLib 3.1.4.297；`sindre.mesh` 的对应后端
-循环均已通过。当前固定 vcpkg CGAL 头文件在 clang-cl 下会在 CGAL 自身的
-迭代器代码中失败，CMake 会在配置期给出明确提示；因此不能把 clang-cl 的
-CGAL 构建宣称为已支持。MeshLib/Open3D 未安装时不会自动编译或下载。
-
-### 属性与标签
-
-所有自由算法返回新对象，输入不被修改。跨后端几何转换只交换顶点和三角面：
-法线、颜色、UV、标签等不会自动跨后端传递。即便顶点数量没有变化，也不要假定索引相同。
-拓扑变化后可显式 `labels_mapping` 回映射顶点标签，再按需要计算面标签。
-VTK 过滤器可能传播部分数组，但其插值不一定适用于离散标签；调用者必须重新验证。
-`update_geometry(v,f)` 丢弃全部旧属性；`update_geometry(v)` 保留属性、移除旧法线。
-变换重新计算法线，非均匀缩放不会直接用普通矩阵变换法线。
-VTP 支持保留自定义数组；STL/OBJ/PLY 不能保证保存全部属性，不能作为属性备份格式。
-
-## NumPy ↔ Eigen/网格
-
-同时启用 `SINDRE_WITH_UTILS_PY` 与 `SINDRE_WITH_UTILS_3D`，链接
-`sindre::utils_py` 与 `sindre::utils_3d`。解释器由 `utils_py` 按 CPython
-嵌入配置统一初始化，调用者只需要提供必要路径。
+`SindreMesh` 是常用网格操作的高层 façade，内部转发到同一套自由函数：
 
 ```cpp
-#include <sindre/utils_py.h>
-sindre::utils_py::InterpreterConfig config;
-config.python_executable = LR"(D:\运行时\Python312\python.exe)";
-config.python_home = LR"(D:\运行时\Python312)";
-auto python = sindre::utils_py::Interpreter::create(config);
-if (!python) return 1;
-// pybind11::array vertices, faces 从调用者获取：
-auto mesh = sindre::utils_py::mesh_from_arrays(vertices, faces);
-auto arrays = sindre::utils_py::arrays_from_mesh(mesh); // (vertices, faces)
-auto matrix = sindre::utils_py::matrix_from_array<double>(vertices);
-auto array = sindre::utils_py::array_from_matrix(matrix);
+auto loaded = u3::SindreMesh::load("scan.ply");
+if (!loaded) return 1;
+
+auto processed = loaded.and_then([](const u3::SindreMesh &mesh) {
+    return mesh.clean();
+}).and_then([](const u3::SindreMesh &mesh) {
+    u3::SmoothOptions options;
+    options.iterations = 10;
+    return mesh.smooth(options);
+});
+
+if (processed) {
+    auto saved = processed.value().save("cleaned.ply");
+    if (!saved) return 1;
+}
 ```
 
-全部为独立拷贝，不提供借用 NumPy 内存的零拷贝视图。支持切片、转置、负 strides 与 Fortran 布局。
-顶点为实数数组且有限；面索引必须为整数 dtype，检查 int64 溢出、负值和越界；不接受浮点索引强转。
-空数组必须仍为 `(0,3)`；一般矩阵转换要求二维。Python 调用必须通过
-`Interpreter::get_gil()`、`get_gil_release()` 或 `run_with_gil()` 持有 GIL，
-返回对象不能在解释器关闭后存活。
-这里只提供 C++ 数据转换工具，不自动生成完整 Python 扩展包。
+平滑默认作用于整个网格；局部平滑可以按顶点或面片选择区域。面片选择会自动
+平滑这些面片的三个顶点，未选中的顶点保持不变：
 
-## 验证与许可
+```cpp
+u3::SmoothOptions local;
+local.scope = u3::SmoothScope::local;
+local.vertex_indices = {10, 11, 12};
+auto locally_smoothed = mesh.smooth(local);
 
-CI 分别构建 VTK-only、五个可选后端和全部后端共存配置，执行网格/属性/变换/拓扑/算法及 NumPy 测试。
-这是合成小网格的功能验证，不是扫描数据集的稳定性或性能评测；不声称某个后端最稳定。
-发布前仍应在真实扫描数据、复杂孔洞、自交、极端尺度和大型模型上验证。
-未实现：vedo 全量交互控件、所有后端的全量 API、曲线切割/曲线偏移、体素 offset、ARAP、
-图割分割、CAD/OCC 转换与 Python 私有 `.smesh` 格式。这些不能用本页的“后端支持”替代。
+u3::SmoothOptions local_faces;
+local_faces.scope = u3::SmoothScope::local;
+local_faces.face_indices = {4, 5};
+local_faces.preserve_volume = false; // 使用普通 Laplacian 平滑
+auto face_smoothed = mesh.smooth(local_faces);
+```
 
-本次不因许可阻止接入，也不删除任何第三方版权声明。后续开源不自动满足依赖许可；
-项目 MIT 不覆盖第三方依赖，分发时需核对启用后端及其传递依赖的具体条款。
+`preserve_volume=true` 使用 VTK Windowed Sinc 平滑；设为 `false` 使用 VTK
+Laplacian 平滑。全局模式不能同时传入局部顶点或面片索引。
+
+### 高级独立算法
+
+CGAL SDF 图切分割、VTK 特征边吸附平滑和 FGCF 曲线流不作为 `SindreMesh` 成员，
+而是保持为独立算法，便于明确区分输入网格和算法结果：
+
+```cpp
+u3::CgalSegmentationOptions segmentation_options;
+segmentation_options.number_of_clusters = 6;
+auto segmented = u3::segment_mesh_by_cgal(mesh, segmentation_options);
+
+u3::FeatureSmoothingOptions feature_options;
+feature_options.preserve_features = true;
+feature_options.preserve_boundary = true;
+feature_options.snap_to_features = true;
+auto smoothed = u3::smooth_mesh_features(mesh, feature_options);
+
+u3::FgcfOptions fgcf_options;
+fgcf_options.iterations = 30;
+auto curve_result = u3::smooth_curve_by_fgcf(mesh, input_curve, fgcf_options);
+```
+
+`segment_mesh_by_cgal()` 对不满足 CGAL 几何前提的网格返回错误，不尝试静默修复；
+`smooth_mesh_features()` 保持点数和面片拓扑不变，并限制特征吸附距离；
+`smooth_curve_by_fgcf()` 每轮将曲线重新投影到网格，使用步长上限和收敛判定，适合
+作为后续曲线裁剪的稳定前处理。
+
+薄板变形使用源控制点到目标控制点的 3D Thin-Plate Spline 映射。控制点至少需要
+4 个不共面的三维点：
+
+```cpp
+u3::Vertices source = mesh.vertices();
+u3::Vertices target = source;
+for (Eigen::Index i = 0; i < target.rows(); ++i)
+    target(i, 0) += 0.25;
+
+auto deformed = mesh.deform(source, target); // 全局变形
+
+u3::DeformationOptions local_deformation;
+local_deformation.scope = u3::DeformationScope::local;
+local_deformation.vertex_indices = {0, 1, 2};
+local_deformation.regularization = 1e-8; // 可选，抑制病态控制点
+auto locally_deformed = mesh.deform(source, target, local_deformation);
+```
+
+局部变形也支持 `face_indices`；它会更新选中面片的三个顶点，其他顶点保持不变。
+控制点重复、共面、维度不一致或产生奇异系统时返回 `Result` 错误。
+
+## 多标签图切优化
+
+`optimize_labels()` 提供类似 pygco 的多标签 Potts 图模型优化，但不要求用户安装或
+暴露 pygco。输入可以是每个顶点/面片的硬标签，也可以是每个节点到各类别的概率矩阵；
+支持 alpha-expansion 和 alpha-beta swap。负的 `smooth_factor`（默认值）根据一元概率
+代价和网格几何边权自动估计，设为 `0` 可关闭邻域平滑。
+
+```cpp
+u3::GraphCutOptions graph_cut;
+graph_cut.label_level = u3::GraphCutLabelLevel::vertex;
+graph_cut.algorithm = u3::GraphCutAlgorithm::expansion;
+graph_cut.smooth_factor = -1.0; // 自动估计；0 表示只使用一元概率
+graph_cut.temperature = 1.0;
+graph_cut.keep_label = true;    // 防止优化过程中类别全部塌缩
+
+u3::Matrix probabilities(mesh.npoint(), 3);
+// 每行是一个顶点属于三个类别的概率或非负得分。
+probabilities << 0.9, 0.1, 0.0,
+                  0.1, 0.8, 0.1,
+                  0.0, 0.2, 0.8,
+                  0.8, 0.1, 0.1;
+auto optimized = mesh.optimize_labels(probabilities, graph_cut);
+if (optimized) {
+    const auto &labels = optimized.value().labels;
+}
+
+u3::Labels hard_labels = /* mesh.nface() 个面片标签 */;
+graph_cut.label_level = u3::GraphCutLabelLevel::face;
+graph_cut.class_count = 3;
+auto optimized_faces = mesh.optimize_labels(hard_labels, graph_cut);
+```
+
+`label_level=auto_detect` 会优先选择顶点标签；当顶点数和面片数相同时，建议显式指定
+粒度。所有输入校验、取消、进度回调和求解失败均通过 `Result` 处理。
+
+常用法线计算也可直接通过 `mesh.compute_normals()` 调用；复杂分析和点云算法继续使用
+同名自由函数，以便明确输入输出类型。
+
+`SindreMesh` 不保存底层后端对象，也不提供底层对象访问接口。每个成员算法返回
+`Result<SindreMesh>`，不会隐藏失败状态。
+
+网格属性可以直接读取：
+
+```cpp
+if (mesh.has_data("Normals")) {
+    auto normals = mesh.get_data("Normals");
+    if (normals) {
+        // normals.value() 是 Eigen 矩阵
+    }
+}
+auto names = mesh.data_names();
+auto face_labels = mesh.get_labels(false);
+```
+
+包围体可以直接获取：
+
+```cpp
+auto aabb = mesh.get_aabb();
+auto obb = mesh.get_obb();
+auto sphere = mesh.get_min_sphere();
+// aabb.minimum / aabb.maximum
+// obb.center / obb.axes / obb.half_extents
+// sphere.center / sphere.radius
+```
+
+曲率支持平均曲率、高斯曲率和最小/最大主曲率：
+
+```cpp
+auto mean = mesh.get_curvature(u3::CurvatureType::mean);
+auto gaussian = mesh.get_curvature(u3::CurvatureType::gaussian);
+auto kmin = mesh.get_curvature(u3::CurvatureType::minimum_principal);
+auto kmax = mesh.get_curvature(u3::CurvatureType::maximum_principal);
+```
+
+普通接口使用 VTK；需要 CGAL 的 corrected-curvature 算法时：
+
+```cpp
+u3::CurvatureOptions options;
+options.ball_radius = 0.5; // 负数使用邻接面，0 使用 CGAL 极小半径
+auto cgal_mean = mesh.get_curvature_by_cgal(
+    u3::CurvatureType::mean, options);
+```
+
+CGAL 接口同样支持四种曲率类型；未启用 CGAL 时返回
+`std::errc::function_not_supported`，不会回退到 VTK。
+
+`SindreMesh` 也提供常用快捷属性：
+
+```cpp
+auto points = mesh.vertices();
+auto triangles = mesh.faces();
+auto normals = mesh.normals();
+auto vertex_normals = mesh.vertex_normals();
+auto face_normals = mesh.face_normals();
+auto vertex_labels = mesh.vertices_labels();
+auto face_labels = mesh.faces_labels();
+```
+
+联通体拆分使用统一返回类型：
+
+```cpp
+auto largest = mesh.split(true);   // 结果只有一个元素：最大面积联通体
+auto all = mesh.split(false);      // 结果包含全部联通体
+```
+
+边界环使用相同语义：
+
+```cpp
+auto largest_boundary = mesh.boundary(true);          // 默认返回有序点索引
+auto all_boundaries = mesh.boundary(false, true);     // 全部有序边界环
+auto unordered = mesh.boundary(false, false);         // 全部边界点，按索引稳定排列
+```
+
+`ordered=true` 默认开启，返回的每个边界环中相邻点沿边界连续连接，首尾相连；
+不保证顺时针或逆时针方向。
+
+两组具有相同边界数量和对应点数的边界可以连接成三角带：
+
+```cpp
+u3::JoinStripsOptions strips;
+strips.closed = true; // 默认闭合，连接每条边界的首尾点
+auto side = lower_mesh.join_with_strips(upper_mesh, strips);
+```
+
+该接口等价于 Vedo 的 `join_with_strips()`：它按边界点的一一对应关系生成 VTK
+triangle strips，最后转换为普通三角面 `Mesh`。两个输入网格必须是开放网格，并且
+边界环数量、每个对应边界的点数一致；不满足时返回 `Result` 错误。也可以直接调用
+`join_mesh_strips()` 传入 `std::vector<Vertices>` 折线组。
+
+网格清理、修复和补洞：
+
+```cpp
+auto cleaned = mesh.clean();       // 合并重复点，并移除未被面片引用的顶点
+auto fixed = mesh.fix_mesh();      // 清理、去退化面、去重复面
+auto filled = mesh.fill_hole();    // VTK 快速补洞；也可使用 fill_holes()
+
+u3::FillHolesOptions selected;
+selected.method = u3::FillHoleMethod::ear_clipping;
+selected.boundary_vertices = {0, 1, 2, 3, 0}; // 有序点；首尾可重复表示闭合
+auto one_hole = mesh.fill_holes(selected);     // 只补这个边界环
+```
+
+`fix_mesh()` 默认优先使用 VTK 清理流程，再进行确定性的拓扑过滤；补洞不是默认
+修复步骤，可通过 `FixOptions::fill_holes` 显式开启。`FillHoleMethod::vtk` 适合
+快速补全部符合尺寸限制的洞；传入 `boundary_vertices` 时会自动切换为指定环的
+耳切三角化，不会误补其他边界。指定点必须组成一个真实的完整边界环。
+
+需要 CGAL 高级补洞时使用独立接口：
+
+```cpp
+u3::CgalFillHolesOptions options;
+options.method = u3::CgalHoleFillMethod::triangulate_refine_and_fair;
+options.use_2d_constrained_delaunay_triangulation = true;
+options.threshold_distance = 0.01;
+options.density_control_factor = 1.41421356237;
+options.fairing_continuity = 1; // C0/C1/C2，只允许 0/1/2
+options.max_hole_edges = 500;   // 0 表示不限制
+
+auto filled = mesh.fill_holes_by_cgal(options);
+```
+
+CGAL 支持纯三角化、三角化加细化、三角化加细化和 fairing 三种模式，也支持
+Delaunay、近似平面约束、平面阈值、密度和 fairing 连续性参数。传入
+`boundary_vertices` 可只处理一个完整边界环。未启用 CGAL 时返回
+`std::errc::function_not_supported`，不会静默回退到 VTK。
+
+采样、投影和最短路径：
+
+```cpp
+u3::SampleOptions sampling;
+sampling.algorithm = u3::SampleAlgorithm::farthest_point;
+auto points = mesh.sample(1000, sampling);   // 始终返回固定数量
+
+auto line = mesh.project_line(ordered_points); // 保持输入点顺序投影到表面
+auto path = mesh.find_path(start_vertex, end_vertex); // Dijkstra 网格最短路径
+
+auto cache = u3::MeshPathCache::create(mesh.mesh());
+u3::PathOptions path_options;
+path_options.cache = std::make_shared<u3::MeshPathCache>(cache.value());
+auto cached_path = mesh.find_path(start_vertex, end_vertex, path_options);
+```
+
+采样算法包括 `uniform`、`random` 和 `farthest_point`；随机采样由 `seed` 控制，
+因此可以复现。路径缓存只缓存当前网格的顶点邻接和边长，适合在同一网格上重复查询。
+
+面片简化默认使用 VTK 的边坍塌算法，并支持在构建了 CGAL 时显式选择 CGAL：
+
+```cpp
+auto simplified = mesh.simplify(10000);  // 默认 SimplifyBackend::vtk
+if (simplified) {
+    const auto actual_faces = simplified.value().faces().rows();
+}
+
+u3::SimplifyOptions options;
+options.backend = u3::SimplifyBackend::cgal;
+auto cgal_simplified = mesh.simplify(10000, options);
+```
+
+`10000` 是目标面片数。VTK/CGAL 的边坍塌会受网格拓扑、边界和合法坍塌步长约束，
+因此最终数量可能与目标不同；通过算法报告的 `output_faces`、`residual` 和
+`converged` 检查实际结果。选择 CGAL 但未启用 `SINDRE_UTILS_3D_CGAL` 时，
+接口返回 `function_not_supported`，不会静默退回 VTK。
+
+VTK 简化算法可通过 `SimplifyOptions::algorithm` 选择：
+`decimate_pro`（默认，支持拓扑保护）、`quadric_decimation`（二次误差度量）和
+`quadric_clustering`（空间网格聚类）。三者都是目标面数的近似结果，不承诺精确面数。
+
+`remesh()` 默认使用 VTK 自适应细分，以最大边长为约束并保持原有拓扑；它适合稳定地
+细化和重构表面。需要 CGAL 各向同性重网格时，可将 `RemeshOptions::backend` 设为
+`RemeshBackend::cgal`，但构建时必须启用 CGAL。
+
+网格均匀化和细分：
+
+```cpp
+auto uniform = mesh.uniformize();       // VTK：长边自适应细分 + 特征保护平滑
+auto global = mesh.subdivide(2);        // 整体 Loop 细分两轮
+
+auto local = mesh.subdivide_faces({12, 18, 19}, 1); // 只细分指定面片
+```
+
+`subdivide_faces()` 会自动共享边中点，并同步细分相邻面片的共享边，避免局部细分
+产生 T-junction 裂缝。指定面片的子面会继续参与下一轮迭代；邻接面只为保持拓扑
+一致而细分，不会被当作下一轮目标。`UniformizeOptions::backend` 设为
+`RemeshBackend::cgal` 时使用 CGAL 各向同性重网格；未启用 CGAL 时返回功能不可用错误。
+
+布尔运算必须先经过可执行性预检：
+
+```cpp
+auto preflight = u3::check_boolean_mesh(a, b, u3::BooleanOperation::intersect);
+if (!preflight || !preflight.value().can_execute) {
+    // 查看 preflight.value().reason，不要强行调用后端
+}
+
+auto result = u3::boolean_mesh(a, b, u3::BooleanOperation::intersect);
+```
+
+预检会拒绝空网格、退化面、重复/未使用顶点、非流形边、开放边界和自交网格；
+未启用 CGAL 时明确返回功能不可用。包围盒完全分离的闭合网格会使用确定性快捷路径，
+避免把不可能相交的输入送入布尔内核。
+
+闭合曲线图切裁剪：
+
+```cpp
+u3::Vertices curve(4, 3);
+curve << 2, 2, 0, 8, 2, 0, 8, 8, 0, 2, 8, 0;
+
+u3::CurveClipOptions options;
+options.region = u3::CurveClipRegion::inside;
+options.max_projection_distance = 0.5; // 0 表示不限制
+auto cropped = mesh.clip_curve(curve, options);
+```
+
+曲线点会先投影到网格表面，随后使用网格边图上的 Dijkstra 最短路径连接相邻点，
+再选择闭合回路的最小区域；因此它适合在三角网格上执行类似 MeshLib 的闭合曲线
+裁剪。曲线不需要重复首点，算法会自动闭合。`region` 可改为 `outside` 保留回路外部，
+`selection` 可改为 `largest_region`。曲线不能自交，且应位于同一连通表面附近；设置
+`max_projection_distance` 可以防止错误投影到网格的另一处。
+
+## 处理主线
+
+```text
+load_mesh
+→ validate/check
+→ clean_mesh / repair_mesh
+→ estimate normals
+→ segment or sample
+→ register point clouds
+→ reconstruct_surface
+→ save_mesh
+```
+
+点云到网格的重建要求点云包含方向一致、有限且非零的法线。
+
+## 文件读写
+
+```cpp
+auto loaded = u3::load_mesh("input.vtp");
+if (!loaded) return 1;
+
+auto saved = u3::save_mesh(loaded.value(), "output.ply");
+if (!saved) return 1;
+```
+
+支持的网格格式由当前内部 I/O 实现提供，读写失败通过 `Result` 返回，不把第三方异常传给用户。
+
+## 设计边界
+
+- 不公开 VTK、CGAL、PCL 类型；
+- 只在简化算法中提供受控的 `SimplifyBackend` 选择，不暴露任何第三方对象；
+- 不提供 `to_pcl()` 或其他底层转换接口；
+- 不承诺第三方库的全量 API 映射；
+- 后端 SDK 未启用时返回明确的功能不可用错误；
+- 真实扫描数据、大模型和极端拓扑仍需在安装对应 SDK 的环境中验证。

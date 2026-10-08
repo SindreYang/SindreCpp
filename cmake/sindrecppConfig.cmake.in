@@ -66,34 +66,32 @@ if(@SINDRE_MATH_BLAS_ENABLED@)
     endif()
     find_dependency(BLAS)
 endif()
-if(@SINDRE_WITH_LOG@ AND NOT @SINDRE_SPDLOG_BUNDLED@)
+if(NOT @SINDRE_SPDLOG_BUNDLED@)
     find_dependency(spdlog CONFIG)
 endif()
-if(@SINDRE_WITH_HTTP@)
-    if(NOT @SINDRE_HTTPLIB_BUNDLED@)
-        find_dependency(httplib CONFIG)
-    endif()
-    if(@SINDRE_HTTP_OPENSSL@)
-        find_dependency(OpenSSL CONFIG)
-    endif()
+if(NOT @SINDRE_HTTPLIB_BUNDLED@)
+    find_dependency(httplib CONFIG)
 endif()
-if(@SINDRE_WITH_CRYPTO@ AND NOT @SINDRE_HTTP_OPENSSL@)
-    find_dependency(OpenSSL CONFIG)
-endif()
-if(@SINDRE_WITH_JSON@)
-    if(NOT @SINDRE_SIMDJSON_BUNDLED@)
-        find_dependency(simdjson CONFIG)
-    endif()
+find_dependency(OpenSSL CONFIG)
+if(NOT @SINDRE_SIMDJSON_BUNDLED@)
+    find_dependency(simdjson CONFIG)
 endif()
 if(@SINDRE_CLI_USE_ARGPARSE@ AND NOT @SINDRE_ARGPARSE_BUNDLED@)
     find_dependency(argparse CONFIG)
 endif()
-if(@SINDRE_WITH_ZLIB@)
-    find_dependency(ZLIB)
-endif()
+find_dependency(ZLIB)
 if(@SINDRE_WITH_UTILS_2D@)
-    find_dependency(OpenCV @SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION@
+    find_dependency(OpenCV CONFIG REQUIRED
         COMPONENTS @SINDRE_THIRD_UTILS_2D_OPENCV_COMPONENTS@)
+    if(NOT DEFINED OpenCV_VERSION)
+        message(FATAL_ERROR "OpenCV package did not provide OpenCV_VERSION")
+    endif()
+    if(OpenCV_VERSION VERSION_LESS
+        "@SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION@")
+        message(FATAL_ERROR
+            "sindrecpp Utils_2d requires OpenCV >= "
+            "@SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION@; found ${OpenCV_VERSION}")
+    endif()
 endif()
 if(@SINDRE_WITH_UTILS_3D@)
     find_dependency(VTK @SINDRE_THIRD_UTILS_3D_VTK_MIN_VERSION@
@@ -101,42 +99,9 @@ if(@SINDRE_WITH_UTILS_3D@)
     if(@SINDRE_UTILS_3D_CGAL@)
         find_dependency(CGAL @SINDRE_THIRD_UTILS_3D_CGAL_MIN_VERSION@ CONFIG)
     endif()
-    if(@SINDRE_UTILS_3D_MESHLIB@)
-        # The official Windows SDK is distributed as headers plus DLL/import
-        # libraries and has no package config. Prefer an installed package, then
-        # reconstruct the imported target from SINDRE_MESHLIB_ROOT.
-        find_package(meshlib CONFIG QUIET)
-        if(NOT TARGET MeshLib::MRMesh AND NOT TARGET MRMesh)
-            find_path(_sindre_meshlib_include
-                MRMesh/MRMesh.h
-                HINTS "${SINDRE_MESHLIB_ROOT}" ENV SINDRE_MESHLIB_ROOT
-                PATH_SUFFIXES include)
-            find_library(_sindre_meshlib_import
-                NAMES MRMesh
-                HINTS "${SINDRE_MESHLIB_ROOT}" ENV SINDRE_MESHLIB_ROOT
-                PATH_SUFFIXES lib/Release lib)
-            find_file(_sindre_meshlib_runtime
-                NAMES MRMesh.dll
-                HINTS "${SINDRE_MESHLIB_ROOT}" ENV SINDRE_MESHLIB_ROOT
-                PATH_SUFFIXES app/Release bin)
-            if(NOT _sindre_meshlib_include OR NOT _sindre_meshlib_import OR
-               NOT _sindre_meshlib_runtime)
-                message(FATAL_ERROR
-                    "sindrecpp MeshLib support requires a MeshLib package target "
-                    "or SINDRE_MESHLIB_ROOT pointing to the official extracted SDK")
-            endif()
-            add_library(MeshLib::MRMesh SHARED IMPORTED)
-            set_target_properties(MeshLib::MRMesh PROPERTIES
-                IMPORTED_IMPLIB "${_sindre_meshlib_import}"
-                IMPORTED_LOCATION "${_sindre_meshlib_runtime}"
-                INTERFACE_INCLUDE_DIRECTORIES "${_sindre_meshlib_include}")
-        endif()
-    endif()
-    if(@SINDRE_UTILS_3D_OPEN3D@)
-        find_dependency(Open3D CONFIG)
-    endif()
-    if(@SINDRE_UTILS_3D_IGL@ AND @SINDRE_UTILS_3D_IGL_PACKAGE_FOUND@)
-        find_dependency(libigl CONFIG)
+    if(@SINDRE_UTILS_3D_PCL@)
+        find_dependency(PCL @SINDRE_THIRD_UTILS_3D_PCL_MIN_VERSION@ CONFIG
+            COMPONENTS common registration surface)
     endif()
 endif()
 if(@SINDRE_WITH_UTILS_PY@)
@@ -221,12 +186,8 @@ if(@SINDRE_WITH_AI@ AND @SINDRE_AI_TRT@)
             INTERFACE_LINK_LIBRARIES "${_sindre_tensorrt_libraries}")
     endif()
 endif()
-if(@SINDRE_WITH_RE2@)
-    find_dependency(re2 CONFIG)
-endif()
-if(@SINDRE_WITH_CRASHPAD@)
-    find_dependency(crashpad CONFIG)
-endif()
+find_dependency(re2 CONFIG)
+find_dependency(crashpad CONFIG)
 if(@SINDRE_WITH_GUI@ AND @SINDRE_GUI_GLFW_OPENGL3@)
     find_dependency(glfw3 CONFIG)
     find_dependency(OpenGL)
@@ -246,7 +207,7 @@ if(WIN32 AND "@SINDRE_GENERAL_SHARED@" STREQUAL "OFF")
     endforeach()
 endif()
 
-if(@SINDRE_WITH_CRASHPAD@ AND TARGET sindre::general_crashpad)
+if(TARGET sindre::general_crashpad)
     # The build-time Crashpad target may contain absolute package paths and is
     # intentionally not serialized into the export file. Reattach the target
     # discovered by find_dependency() after the package is loaded.

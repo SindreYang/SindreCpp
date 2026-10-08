@@ -119,6 +119,40 @@ auto result = sindre::general::runtime::retry(
 公共 API 使用 `sindre::general::Result<T>` 表达可预期失败，错误包含 `code`、
 `message` 和 `context`。第三方异常不会穿透 General 的公共错误边界。
 
+成功状态下 `Result<T>` 除了 `value()`，还支持指针式访问：
+
+```cpp
+#include <iostream>
+
+auto result = sindre::general::uuid4();
+if (!result)
+    return;
+
+std::cout << result->size() << '\n';
+std::cout << result.data()->substr(0, 8) << '\n';
+```
+
+`data()` 在失败时返回 `nullptr`；`operator->` 和 `operator*` 必须在成功状态下使用，
+误用会像 `value()` 一样确定性终止。`data()`、`value_ptr()` 和 `error_ptr()` 只允许
+在左值 `Result` 上调用，避免从临时对象取得悬空指针；对临时失败结果调用 `error()`
+会返回一个独立的 `Error` 值。对临时成功结果调用 `value()` 也会取得独立的值
+（可移动的值会从结果中移出）；`Result<void>::value()` 只检查成功状态。
+
+连续操作可以使用 `and_then()`。回调必须返回另一个 `Result<U>`；前一步失败时不会执行
+回调，原始 `Error` 会继续传递。异常构建中，回调抛出的标准异常会转换为
+`result.and_then` 上下文的 `Result` 错误；`std::system_error` 保留原错误码，
+`std::bad_alloc` 使用 `not_enough_memory`，其他异常使用 `invalid_argument`。
+严格无异常构建不包含异常捕获路径。右值失败结果会移动错误，左值失败结果会复制错误：
+
+```cpp
+auto size = sindre::general::Result<std::string>::success("sindre")
+    .and_then([](std::string text) {
+        return sindre::general::Result<std::size_t>::success(text.size());
+    });
+if (!size)
+    return 1;
+```
+
 ## 示例
 
 ```cpp
@@ -340,6 +374,25 @@ auto check = sindre::general::diagnostics::check(true, "ready");
 先轮转现有文件。
 同一个 logger 已初始化时，重复调用是幂等的；需要改变输出目标或轮转策略时先调用
 `shutdown()`。
+
+模块或子系统不应通过 `init_log()` 改变宿主的全局默认 logger。即使应用没有调用
+`init_log()`，也可以直接使用 `create_logger()`；它会基于 spdlog 自带的默认 logger 创建
+模块 logger。应用需要自定义文件、格式、轮转或异步策略时，再先调用 `init_log()`。
+`create_logger()` 创建的模块 logger 会复用默认 logger 的 sinks 和格式，只覆盖调用者明确
+传入的日志级别；同名 logger 会被复用且不会覆盖已有配置，也不会替换全局默认 logger。
+
+```cpp
+auto image_logger = sindre::general::log::create_logger(
+    "sindre.utils_2d.image", sindre::general::log::Level::info);
+if (!image_logger)
+    return image_logger.error();
+
+image_logger.value()->info("image loaded");
+```
+
+`create_logger()` 返回 `Result<LoggerPtr>`，名称不能为空；只有默认 logger 被宿主显式移除等
+异常情况下才会返回不可用错误。应用退出时由应用统一调用 `shutdown()`，模块 logger 不会被
+用来替换宿主的默认 logger。
 
 异步日志在同一个入口启用，默认仍是同步模式：
 

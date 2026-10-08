@@ -1,7 +1,7 @@
 #pragma once
-#if !defined(SINDRE_UTILS_3D_VTK_DATA)
-#error "Enable SINDRE_UTILS_3D_VTK_DATA and link sindre::utils_3d."
-#endif
+// Internal Vedo-style VTK dataset adapter. It is not installed and is only
+// usable by Utils_3d implementation files.
+#include <sindre/utils_3d/types.h>
 #include "mesh.h"
 #include <algorithm>
 #include <cctype>

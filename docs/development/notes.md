@@ -92,11 +92,12 @@ SINDRE_WITH_<MODULE>
 
 ## 6. 注意 utils_3d 模块的可移植性
 
-Utils_3d 使用 VTK 9 封装 SindreMesh，Eigen 用于数组与数学交换；MeshLib/CGAL/Open3D/libigl/VCG 后端独立开启。
+Utils_3d 对外提供后端无关的 Mesh、PointCloud 和 SindreMesh；Eigen 用于数组与数学交换。VTK、CGAL 和 PCL 只在模块内部按需实现网格、拓扑、点云配准和 Poisson 重建，用户代码不需要包含它们的头文件。
 Utils_3d 的公共接口统一使用 C++17。需要 C++20 的第三方后端不能作为当前统一构建
 配置的一部分启用；网格与 NumPy 转换全部独立拷贝。
+MeshLib 仅保留在文档中作为历史设计/依赖记录，已从当前实现、CMake 和安装导出中移除。
 跨后端算法不自动传递标签/颜色/UV；拓扑变化后需显式回映射。详见 [网格指南](../guides/mesh.md)。
-显示、数据/图像处理分别按需开启；完整能力域的项目清单、数据语义与缺项见 [VTK 指南](../guides/vtk.md)。
+显示、数据/图像处理不属于当前公开的 utils_3d API；历史设计和后端说明见 [VTK 指南](../guides/vtk.md)。
 
 `SINDRE_UTILS_3D_NATIVE_ARCH` 默认关闭；开启 `ON` 后会使用构建机器的 CPU 指令集，适合本机性能测试，不适合直接分发给不同 CPU 的用户。
 

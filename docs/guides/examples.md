@@ -51,6 +51,20 @@ build_general_basics/bin/sindre_example_general_basics.exe
 JSON 和 utils_3d 示例也可以用相同方式从自己的目录配置；它们会自动启用
 需要的 sindrecpp 模块，并在依赖缺失时由 CMake 给出明确错误。
 
+## Utils_2d 图像 facade
+
+`utils_2d_image` 展示基于 OpenCV 的 `SindreImage` 高级封装。它不隐藏 OpenCV
+核心类型，失败仍通过 `Result` 返回：
+
+```powershell
+cmake -S examples/utils_2d_image -B build_utils_2d_image -G Ninja
+cmake --build build_utils_2d_image --parallel
+build_utils_2d_image/sindre_example_utils_2d_image.exe input.png output.png
+```
+
+示例会加载图片、调整到 `400x400`、深拷贝、保存并显示窗口。服务器或无桌面环境
+可以省略窗口调用，使用 `save()` 或 `to_tensor()`。
+
 ## TensorRT 生产路径
 
 `examples/ai_tensorrt_segmentation` 是需要真实 CUDA/TensorRT SDK 的独立示例，

@@ -5,16 +5,18 @@ cmake_minimum_required(VERSION 3.20)
 # its own, while the root project can still build all enabled examples.
 add_subdirectory(general_basics)
 
-if(SINDRE_WITH_JSON)
-    add_subdirectory(general_json_config)
-else()
-    message(STATUS "Skipping general_json_config: enable SINDRE_WITH_JSON=ON")
-endif()
+add_subdirectory(general_json_config)
 
 if(SINDRE_WITH_UTILS_3D)
     add_subdirectory(utils_3d_mesh)
 else()
     message(STATUS "Skipping utils_3d_mesh: enable SINDRE_WITH_UTILS_3D=ON")
+endif()
+
+if(SINDRE_WITH_UTILS_2D)
+    add_subdirectory(utils_2d_image)
+else()
+    message(STATUS "Skipping utils_2d_image: enable SINDRE_WITH_UTILS_2D=ON")
 endif()
 
 if(SINDRE_WITH_AI AND SINDRE_AI_TRT)

@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <iostream>
+#include <utility>
 
 using namespace sindre::utils_3d;
 
@@ -19,17 +20,30 @@ int main(int argc, char **argv) {
                  1, 2, 3;
 
         SindreMesh mesh(vertices, faces);
-        mesh.compute_normals();
+        auto computed = mesh.compute_normals();
+        if (!computed) {
+            std::cerr << computed.error().describe() << '\n';
+            return 1;
+        }
+        mesh = std::move(computed.value());
         const auto output = argc > 1
                                 ? std::filesystem::path(argv[1])
                                 : std::filesystem::current_path() / "sindre-example-mesh.vtp";
-        mesh.save(output);
+        auto saved = mesh.save(output);
+        if (!saved) {
+            std::cerr << saved.error().describe() << '\n';
+            return 1;
+        }
 
-        SindreMesh loaded(output);
+        auto loaded = SindreMesh::load(output);
+        if (!loaded) {
+            std::cerr << loaded.error().describe() << '\n';
+            return 1;
+        }
         std::cout << "saved: " << output.string() << '\n'
-                  << "vertices: " << loaded.npoints() << '\n'
-                  << "faces: " << loaded.nfaces() << '\n'
-                  << "dimensions: " << loaded.dimensions().transpose() << '\n';
+                  << "vertices: " << loaded.value().npoints() << '\n'
+                  << "faces: " << loaded.value().nfaces() << '\n'
+                  << "dimensions: " << loaded.value().mesh().dimensions().transpose() << '\n';
         std::filesystem::remove(output);
         return 0;
     } catch (const std::exception &error) {
