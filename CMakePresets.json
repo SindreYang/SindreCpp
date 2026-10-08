@@ -3,12 +3,13 @@
   "configurePresets": [
     {
       "name": "windows-clang-cl",
-      "displayName": "Windows Visual Studio + ClangCL",
-      "generator": "Visual Studio 17 2022",
-      "architecture": "x64",
-      "toolset": "ClangCL",
+      "displayName": "Windows Ninja + ClangCL",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build_win",
       "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "SINDRE_BUILD_TESTS": "ON",
         "SINDRE_BUILD_EXAMPLES": "ON"
       }
@@ -62,8 +63,7 @@
   "buildPresets": [
     {
       "name": "windows-clang-cl",
-      "configurePreset": "windows-clang-cl",
-      "configuration": "RelWithDebInfo"
+      "configurePreset": "windows-clang-cl"
     },
     {
       "name": "linux-clang",
@@ -71,20 +71,17 @@
     },
     {
       "name": "ai-trt-full",
-      "configurePreset": "ai-trt-full",
-      "configuration": "RelWithDebInfo"
+      "configurePreset": "ai-trt-full"
     },
     {
       "name": "ai-trt-dispatch",
-      "configurePreset": "ai-trt-dispatch",
-      "configuration": "RelWithDebInfo"
+      "configurePreset": "ai-trt-dispatch"
     }
   ],
   "testPresets": [
     {
       "name": "windows-clang-cl",
       "configurePreset": "windows-clang-cl",
-      "configuration": "RelWithDebInfo",
       "output": {
         "outputOnFailure": true
       }

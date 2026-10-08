@@ -107,14 +107,14 @@ General 固定使用静态依赖和静态 MSVC CRT；Windows 宿主必须与 Gen
 
 ## 构建目录和运行时
 
-Windows 使用 Visual Studio 生成器和 ClangCL，Linux/WSL 使用 Ninja 和 Clang。构建目录固定为
+Windows 使用 Ninja 生成器和 Visual Studio 提供的 ClangCL 工具链，Linux/WSL 使用 Ninja 和 Clang。构建目录固定为
 `build_win/` 和 `build_linux/`，生成文件放在对应目录的 `bin/` 中。Windows 下 General、AI、GUI、utils_2d 和 utils_3d 的测试/示例
 目标会在构建后复制已发现的 DLL 到目标文件同目录，避免加载到系统中不匹配的版本。
 
 ## 快捷构建
 
 根目录提供 `scripts/build.bat` 和 `scripts/build.sh`，默认执行 Linux/WSL 或 Windows
-`RelWithDebInfo` 配置、编译和模块测试。Windows 脚本使用 Visual Studio + ClangCL，Linux
+`RelWithDebInfo` 配置、编译和模块测试。Windows 脚本会自动定位并初始化 Visual Studio，再使用 Ninja + ClangCL；Linux
 脚本使用 Ninja + Clang；OpenBLAS 为默认 Math 后端，
 由 `3rdparty/openblas/openblas.cmake` 通过固定 ExternalProject 自动构建。
 
@@ -131,10 +131,14 @@ Windows 使用 Visual Studio 生成器和 ClangCL，Linux/WSL 使用 Ninja 和 C
 安装后包的 CMake 导出也要单独验证，不能只验证源码树内的 target：
 
 ```powershell
-cmake -S tests/installed_consumer -B build_win/installed-consumer -G "Visual Studio 17 2022" -A x64 -T ClangCL `
+# Windows 命令应在 Visual Studio x64 Developer Command Prompt 中执行；
+# 仓库主构建可直接使用 scripts\build.bat，它会自动初始化该环境。
+cmake -S tests/installed_consumer -B build_win/installed-consumer -G Ninja `
+  -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl `
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo `
   -DCMAKE_PREFIX_PATH="<install>;<fixed-third-party-prefixes>"
-cmake --build build_win/installed-consumer --config RelWithDebInfo --parallel
-ctest --test-dir build_win/installed-consumer -C RelWithDebInfo --output-on-failure
+cmake --build build_win/installed-consumer --parallel
+ctest --test-dir build_win/installed-consumer --output-on-failure
 ```
 
 AI 的安装消费者测试会真实加载并运行固定版本的 ONNX Runtime。Windows
@@ -385,15 +389,14 @@ cmake --build --preset linux-clang
 ctest --preset linux-clang
 ```
 
-也可以使用根目录 `CMakePresets.json` 的快捷入口。Windows 使用 Visual Studio + ClangCL，
+也可以使用根目录 `CMakePresets.json` 的快捷入口。Windows 预设使用 Ninja + ClangCL，
 Linux 使用 Ninja + Clang；AI 预设把构建目录放在 `build_win/` 下并分开，避免 Full 和
 Dispatch 的缓存互相污染：
 
 ```powershell
 cmake --list-presets
 
-cmake --preset windows-clang-cl
-cmake --build --preset windows-clang-cl
+scripts\build.bat
 
 $env:SINDRE_TENSORRT_ROOT = "C:\Program Files\NVIDIA\TensorRT-10.11.0.33"
 $env:CUDAToolkit_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"

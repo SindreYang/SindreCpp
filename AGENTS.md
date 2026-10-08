@@ -45,21 +45,21 @@ target 或 catch-all 聚合 target。项目自己的头文件统一使用 `.h`�
 
 ## 构建入口
 
-从仓库根目录配置。Windows 固定使用 Visual Studio 生成器 + ClangCL，Linux/WSL
-固定使用 Ninja + Clang；默认配置为 `RelWithDebInfo`：
+从仓库根目录构建。Windows 使用 `scripts\build.bat` 自动发现并初始化 Visual Studio
+工具链，再用 Ninja + ClangCL；Linux/WSL 使用 `scripts/build.sh` 检查工具后再用 Ninja
+和 Clang。默认配置为 `RelWithDebInfo`：
 
 ```powershell
-cmake --preset windows-clang-cl
-cmake --build --preset windows-clang-cl
-ctest --preset windows-clang-cl
+scripts\build.bat
 ```
+
+Windows 如需直接调用 CMake，必须先进入 Visual Studio x64 Developer Command Prompt；
+普通 PowerShell 不保证 PATH 中存在 `cl`、`clang-cl` 和 `ninja`。
 
 Linux/WSL：
 
 ```bash
-cmake --preset linux-clang
-cmake --build --preset linux-clang
-ctest --preset linux-clang
+./scripts/build.sh
 ```
 
 构建目录固定为 `build_win/` 和 `build_linux/`；不要为普通测试或模块验证在
