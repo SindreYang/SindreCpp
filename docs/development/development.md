@@ -194,12 +194,17 @@ bool starts_with(...);
 4. 最小测试或示例；
 5. 文档中的使用方式。
 
+第三方原生类型只允许在确实需要互操作的模块中以明确的 `native` 入口公开；General
+的日志、JSON、HTTP 和 CLI 已经是自有 facade，不提供 spdlog、simdjson、cpp-httplib
+或 argparse 的公共类型逃生口。Math 的 Eigen 互操作是有意保留的基础数学契约，详见
+[Math 文档](../modules/math.md)。
+
 示例：
 
 ```cpp
-namespace sindre::general::log {
-using Logger = spdlog::logger;
-namespace native = spdlog;
+auto logger = sindre::general::log::create_logger("worker");
+if (logger) {
+    logger.value()->write(sindre::general::log::Level::info, "started");
 }
 ```
 
@@ -260,7 +265,7 @@ CLI 使用 `Specification::add_option()`、`add_flag()` 和 `add_positional()` �
 显式提供。新增选项必须覆盖长名称、别名、默认值、必选项、重复项、负数值、`--`
 终止符及严格编译器无异常构建的测试。
 
-调用者默认使用 `sindre::general::log`，只有需要底层高级能力时才使用 `sindre::general::log::native`。
+调用者默认使用 `sindre::general::log`；第三方日志对象不属于 General 的公共 API。
 
 System API 的命名也遵循同一规则：文件信息使用 `get_file_size()`、
 `get_file_info()`，计算操作使用 `calculate_file_sha256()`，环境变量使用

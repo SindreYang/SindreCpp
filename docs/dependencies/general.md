@@ -24,9 +24,21 @@ package does not install `httplib.h` as a public header and consumers should inc
 `sindre/general/network.h`. OpenSSL remains a transitive link dependency for the static
 General target because HTTPS and cryptographic code are compiled into the runtime.
 
-The fixed General source trees are stored under `thirds/general`.
-The fixed binary package set for RE2, Crashpad, zlib and OpenSSL is kept under
-`thirds/general/packages` and selected before any host package path.
+The General dependency registry is split into a common manifest and platform
+profiles:
+
+```text
+thirds/general/Dependencies.cmake
+thirds/general/common.cmake
+thirds/general/win/Dependencies.cmake
+thirds/general/linux/Dependencies.cmake
+```
+
+The fixed General source trees are provisioned under the ignored
+`thirds/general/sources` cache. The fixed binary package set for RE2, Crashpad,
+zlib and OpenSSL is provisioned under the ignored `thirds/general/packages`
+cache and selected before any host package path. These generated caches are not
+part of the repository's core source and must not be committed.
 Crashpad is linked through the `crashpad::crashpad` target when available.
 
 The fixed argparse source is used only by the private CLI backend when compiler exception
@@ -35,8 +47,10 @@ no-exceptions flags and uses General's internal no-exception CLI parser instead;
 not change the public CLI API or its parsing semantics.
 
 The General dependency versions and package metadata are registered in
-`thirds/general/Dependencies.cmake`. CMake selects a fixed platform profile
-with `NO_DEFAULT_PATH`; system/vcpkg installations cannot silently replace it.
+`thirds/general/common.cmake`. CMake selects a fixed platform profile from
+`thirds/general/win/Dependencies.cmake` or
+`thirds/general/linux/Dependencies.cmake` with `NO_DEFAULT_PATH`; system/vcpkg
+installations cannot silently replace it.
 
 | Platform | Profile | Triplet | Fixed Crashpad | Provisioned packages |
 | --- | --- | --- | --- | --- |

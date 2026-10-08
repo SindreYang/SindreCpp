@@ -3,6 +3,8 @@
 #include <sindre/general/system.h>
 #include <sindre/general/core.h>
 
+#include <imgui.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <exception>
@@ -75,33 +77,34 @@ private:
 } // namespace
 #endif
 
-Context::Context(ImFontAtlas *shared_font_atlas)
-    : context_(ImGui::CreateContext(shared_font_atlas)) {}
+struct Context::Impl {
+    ImGuiContext *context = nullptr;
+};
+
+Context::Context() : impl_(std::make_unique<Impl>()) {
+    impl_->context = ImGui::CreateContext();
+}
 
 Context::Context(Context &&other) noexcept
-    : context_(other.context_) {
-    other.context_ = nullptr;
-}
+    : impl_(std::move(other.impl_)) {}
 
 Context &Context::operator=(Context &&other) noexcept {
     if (this != &other) {
-        if (context_) ImGui::DestroyContext(context_);
-        context_ = other.context_;
-        other.context_ = nullptr;
+        impl_ = std::move(other.impl_);
     }
     return *this;
 }
 
 Context::~Context() {
-    if (context_) ImGui::DestroyContext(context_);
+    if (impl_ && impl_->context) ImGui::DestroyContext(impl_->context);
 }
 
-ImGuiContext *Context::get_context() const noexcept {
-    return context_;
+bool Context::is_valid() const noexcept {
+    return impl_ && impl_->context;
 }
 
 void Context::make_current() const noexcept {
-    ImGui::SetCurrentContext(context_);
+    ImGui::SetCurrentContext(impl_ ? impl_->context : nullptr);
 }
 
 std::vector<std::filesystem::path> default_font_directories() {
@@ -156,13 +159,14 @@ std::vector<std::filesystem::path> default_font_directories() {
             if (!font) return ::sindre::general::Result<FontInfo>::failure(
                 std::make_error_code(std::errc::invalid_argument),
                 "Cannot load font file", "gui.font");
-            return ::sindre::general::Result<FontInfo>::success({font, selected, false});
+            return ::sindre::general::Result<FontInfo>::success(
+                {reinterpret_cast<std::uintptr_t>(font), selected, false});
         }
         if (config.require_cjk) return ::sindre::general::Result<FontInfo>::failure(
             std::make_error_code(std::errc::no_such_file_or_directory),
             "No CJK font was found", "gui.font");
         return ::sindre::general::Result<FontInfo>::success(
-            {ImGui::GetIO().Fonts->AddFontDefault(), {}, true});
+            {reinterpret_cast<std::uintptr_t>(ImGui::GetIO().Fonts->AddFontDefault()), {}, true});
 #if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::exception &error) {
         return ::sindre::general::Result<FontInfo>::failure(
@@ -398,10 +402,13 @@ void ImageCache::clear() noexcept {
             std::make_error_code(std::errc::io_error),
             "ImGui backend initialization failed", "gui.backend");
     }
-    GuiApplication result(std::move(context), window, config.clear_color, scale, true);
+    GuiApplication result(std::move(context), static_cast<void *>(window),
+                          config.clear_color, scale, true);
     result.backend_initialized_ = true;
     glfwSetWindowUserPointer(window, &result);
-    glfwSetWindowContentScaleCallback(window, &GuiApplication::content_scale_callback);
+    glfwSetWindowContentScaleCallback(window, [](GLFWwindow *value, float x, float y) {
+        GuiApplication::content_scale_callback(static_cast<void *>(value), x, y);
+    });
     if (config.maximized) glfwMaximizeWindow(window);
     glfwSwapInterval(config.vsync ? 1 : 0);
     glfwShowWindow(window);
@@ -410,8 +417,8 @@ void ImageCache::clear() noexcept {
     return ::sindre::general::Result<GuiApplication>::success(std::move(result));
 }
 
-GuiApplication::GuiApplication(Context context, GLFWwindow *window,
-                               ImVec4 clear_color, float scale,
+GuiApplication::GuiApplication(Context context, void *window,
+                               Color clear_color, float scale,
                                bool glfw_runtime_acquired)
     : context_(std::move(context)), window_(window), clear_color_(clear_color),
       dpi_scale_(scale), glfw_runtime_acquired_(glfw_runtime_acquired) {}
@@ -424,7 +431,7 @@ GuiApplication::GuiApplication(GuiApplication &&other) noexcept
       glfw_runtime_acquired_(other.glfw_runtime_acquired_) {
     other.backend_initialized_ = false;
     other.glfw_runtime_acquired_ = false;
-    if (window_) glfwSetWindowUserPointer(window_, this);
+    if (window_) glfwSetWindowUserPointer(static_cast<GLFWwindow *>(window_), this);
 }
 
 GuiApplication &GuiApplication::operator=(GuiApplication &&other) noexcept {
@@ -438,7 +445,7 @@ GuiApplication &GuiApplication::operator=(GuiApplication &&other) noexcept {
         glfw_runtime_acquired_ = other.glfw_runtime_acquired_;
         other.backend_initialized_ = false;
         other.glfw_runtime_acquired_ = false;
-        if (window_) glfwSetWindowUserPointer(window_, this);
+        if (window_) glfwSetWindowUserPointer(static_cast<GLFWwindow *>(window_), this);
     }
     return *this;
 }
@@ -452,15 +459,11 @@ void GuiApplication::poll_events() noexcept {
 }
 
 bool GuiApplication::should_close() const noexcept {
-    return !window_ || glfwWindowShouldClose(window_) != 0;
+    return !window_ || glfwWindowShouldClose(static_cast<GLFWwindow *>(window_)) != 0;
 }
 
 void GuiApplication::request_close() noexcept {
-    if (window_) glfwSetWindowShouldClose(window_, GLFW_TRUE);
-}
-
-GLFWwindow *GuiApplication::get_window() const noexcept {
-    return window_;
+    if (window_) glfwSetWindowShouldClose(static_cast<GLFWwindow *>(window_), GLFW_TRUE);
 }
 
 float GuiApplication::get_dpi_scale() const noexcept {
@@ -484,24 +487,24 @@ float GuiApplication::get_dpi_scale() const noexcept {
     ImGui::Render();
     int width = 0;
     int height = 0;
-    glfwGetFramebufferSize(window_, &width, &height);
+    glfwGetFramebufferSize(static_cast<GLFWwindow *>(window_), &width, &height);
     glViewport(0, 0, width, height);
-    glClearColor(clear_color_.x, clear_color_.y, clear_color_.z, clear_color_.w);
+    glClearColor(clear_color_.r, clear_color_.g, clear_color_.b, clear_color_.a);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    glfwSwapBuffers(window_);
+    glfwSwapBuffers(static_cast<GLFWwindow *>(window_));
     return ::sindre::general::Result<void>::success();
 }
 
 void GuiApplication::shutdown() noexcept {
     if (window_) {
-        glfwMakeContextCurrent(window_);
+        glfwMakeContextCurrent(static_cast<GLFWwindow *>(window_));
         if (backend_initialized_) {
             ImGui_ImplOpenGL3_Shutdown();
             ImGui_ImplGlfw_Shutdown();
             backend_initialized_ = false;
         }
-        glfwDestroyWindow(window_);
+        glfwDestroyWindow(static_cast<GLFWwindow *>(window_));
         window_ = nullptr;
     }
     if (glfw_runtime_acquired_) {
@@ -510,8 +513,9 @@ void GuiApplication::shutdown() noexcept {
     }
 }
 
-void GuiApplication::content_scale_callback(GLFWwindow *window, float x, float y) {
-    auto *application = static_cast<GuiApplication *>(glfwGetWindowUserPointer(window));
+void GuiApplication::content_scale_callback(void *window, float x, float y) {
+    auto *application = static_cast<GuiApplication *>(
+        glfwGetWindowUserPointer(static_cast<GLFWwindow *>(window)));
     if (!application) return;
     application->dpi_scale_ = std::max(x, y);
     apply_dark_theme(application->dpi_scale_);
@@ -680,12 +684,14 @@ void help_marker(std::string_view text) {
     tooltip(text);
 }
 
-bool icon_button(const char *id, TextureHandle texture, ImVec2 size) {
-    return ImGui::ImageButton(id, texture, size);
+bool icon_button(const char *id, TextureHandle texture, Vec2 size) {
+    return ImGui::ImageButton(id, ImTextureRef(static_cast<ImTextureID>(texture)),
+                              ImVec2(size.x, size.y));
 }
 
-bool input_text(const char *label, std::string &value, ImGuiInputTextFlags flags) {
-    flags |= ImGuiInputTextFlags_CallbackResize;
+bool input_text(const char *label, std::string &value, InputFlags flags) {
+    auto native_flags = static_cast<ImGuiInputTextFlags>(flags) |
+                        ImGuiInputTextFlags_CallbackResize;
     struct CallbackData {
         std::string *value;
     } callback_data{&value};
@@ -699,19 +705,25 @@ bool input_text(const char *label, std::string &value, ImGuiInputTextFlags flags
     };
     if (value.capacity() < 32) value.reserve(32);
     return ImGui::InputText(label, value.data(), value.capacity() + 1,
-                            flags, callback, &callback_data);
+                            native_flags, callback, &callback_data);
 }
 
-void image(TextureHandle texture, const ImVec2 &size, const ImVec2 &uv0,
-           const ImVec2 &uv1, const ImVec4 &tint, const ImVec4 &border) {
-    ImGui::Image(texture, size, uv0, uv1, tint, border);
+void image(TextureHandle texture, const Vec2 &size, const Vec2 &uv0,
+           const Vec2 &uv1, const Color &tint, const Color &border) {
+    ImGui::Image(ImTextureRef(static_cast<ImTextureID>(texture)), ImVec2(size.x, size.y),
+                 ImVec2(uv0.x, uv0.y), ImVec2(uv1.x, uv1.y),
+                 ImVec4(tint.r, tint.g, tint.b, tint.a),
+                 ImVec4(border.r, border.g, border.b, border.a));
 }
 
-bool image_button(std::string_view id, TextureHandle texture, const ImVec2 &size,
-                  const ImVec2 &uv0, const ImVec2 &uv1, const ImVec4 &bg,
-                  const ImVec4 &tint) {
+bool image_button(std::string_view id, TextureHandle texture, const Vec2 &size,
+                  const Vec2 &uv0, const Vec2 &uv1, const Color &bg,
+                  const Color &tint) {
     const std::string stable_id(id);
-    return ImGui::ImageButton(stable_id.c_str(), texture, size, uv0, uv1, bg, tint);
+    return ImGui::ImageButton(
+        stable_id.c_str(), ImTextureRef(static_cast<ImTextureID>(texture)),
+        ImVec2(size.x, size.y), ImVec2(uv0.x, uv0.y), ImVec2(uv1.x, uv1.y),
+        ImVec4(bg.r, bg.g, bg.b, bg.a), ImVec4(tint.r, tint.g, tint.b, tint.a));
 }
 
 } // namespace sindre::gui

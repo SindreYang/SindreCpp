@@ -477,19 +477,11 @@ Result<std::string> try_to_string(const Version &value) {
 #if defined(SINDRE_WITH_JSON)
 namespace sindre::general::json {
 struct Document::State {
-    explicit State(std::string_view value) : input(value) {
-        auto parsed = parser.parse(input);
-        error = parsed.error();
-        if (error == simdjson::SUCCESS) root = parsed.value_unsafe();
-    }
-    simdjson::padded_string input;
-    Parser parser;
-    Element root;
-    simdjson::error_code error = simdjson::SUCCESS;
+    Value root;
 };
 
 Document::Document(std::shared_ptr<State> state) noexcept : state_(std::move(state)) {}
-const Element &Document::root() const noexcept { return state_->root; }
+const Value &Document::root() const noexcept { return state_->root; }
 
 namespace {
 
@@ -745,7 +737,7 @@ Result<std::string> build(const Fields &fields) noexcept {
     return stringify(Value(Object(fields)));
 }
 
-Result<Value> parse_element(const Element &element, std::string context) {
+Result<Value> parse_element(const simdjson::dom::element &element, std::string context) {
     using Type = simdjson::dom::element_type;
     switch (element.type()) {
     case Type::NULL_VALUE: return Result<Value>::success(Value(nullptr));
@@ -789,7 +781,7 @@ Result<Value> parse(std::string_view text) {
 #endif
         auto document = try_parse(text);
         if (!document) return Result<Value>::failure(document.error());
-        return parse_element(document.value().root(), "json");
+        return Result<Value>::success(document.value().root());
 #if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::bad_alloc &) {
         return Result<Value>::failure(std::make_error_code(std::errc::not_enough_memory),
@@ -808,10 +800,15 @@ Result<Document> try_parse(std::string_view json) {
 #if !defined(SINDRE_NO_EXCEPTIONS)
     try {
 #endif
-        auto state = std::make_shared<Document::State>(json);
-        if (state->error != simdjson::SUCCESS) return Result<Document>::failure(
+        simdjson::dom::parser parser;
+        auto parsed = parser.parse(simdjson::padded_string(json));
+        if (parsed.error() != simdjson::SUCCESS) return Result<Document>::failure(
             std::make_error_code(std::errc::invalid_argument),
-            "Invalid JSON: " + std::string(simdjson::error_message(state->error)), "json.parse");
+            "Invalid JSON: " + std::string(simdjson::error_message(parsed.error())), "json.parse");
+        auto root = parse_element(parsed.value_unsafe(), "json");
+        if (!root) return Result<Document>::failure(root.error());
+        auto state = std::make_shared<Document::State>();
+        state->root = std::move(root.value());
         return Result<Document>::success(Document(std::move(state)));
 #if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::exception &error) {

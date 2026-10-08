@@ -15,9 +15,9 @@ set(SINDRE_THIRDS_DIR "${SINDRE_SOURCE_DIR}/thirds" CACHE PATH
 list(APPEND CMAKE_MODULE_PATH "${SINDRE_SOURCE_DIR}/cmake")
 
 include(CTest)
+include("${SINDRE_THIRDS_DIR}/Dependencies.cmake")
 include(Options)
 include(OutputLayout)
-include("${SINDRE_THIRDS_DIR}/Dependencies.cmake")
 include(Common)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)

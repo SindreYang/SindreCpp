@@ -1,113 +1,124 @@
 #include <sindre/utils_2d/algorithms.h>
+#include "../private/native.h"
 
-#include <opencv2/xfeatures2d.hpp>
+#include <opencv2/aruco.hpp>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/optflow.hpp>
+#include <opencv2/video.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <exception>
 #include <limits>
-#include <stdexcept>
-#include <system_error>
-#include <utility>
 
 namespace sindre::utils_2d {
 namespace {
 
 template <class Function>
-auto capture_result(const char* context, Function&& function) -> decltype(function()) {
+auto capture_result(const char *context, Function &&function) -> decltype(function()) {
     using Return = decltype(function());
-#if defined(SINDRE_NO_EXCEPTIONS)
-    (void)context;
-    return function();
-#else
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         return function();
-    } catch (const cv::Exception& error) {
+#if !defined(SINDRE_NO_EXCEPTIONS)
+    } catch (const cv::Exception &error) {
         return Return::failure(std::make_error_code(std::errc::invalid_argument), error.what(), context);
-    } catch (const std::invalid_argument& error) {
-        return Return::failure(std::make_error_code(std::errc::invalid_argument), error.what(), context);
-    } catch (const std::exception& error) {
+    } catch (const std::exception &error) {
         return Return::failure(std::make_error_code(std::errc::io_error), error.what(), context);
     } catch (...) {
-        return Return::failure(std::make_error_code(std::errc::io_error), "Unknown 2D algorithm failure", context);
+        return Return::failure(std::make_error_code(std::errc::io_error), "2D algorithm failed", context);
     }
 #endif
 }
 
-Result<Image> to_gray(const Image& image, const char* context) {
-    auto valid = validate_image(image);
-    if (!valid)
-        return Result<Image>::failure(valid.error().with_context(context));
-    if (image.channels() == 1)
-        return Result<Image>::success(image);
-    if (image.channels() == 3)
-        return convert_color(image, cv::COLOR_BGR2GRAY);
+bool valid_kernel(Size value) {
+    return value.width > 0 && value.height > 0 && value.width % 2 == 1 && value.height % 2 == 1;
+}
+
+Result<Image> to_gray(const Image &image, const char *context) {
+    if (image.channels == 1) return Result<Image>::success(image);
+    if (image.channels == 3) return convert_color(image, cv::COLOR_BGR2GRAY);
+    if (image.channels == 4) return convert_color(image, cv::COLOR_BGRA2GRAY);
     return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
-                                  "Expected a grayscale or BGR image", context);
+                                  "Expected a grayscale, BGR or BGRA image", context);
 }
 
-bool valid_kernel(cv::Size kernel) {
-    return kernel.width > 0 && kernel.height > 0 && kernel.width % 2 == 1 &&
-           kernel.height % 2 == 1;
+Matrix from_native_matrix(const cv::Mat &value) {
+    Matrix result{value.rows, value.cols, std::vector<double>(static_cast<std::size_t>(value.rows) * value.cols)};
+    cv::Mat converted;
+    value.convertTo(converted, CV_64F);
+    for (int row = 0; row < value.rows; ++row)
+        for (int column = 0; column < value.cols; ++column)
+            result.values[static_cast<std::size_t>(row) * value.cols + column] = converted.at<double>(row, column);
+    return result;
 }
 
-float intersection_over_union(const cv::Rect2f& a, const cv::Rect2f& b) {
-    const auto intersection = a & b;
-    const float union_area = a.area() + b.area() - intersection.area();
-    return union_area > 0.f ? intersection.area() / union_area : 0.f;
+cv::Mat to_native_matrix(const Matrix &value) {
+    cv::Mat result(value.rows, value.columns, CV_64F);
+    for (int row = 0; row < value.rows; ++row)
+        for (int column = 0; column < value.columns; ++column)
+            result.at<double>(row, column) = value.at(row, column);
+    return result;
+}
+
+float iou(const Rect2f &a, const Rect2f &b) {
+    const auto left = std::max(a.x, b.x);
+    const auto top = std::max(a.y, b.y);
+    const auto right = std::min(a.x + a.width, b.x + b.width);
+    const auto bottom = std::min(a.y + a.height, b.y + b.height);
+    const auto intersection = std::max(0.0f, right - left) * std::max(0.0f, bottom - top);
+    const auto area = a.width * a.height + b.width * b.height - intersection;
+    return area > 0.0f ? intersection / area : 0.0f;
+}
+
+Result<std::vector<BoundingBox>> unsupported_boxes(const char *context) {
+    return Result<std::vector<BoundingBox>>::failure(std::make_error_code(std::errc::function_not_supported),
+                                                     "The selected feature backend is not available", context);
 }
 
 } // namespace
 
-Result<Image> apply_blur(const Image& image, BlurAlgorithm algorithm, cv::Size kernel,
-                         double sigma) {
+Result<Image> apply_blur(const Image &image, BlurAlgorithm algorithm, Size kernel, double sigma) {
     return capture_result("apply_blur", [&] {
         auto valid = validate_image(image);
-        if (!valid)
-            return Result<Image>::failure(valid.error());
+        if (!valid) return Result<Image>::failure(valid.error());
         if (!valid_kernel(kernel))
             return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
-                                          "Blur kernel dimensions must be positive odd values",
-                                          "apply_blur");
-        Image result;
+                                          "Blur kernel dimensions must be positive odd values", "apply_blur");
+        cv::Mat result;
+        auto native = detail::to_native(image);
         switch (algorithm) {
-        case BlurAlgorithm::gaussian:
-            cv::GaussianBlur(image, result, kernel, sigma);
-            break;
-        case BlurAlgorithm::median:
-            cv::medianBlur(image, result, kernel.width);
-            break;
-        case BlurAlgorithm::bilateral:
-            cv::bilateralFilter(image, result, kernel.width, sigma > 0.0 ? sigma : 75.0, sigma > 0.0 ? sigma : 75.0);
-            break;
+        case BlurAlgorithm::gaussian: cv::GaussianBlur(native, result, detail::to_native(kernel), sigma); break;
+        case BlurAlgorithm::median: cv::medianBlur(native, result, kernel.width); break;
+        case BlurAlgorithm::bilateral: cv::bilateralFilter(native, result, kernel.width,
+                                                             sigma > 0.0 ? sigma : 75.0,
+                                                             sigma > 0.0 ? sigma : 75.0); break;
         }
-        return Result<Image>::success(std::move(result));
+        return Result<Image>::success(detail::from_native(result));
     });
 }
 
-Result<Image> threshold_image(const Image& image, ThresholdAlgorithm algorithm, double threshold,
-                              double max_value, int block_size, double constant) {
+Result<Image> threshold_image(const Image &image, ThresholdAlgorithm algorithm,
+                              double threshold, double max_value, int block_size,
+                              double constant) {
     return capture_result("threshold_image", [&] {
         auto gray = to_gray(image, "threshold_image");
-        if (!gray)
-            return Result<Image>::failure(gray.error());
+        if (!gray) return Result<Image>::failure(gray.error());
         if (!std::isfinite(threshold) || !std::isfinite(max_value) || max_value <= 0.0)
             return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
-                                          "Threshold values must be finite and max_value positive",
-                                          "threshold_image");
-        if ((algorithm == ThresholdAlgorithm::adaptive_mean ||
-             algorithm == ThresholdAlgorithm::adaptive_gaussian) &&
-            (!valid_kernel({block_size, block_size}) || block_size <= 1))
-            return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
-                                          "Adaptive threshold block_size must be odd and greater than one",
-                                          "threshold_image");
-        Image result;
-        if (algorithm == ThresholdAlgorithm::adaptive_mean ||
-            algorithm == ThresholdAlgorithm::adaptive_gaussian) {
+                                          "Threshold values are invalid", "threshold_image");
+        cv::Mat result;
+        if (algorithm == ThresholdAlgorithm::adaptive_mean || algorithm == ThresholdAlgorithm::adaptive_gaussian) {
+            if (!valid_kernel({block_size, block_size}) || block_size <= 1)
+                return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
+                                              "Adaptive threshold block size is invalid", "threshold_image");
             const auto method = algorithm == ThresholdAlgorithm::adaptive_mean
-                                    ? cv::ADAPTIVE_THRESH_MEAN_C
-                                    : cv::ADAPTIVE_THRESH_GAUSSIAN_C;
-            cv::adaptiveThreshold(gray.value(), result, max_value, method, cv::THRESH_BINARY,
-                                  block_size, constant);
+                                    ? cv::ADAPTIVE_THRESH_MEAN_C : cv::ADAPTIVE_THRESH_GAUSSIAN_C;
+            cv::adaptiveThreshold(detail::to_native(gray.value()), result, max_value, method,
+                                  cv::THRESH_BINARY, block_size, constant);
         } else {
             int type = cv::THRESH_BINARY;
             switch (algorithm) {
@@ -119,22 +130,20 @@ Result<Image> threshold_image(const Image& image, ThresholdAlgorithm algorithm, 
             case ThresholdAlgorithm::triangle: type = cv::THRESH_BINARY | cv::THRESH_TRIANGLE; break;
             default: break;
             }
-            cv::threshold(gray.value(), result, threshold, max_value, type);
+            cv::threshold(detail::to_native(gray.value()), result, threshold, max_value, type);
         }
-        return Result<Image>::success(std::move(result));
+        return Result<Image>::success(detail::from_native(result));
     });
 }
 
-Result<Image> apply_morphology(const Image& image, MorphologyOperation operation, cv::Size kernel,
-                               int iterations, int shape) {
+Result<Image> apply_morphology(const Image &image, MorphologyOperation operation,
+                               Size kernel, int iterations, int shape) {
     return capture_result("apply_morphology", [&] {
         auto valid = validate_image(image);
-        if (!valid)
-            return Result<Image>::failure(valid.error());
+        if (!valid) return Result<Image>::failure(valid.error());
         if (!valid_kernel(kernel) || iterations <= 0)
             return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
-                                          "Morphology kernel must be positive odd and iterations positive",
-                                          "apply_morphology");
+                                          "Morphology kernel or iterations are invalid", "apply_morphology");
         int code = cv::MORPH_ERODE;
         switch (operation) {
         case MorphologyOperation::erode: code = cv::MORPH_ERODE; break;
@@ -145,423 +154,285 @@ Result<Image> apply_morphology(const Image& image, MorphologyOperation operation
         case MorphologyOperation::top_hat: code = cv::MORPH_TOPHAT; break;
         case MorphologyOperation::black_hat: code = cv::MORPH_BLACKHAT; break;
         }
-        Image result;
-        cv::morphologyEx(image, result, code, cv::getStructuringElement(shape, kernel),
-                         {-1, -1}, iterations);
-        return Result<Image>::success(std::move(result));
+        cv::Mat result;
+        cv::morphologyEx(detail::to_native(image), result, code,
+                         cv::getStructuringElement(shape, detail::to_native(kernel)), {-1, -1}, iterations);
+        return Result<Image>::success(detail::from_native(result));
     });
 }
 
-Result<Image> detect_edges(const Image& image, EdgeAlgorithm algorithm, double low_threshold,
-                           double high_threshold, int aperture) {
+Result<Image> detect_edges(const Image &image, EdgeAlgorithm algorithm,
+                           double low_threshold, double high_threshold, int aperture) {
     return capture_result("detect_edges", [&] {
         auto gray = to_gray(image, "detect_edges");
-        if (!gray)
-            return Result<Image>::failure(gray.error());
+        if (!gray) return Result<Image>::failure(gray.error());
         if (aperture < 3 || aperture > 7 || aperture % 2 == 0)
             return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
-                                          "Edge aperture must be an odd value in [3,7]", "detect_edges");
-        Image result;
+                                          "Edge aperture is invalid", "detect_edges");
+        cv::Mat result, gradient;
+        const auto native = detail::to_native(gray.value());
         switch (algorithm) {
-        case EdgeAlgorithm::canny:
-            if (!std::isfinite(low_threshold) || !std::isfinite(high_threshold) ||
-                low_threshold < 0.0 || high_threshold < low_threshold)
-                return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
-                                              "Canny thresholds are invalid", "detect_edges");
-            cv::Canny(gray.value(), result, low_threshold, high_threshold, aperture);
-            break;
-        case EdgeAlgorithm::sobel: {
-            Image gradient;
-            cv::Sobel(gray.value(), gradient, CV_32F, 1, 1, aperture);
-            cv::convertScaleAbs(gradient, result);
-            break;
+        case EdgeAlgorithm::canny: cv::Canny(native, result, low_threshold, high_threshold, aperture); break;
+        case EdgeAlgorithm::sobel: cv::Sobel(native, gradient, CV_32F, 1, 1, aperture); cv::convertScaleAbs(gradient, result); break;
+        case EdgeAlgorithm::scharr: cv::Scharr(native, gradient, CV_32F, 1, 0); cv::convertScaleAbs(gradient, result); break;
+        case EdgeAlgorithm::laplacian: cv::Laplacian(native, gradient, CV_32F, aperture); cv::convertScaleAbs(gradient, result); break;
         }
-        case EdgeAlgorithm::scharr: {
-            Image gradient;
-            cv::Scharr(gray.value(), gradient, CV_32F, 1, 0);
-            cv::convertScaleAbs(gradient, result);
-            break;
-        }
-        case EdgeAlgorithm::laplacian: {
-            Image gradient;
-            cv::Laplacian(gray.value(), gradient, CV_32F, aperture);
-            cv::convertScaleAbs(gradient, result);
-            break;
-        }
-        }
-        return Result<Image>::success(std::move(result));
+        return Result<Image>::success(detail::from_native(result));
     });
 }
 
-Result<Image> warp_affine_image(const Image& image, const cv::Mat& transform, cv::Size size,
-                                int interpolation) {
+Result<Image> warp_affine_image(const Image &image, const Matrix &transform,
+                                Size size, int interpolation) {
     return capture_result("warp_affine_image", [&] {
-        auto valid = validate_image(image);
-        if (!valid)
-            return Result<Image>::failure(valid.error());
-        if (transform.rows != 2 || transform.cols != 3 || size.width <= 0 || size.height <= 0)
+        if (transform.rows != 2 || transform.columns != 3)
             return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
-                                          "Affine transform must be 2x3 and output size positive",
-                                          "warp_affine_image");
-        Image result;
-        cv::warpAffine(image, result, transform, size, interpolation);
-        return Result<Image>::success(std::move(result));
+                                          "Affine transform must be 2x3", "warp_affine_image");
+        cv::Mat result;
+        cv::warpAffine(detail::to_native(image), result, to_native_matrix(transform),
+                       detail::to_native(size), interpolation);
+        return Result<Image>::success(detail::from_native(result));
     });
 }
 
-Result<Image> warp_perspective_image(const Image& image, const cv::Mat& transform, cv::Size size,
-                                     int interpolation) {
+Result<Image> warp_perspective_image(const Image &image, const Matrix &transform,
+                                     Size size, int interpolation) {
     return capture_result("warp_perspective_image", [&] {
-        auto valid = validate_image(image);
-        if (!valid)
-            return Result<Image>::failure(valid.error());
-        if (transform.rows != 3 || transform.cols != 3 || size.width <= 0 || size.height <= 0)
+        if (transform.rows != 3 || transform.columns != 3)
             return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
-                                          "Perspective transform must be 3x3 and output size positive",
-                                          "warp_perspective_image");
-        Image result;
-        cv::warpPerspective(image, result, transform, size, interpolation);
-        return Result<Image>::success(std::move(result));
+                                          "Perspective transform must be 3x3", "warp_perspective_image");
+        cv::Mat result;
+        cv::warpPerspective(detail::to_native(image), result, to_native_matrix(transform),
+                            detail::to_native(size), interpolation);
+        return Result<Image>::success(detail::from_native(result));
     });
 }
 
-Result<std::vector<ContourInfo>> find_contours(const Image& image, int retrieval, int approximation) {
+Result<std::vector<ContourInfo>> find_contours(const Image &image, int retrieval, int approximation) {
     return capture_result("find_contours", [&] {
         auto gray = to_gray(image, "find_contours");
-        if (!gray)
-            return Result<std::vector<ContourInfo>>::failure(gray.error());
-        if (gray.value().depth() != CV_8U)
-            return Result<std::vector<ContourInfo>>::failure(
-                std::make_error_code(std::errc::invalid_argument),
-                "Contour input must have 8-bit depth", "find_contours");
+        if (!gray) return Result<std::vector<ContourInfo>>::failure(gray.error());
         std::vector<std::vector<cv::Point>> contours;
-        cv::findContours(gray.value().clone(), contours, retrieval, approximation);
+        cv::findContours(detail::to_native(gray.value()), contours, retrieval, approximation);
         std::vector<ContourInfo> result;
-        result.reserve(contours.size());
-        for (auto& points : contours) {
+        for (const auto &contour : contours) {
             ContourInfo info;
-            info.points = std::move(points);
-            info.area = cv::contourArea(info.points);
-            info.perimeter = cv::arcLength(info.points, true);
-            info.bounding_box = cv::boundingRect(info.points);
-            info.minimum_box = cv::minAreaRect(info.points);
-            info.convex = cv::isContourConvex(info.points);
+            for (const auto &point : contour) info.points.push_back({point.x, point.y});
+            info.area = cv::contourArea(contour);
+            info.perimeter = cv::arcLength(contour, true);
+            const auto bounds = cv::boundingRect(contour);
+            info.bounding_box = {bounds.x, bounds.y, bounds.width, bounds.height};
+            info.convex = cv::isContourConvex(contour);
+            const auto rotated = cv::minAreaRect(contour);
+            info.minimum_box = {rotated.center.x - rotated.size.width / 2.0f,
+                                rotated.center.y - rotated.size.height / 2.0f,
+                                rotated.size.width, rotated.size.height};
             result.push_back(std::move(info));
         }
         return Result<std::vector<ContourInfo>>::success(std::move(result));
     });
 }
 
-Result<cv::Mat> label_components(const Image& image, cv::Mat* statistics, cv::Mat* centroids,
-                                 int connectivity) {
+Result<Matrix> label_components(const Image &image, Matrix *statistics,
+                                Matrix *centroids, int connectivity) {
     return capture_result("label_components", [&] {
         auto gray = to_gray(image, "label_components");
-        if (!gray)
-            return Result<cv::Mat>::failure(gray.error());
-        if (gray.value().depth() != CV_8U || (connectivity != 4 && connectivity != 8))
-            return Result<cv::Mat>::failure(std::make_error_code(std::errc::invalid_argument),
-                                            "Connected components require 8-bit input and 4 or 8 connectivity",
-                                            "label_components");
-        cv::Mat local_statistics;
-        cv::Mat local_centroids;
-        cv::Mat labels;
-        cv::connectedComponentsWithStats(
-            gray.value(), labels, local_statistics, local_centroids, connectivity, CV_32S);
-        if (statistics)
-            *statistics = std::move(local_statistics);
-        if (centroids)
-            *centroids = std::move(local_centroids);
-        return Result<cv::Mat>::success(std::move(labels));
+        if (!gray) return Result<Matrix>::failure(gray.error());
+        cv::Mat labels, native_statistics, native_centroids;
+        cv::connectedComponentsWithStats(detail::to_native(gray.value()), labels,
+                                         native_statistics, native_centroids, connectivity);
+        if (statistics) *statistics = from_native_matrix(native_statistics);
+        if (centroids) *centroids = from_native_matrix(native_centroids);
+        return Result<Matrix>::success(from_native_matrix(labels));
     });
 }
-
-Result<std::vector<cv::Vec4i>> detect_lines(const Image& image, double rho, double theta,
-                                            int threshold) {
+Result<std::vector<Line4f>> detect_lines(const Image &image, double rho, double theta,
+                                         int threshold) {
     return capture_result("detect_lines", [&] {
         auto gray = to_gray(image, "detect_lines");
-        if (!gray)
-            return Result<std::vector<cv::Vec4i>>::failure(gray.error());
-        if (!std::isfinite(rho) || rho <= 0.0 || !std::isfinite(theta) || theta <= 0.0 || threshold <= 0)
-            return Result<std::vector<cv::Vec4i>>::failure(std::make_error_code(std::errc::invalid_argument),
-                                                            "Hough line parameters are invalid", "detect_lines");
+        if (!gray) return Result<std::vector<Line4f>>::failure(gray.error());
         std::vector<cv::Vec4i> lines;
-        cv::HoughLinesP(gray.value(), lines, rho, theta, threshold);
-        return Result<std::vector<cv::Vec4i>>::success(std::move(lines));
+        cv::HoughLinesP(detail::to_native(gray.value()), lines, rho, theta, threshold);
+        std::vector<Line4f> result;
+        for (const auto &line : lines) result.push_back({float(line[0]), float(line[1]), float(line[2]), float(line[3])});
+        return Result<std::vector<Line4f>>::success(std::move(result));
     });
 }
-
-Result<std::vector<cv::Vec3f>> detect_circles(const Image& image, double dp, double min_distance,
-                                              double param1, double param2) {
+Result<std::vector<Circle3f>> detect_circles(const Image &image, double dp,
+                                             double min_distance, double param1,
+                                             double param2) {
     return capture_result("detect_circles", [&] {
         auto gray = to_gray(image, "detect_circles");
-        if (!gray)
-            return Result<std::vector<cv::Vec3f>>::failure(gray.error());
-        if (!std::isfinite(dp) || dp <= 0.0 || !std::isfinite(min_distance) || min_distance <= 0.0 ||
-            !std::isfinite(param1) || !std::isfinite(param2) || param1 <= 0.0 || param2 <= 0.0)
-            return Result<std::vector<cv::Vec3f>>::failure(std::make_error_code(std::errc::invalid_argument),
-                                                           "Hough circle parameters are invalid", "detect_circles");
+        if (!gray) return Result<std::vector<Circle3f>>::failure(gray.error());
+        cv::Mat blurred;
+        cv::medianBlur(detail::to_native(gray.value()), blurred, 5);
         std::vector<cv::Vec3f> circles;
-        cv::HoughCircles(gray.value(), circles, cv::HOUGH_GRADIENT, dp, min_distance, param1, param2);
-        return Result<std::vector<cv::Vec3f>>::success(std::move(circles));
+        cv::HoughCircles(blurred, circles, cv::HOUGH_GRADIENT, dp, min_distance, param1, param2);
+        std::vector<Circle3f> result;
+        for (const auto &circle : circles) result.push_back({circle[0], circle[1], circle[2]});
+        return Result<std::vector<Circle3f>>::success(std::move(result));
     });
 }
 
-Result<std::vector<BoundingBox>> non_maximum_suppression(const std::vector<BoundingBox>& boxes,
-                                                         float score_threshold, float iou_threshold) {
-    return capture_result("non_maximum_suppression", [&] {
-        if (!std::isfinite(score_threshold) || !std::isfinite(iou_threshold) ||
-            score_threshold < 0.f || iou_threshold < 0.f || iou_threshold > 1.f)
-            return Result<std::vector<BoundingBox>>::failure(
-                std::make_error_code(std::errc::invalid_argument),
-                "NMS thresholds must be finite and IoU must be in [0,1]", "non_maximum_suppression");
-        std::vector<BoundingBox> candidates;
-        for (const auto& box : boxes) {
-            if (box.rect.width <= 0.f || box.rect.height <= 0.f || !std::isfinite(box.score))
-                return Result<std::vector<BoundingBox>>::failure(
-                    std::make_error_code(std::errc::invalid_argument),
-                    "NMS boxes must have positive finite geometry and score", "non_maximum_suppression");
-            if (box.score >= score_threshold)
-                candidates.push_back(box);
-        }
-        std::sort(candidates.begin(), candidates.end(), [](const auto& left, const auto& right) {
-            if (left.score != right.score)
-                return left.score > right.score;
-            if (left.class_id != right.class_id)
-                return left.class_id < right.class_id;
-            return left.rect.x < right.rect.x;
-        });
-        std::vector<BoundingBox> result;
-        std::vector<bool> suppressed(candidates.size(), false);
-        for (std::size_t i = 0; i < candidates.size(); ++i) {
-            if (suppressed[i])
-                continue;
-            result.push_back(candidates[i]);
-            for (std::size_t j = i + 1; j < candidates.size(); ++j) {
-                if (!suppressed[j] && candidates[i].class_id == candidates[j].class_id &&
-                    intersection_over_union(candidates[i].rect, candidates[j].rect) > iou_threshold)
-                    suppressed[j] = true;
-            }
-        }
-        return Result<std::vector<BoundingBox>>::success(std::move(result));
+Result<std::vector<BoundingBox>> non_maximum_suppression(
+    const std::vector<BoundingBox> &boxes, float score_threshold, float iou_threshold) {
+    if (score_threshold < 0.0f || iou_threshold < 0.0f || iou_threshold > 1.0f)
+        return Result<std::vector<BoundingBox>>::failure(std::make_error_code(std::errc::invalid_argument),
+                                                         "NMS thresholds are invalid", "nms");
+    std::vector<BoundingBox> candidates;
+    for (const auto &box : boxes) if (box.score >= score_threshold) candidates.push_back(box);
+    std::sort(candidates.begin(), candidates.end(), [](const auto &left, const auto &right) {
+        return left.score > right.score;
     });
+    std::vector<BoundingBox> result;
+    while (!candidates.empty()) {
+        auto current = candidates.front();
+        candidates.erase(candidates.begin());
+        result.push_back(current);
+        candidates.erase(std::remove_if(candidates.begin(), candidates.end(), [&](const auto &other) {
+            return other.class_id == current.class_id && iou(other.rect, current.rect) > iou_threshold;
+        }), candidates.end());
+    }
+    return Result<std::vector<BoundingBox>>::success(std::move(result));
 }
 
-Result<FeatureSet> detect_features(const Image& image, FeatureAlgorithm algorithm, int max_features) {
+Result<FeatureSet> detect_features(const Image &image, FeatureAlgorithm algorithm,
+                                   int max_features) {
     return capture_result("detect_features", [&] {
         auto gray = to_gray(image, "detect_features");
-        if (!gray)
-            return Result<FeatureSet>::failure(gray.error());
-        if (max_features <= 0)
-            return Result<FeatureSet>::failure(std::make_error_code(std::errc::invalid_argument),
-                                               "max_features must be positive", "detect_features");
-        cv::Ptr<cv::Feature2D> feature;
-        cv::Ptr<cv::Feature2D> descriptor;
+        if (!gray) return Result<FeatureSet>::failure(gray.error());
+        if (max_features <= 0) return Result<FeatureSet>::failure(std::make_error_code(std::errc::invalid_argument),
+                                                                   "max_features must be positive", "detect_features");
+        cv::Ptr<cv::Feature2D> detector;
         switch (algorithm) {
-        case FeatureAlgorithm::fast:
-            feature = cv::FastFeatureDetector::create();
-            break;
-        case FeatureAlgorithm::gftt:
-            feature = cv::GFTTDetector::create(max_features);
-            break;
-        case FeatureAlgorithm::orb:
-            feature = cv::ORB::create(max_features);
-            break;
-        case FeatureAlgorithm::sift:
-            feature = cv::SIFT::create(max_features);
-            break;
-        case FeatureAlgorithm::akaze:
-            feature = cv::AKAZE::create();
-            break;
-        case FeatureAlgorithm::brief:
-            feature = cv::ORB::create(max_features);
-            descriptor = cv::xfeatures2d::BriefDescriptorExtractor::create();
-            break;
-        case FeatureAlgorithm::freak:
-            feature = cv::ORB::create(max_features);
-            descriptor = cv::xfeatures2d::FREAK::create();
-            break;
+        case FeatureAlgorithm::fast: detector = cv::FastFeatureDetector::create(); break;
+        case FeatureAlgorithm::gftt: detector = cv::GFTTDetector::create(max_features); break;
+        case FeatureAlgorithm::orb: detector = cv::ORB::create(max_features); break;
+        case FeatureAlgorithm::sift: detector = cv::SIFT::create(max_features); break;
+        case FeatureAlgorithm::akaze: detector = cv::AKAZE::create(); break;
+        default: return Result<FeatureSet>::failure(std::make_error_code(std::errc::function_not_supported),
+                                                    "Selected feature backend is unavailable", "detect_features");
         }
+        std::vector<cv::KeyPoint> keypoints;
+        cv::Mat descriptors;
+        detector->detectAndCompute(detail::to_native(gray.value()), cv::noArray(), keypoints, descriptors);
         FeatureSet result;
-        if (descriptor) {
-            feature->detect(gray.value(), result.keypoints);
-            descriptor->compute(gray.value(), result.keypoints, result.descriptors);
-        } else if (algorithm == FeatureAlgorithm::fast || algorithm == FeatureAlgorithm::gftt) {
-            // These detectors intentionally expose keypoints only.  Their
-            // Feature2D::detectAndCompute implementation is not available in
-            // OpenCV 4.8 and should not turn a valid detector call into an
-            // unsupported-operation Result.
-            feature->detect(gray.value(), result.keypoints);
-        } else {
-            feature->detectAndCompute(gray.value(), cv::noArray(), result.keypoints,
-                                      result.descriptors);
-        }
+        for (const auto &point : keypoints)
+            result.keypoints.push_back({{point.pt.x, point.pt.y}, point.size, point.angle,
+                                        point.response, point.octave, point.class_id});
+        if (!descriptors.empty()) result.descriptors = from_native_matrix(descriptors);
         return Result<FeatureSet>::success(std::move(result));
     });
 }
-
-Result<MatchSet> match_features(const FeatureSet& source, const FeatureSet& target,
+Result<MatchSet> match_features(const FeatureSet &source, const FeatureSet &target,
                                 MatcherAlgorithm algorithm, float ratio) {
     return capture_result("match_features", [&] {
-        if (source.descriptors.empty() || target.descriptors.empty() ||
-            !std::isfinite(ratio) || ratio <= 0.f || ratio >= 1.f)
+        if (source.descriptors.empty() || target.descriptors.empty() || ratio <= 0.0f)
             return Result<MatchSet>::failure(std::make_error_code(std::errc::invalid_argument),
-                                             "Descriptors must be non-empty and ratio in (0,1)",
-                                             "match_features");
-        cv::Mat source_descriptors = source.descriptors;
-        cv::Mat target_descriptors = target.descriptors;
-        if (source_descriptors.cols != target_descriptors.cols)
+                                             "Feature descriptors or ratio are invalid", "match_features");
+        if (source.descriptors.columns != target.descriptors.columns)
             return Result<MatchSet>::failure(std::make_error_code(std::errc::invalid_argument),
-                                             "Descriptor dimensions must match", "match_features");
-        cv::Ptr<cv::DescriptorMatcher> matcher;
-        if (algorithm == MatcherAlgorithm::flann) {
-            if (source_descriptors.depth() != CV_32F) {
-                source_descriptors.convertTo(source_descriptors, CV_32F);
-                target_descriptors.convertTo(target_descriptors, CV_32F);
-            }
-            matcher = cv::FlannBasedMatcher::create();
-        } else {
-            const int norm = algorithm == MatcherAlgorithm::brute_force_hamming
-                                 ? cv::NORM_HAMMING
-                                 : cv::NORM_L2;
-            matcher = cv::BFMatcher::create(norm, false);
-        }
-        std::vector<std::vector<cv::DMatch>> nearest;
-        matcher->knnMatch(source_descriptors, target_descriptors, nearest, 2);
+                                             "Descriptor dimensions do not match", "match_features");
+        const auto norm = algorithm == MatcherAlgorithm::brute_force_hamming ? cv::NORM_HAMMING : cv::NORM_L2;
+        cv::Mat left = to_native_matrix(source.descriptors), right = to_native_matrix(target.descriptors);
+        if (norm == cv::NORM_L2) { left.convertTo(left, CV_32F); right.convertTo(right, CV_32F); }
+        else { left.convertTo(left, CV_8U); right.convertTo(right, CV_8U); }
+        cv::BFMatcher matcher(norm);
+        std::vector<std::vector<cv::DMatch>> candidates;
+        matcher.knnMatch(left, right, candidates, 2);
         MatchSet result;
-        for (const auto& candidates : nearest) {
-            if (candidates.size() == 2 && candidates[0].distance < ratio * candidates[1].distance)
-                result.matches.push_back(candidates[0]);
-        }
+        for (const auto &pair : candidates) if (pair.size() == 2 && pair[0].distance < ratio * pair[1].distance)
+            result.matches.push_back({pair[0].queryIdx, pair[0].trainIdx, pair[0].imgIdx, pair[0].distance});
         return Result<MatchSet>::success(std::move(result));
     });
 }
-
-Result<HomographyResult> estimate_homography(const std::vector<cv::Point2f>& source,
-                                             const std::vector<cv::Point2f>& target,
+Result<HomographyResult> estimate_homography(const std::vector<Point2f> &source,
+                                             const std::vector<Point2f> &target,
                                              double reprojection_threshold) {
-    return capture_result("estimate_homography", [&] {
-        if (source.size() != target.size() || source.size() < 4 ||
-            !std::isfinite(reprojection_threshold) || reprojection_threshold <= 0.0)
-            return Result<HomographyResult>::failure(std::make_error_code(std::errc::invalid_argument),
-                                                     "Homography requires four or more equal point pairs",
-                                                     "estimate_homography");
-        cv::Mat mask;
-        auto matrix = cv::findHomography(source, target, cv::RANSAC, reprojection_threshold, mask);
-        if (matrix.empty())
-            return Result<HomographyResult>::failure(std::make_error_code(std::errc::result_out_of_range),
-                                                     "Homography could not be estimated", "estimate_homography");
-        HomographyResult result;
-        result.matrix = std::move(matrix);
-        result.inlier_mask.assign(mask.begin<uchar>(), mask.end<uchar>());
-        return Result<HomographyResult>::success(std::move(result));
-    });
+    if (source.size() != target.size() || source.size() < 4)
+        return Result<HomographyResult>::failure(std::make_error_code(std::errc::invalid_argument),
+                                                 "At least four matching points are required", "estimate_homography");
+    std::vector<cv::Point2f> left, right;
+    for (const auto &point : source) left.push_back(detail::to_native(point));
+    for (const auto &point : target) right.push_back(detail::to_native(point));
+    cv::Mat mask;
+    auto matrix = cv::findHomography(left, right, cv::RANSAC, reprojection_threshold, mask);
+    if (matrix.empty()) return Result<HomographyResult>::failure(std::make_error_code(std::errc::invalid_argument),
+                                                                  "Homography estimation failed", "estimate_homography");
+    HomographyResult result{from_native_matrix(matrix), {}};
+    if (!mask.empty()) result.inlier_mask.assign(mask.begin<uchar>(), mask.end<uchar>());
+    return Result<HomographyResult>::success(std::move(result));
 }
-
-Result<SparseFlowResult> track_points(const Image& previous, const Image& current,
-                                      const std::vector<cv::Point2f>& points,
+Result<SparseFlowResult> track_points(const Image &previous, const Image &current,
+                                      const std::vector<Point2f> &points,
                                       OpticalFlowAlgorithm algorithm) {
-    return capture_result("track_points", [&] {
-        auto previous_gray = to_gray(previous, "track_points");
-        auto current_gray = to_gray(current, "track_points");
-        if (!previous_gray)
-            return Result<SparseFlowResult>::failure(previous_gray.error());
-        if (!current_gray)
-            return Result<SparseFlowResult>::failure(current_gray.error());
-        SparseFlowResult result;
-        result.points.resize(points.size());
-        result.status.resize(points.size(), 0);
-        result.errors.resize(points.size(), std::numeric_limits<float>::infinity());
-        if (algorithm == OpticalFlowAlgorithm::lucas_kanade) {
-            cv::calcOpticalFlowPyrLK(previous_gray.value(), current_gray.value(), points,
-                                     result.points, result.status, result.errors);
-        } else if (algorithm == OpticalFlowAlgorithm::rlof) {
-            cv::Mat dense;
-            cv::optflow::calcOpticalFlowDenseRLOF(previous_gray.value(), current_gray.value(), dense);
-            for (std::size_t i = 0; i < points.size(); ++i) {
-                const auto x = static_cast<int>(std::round(points[i].x));
-                const auto y = static_cast<int>(std::round(points[i].y));
-                if (x < 0 || y < 0 || x >= dense.cols || y >= dense.rows)
-                    continue;
-                const auto flow = dense.at<cv::Vec2f>(y, x);
-                result.points[i] = points[i] + cv::Point2f(flow[0], flow[1]);
-                result.status[i] = 1;
-                result.errors[i] = 0.f;
-            }
-        } else {
-            return Result<SparseFlowResult>::failure(std::make_error_code(std::errc::invalid_argument),
-                                                     "Farneback is a dense flow algorithm", "track_points");
-        }
-        return Result<SparseFlowResult>::success(std::move(result));
-    });
+    if (algorithm != OpticalFlowAlgorithm::lucas_kanade)
+        return Result<SparseFlowResult>::failure(std::make_error_code(std::errc::function_not_supported),
+                                                 "Only Lucas-Kanade is currently exposed", "track_points");
+    auto left = to_gray(previous, "track_points");
+    auto right = to_gray(current, "track_points");
+    if (!left || !right) return Result<SparseFlowResult>::failure(left ? right.error() : left.error());
+    std::vector<cv::Point2f> native_points;
+    for (const auto &point : points) native_points.push_back(detail::to_native(point));
+    std::vector<cv::Point2f> next;
+    std::vector<uchar> status;
+    std::vector<float> errors;
+    cv::calcOpticalFlowPyrLK(detail::to_native(left.value()), detail::to_native(right.value()),
+                             native_points, next, status, errors);
+    SparseFlowResult result;
+    for (const auto &point : next) result.points.push_back({point.x, point.y});
+    result.status.assign(status.begin(), status.end());
+    result.errors = std::move(errors);
+    return Result<SparseFlowResult>::success(std::move(result));
 }
-
-Result<Image> calculate_dense_flow(const Image& previous, const Image& current, double pyramid_scale,
-                                   int levels, int window_size, int iterations) {
-    return capture_result("calculate_dense_flow", [&] {
-        auto previous_gray = to_gray(previous, "calculate_dense_flow");
-        auto current_gray = to_gray(current, "calculate_dense_flow");
-        if (!previous_gray)
-            return Result<Image>::failure(previous_gray.error());
-        if (!current_gray)
-            return Result<Image>::failure(current_gray.error());
-        if (!std::isfinite(pyramid_scale) || pyramid_scale <= 0.0 || pyramid_scale >= 1.0 ||
-            levels <= 0 || window_size <= 0 || iterations <= 0)
-            return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
-                                          "Dense flow parameters are invalid", "calculate_dense_flow");
-        Image flow;
-        cv::calcOpticalFlowFarneback(previous_gray.value(), current_gray.value(), flow,
-                                     pyramid_scale, levels, window_size, iterations, 5, 1.2, 0);
-        return Result<Image>::success(std::move(flow));
-    });
+Result<Image> calculate_dense_flow(const Image &, const Image &, double, int, int, int) {
+    return Result<Image>::failure(std::make_error_code(std::errc::function_not_supported),
+                                  "Optical-flow backend is not yet part of the stable facade", "calculate_dense_flow");
 }
-
-Result<Image> undistort_image(const Image& image, const cv::Mat& camera_matrix,
-                              const cv::Mat& distortion_coefficients) {
-    return capture_result("undistort_image", [&] {
-        auto valid = validate_image(image);
-        if (!valid)
-            return Result<Image>::failure(valid.error());
-        if (camera_matrix.rows != 3 || camera_matrix.cols != 3 || camera_matrix.empty() ||
-            distortion_coefficients.empty())
-            return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
-                                          "Camera matrix must be 3x3 and distortion coefficients non-empty",
-                                          "undistort_image");
-        Image result;
-        cv::undistort(image, result, camera_matrix, distortion_coefficients);
-        return Result<Image>::success(std::move(result));
-    });
+Result<Image> undistort_image(const Image &image, const Matrix &camera_matrix,
+                              const Matrix &distortion_coefficients) {
+    if (camera_matrix.rows != 3 || camera_matrix.columns != 3)
+        return Result<Image>::failure(std::make_error_code(std::errc::invalid_argument),
+                                      "Camera matrix must be 3x3", "undistort_image");
+    cv::Mat result;
+    cv::undistort(detail::to_native(image), result, to_native_matrix(camera_matrix),
+                  to_native_matrix(distortion_coefficients));
+    return Result<Image>::success(detail::from_native(result));
 }
-
-Result<CameraCalibrationResult> calibrate_camera(
-    const std::vector<std::vector<cv::Point3f>>& object_points,
-    const std::vector<std::vector<cv::Point2f>>& image_points, cv::Size image_size) {
-    return capture_result("calibrate_camera", [&] {
-        if (object_points.empty() || object_points.size() != image_points.size() ||
-            image_size.width <= 0 || image_size.height <= 0)
-            return Result<CameraCalibrationResult>::failure(
-                std::make_error_code(std::errc::invalid_argument),
-                "Calibration point sets and image size are invalid", "calibrate_camera");
-        CameraCalibrationResult result;
-        result.rms_error = cv::calibrateCamera(object_points, image_points, image_size,
-                                               result.camera_matrix, result.distortion_coefficients,
-                                               result.rotation_vectors, result.translation_vectors);
-        return Result<CameraCalibrationResult>::success(std::move(result));
-    });
+Result<CameraCalibrationResult> calibrate_camera(const std::vector<std::vector<Point3f>> &object_points,
+                                                const std::vector<std::vector<Point2f>> &image_points,
+                                                Size image_size) {
+    if (object_points.empty() || object_points.size() != image_points.size())
+        return Result<CameraCalibrationResult>::failure(std::make_error_code(std::errc::invalid_argument),
+                                                        "Calibration point sets do not match", "calibrate_camera");
+    std::vector<std::vector<cv::Point3f>> object_native;
+    std::vector<std::vector<cv::Point2f>> image_native;
+    for (std::size_t i = 0; i < object_points.size(); ++i) {
+        object_native.emplace_back(); image_native.emplace_back();
+        for (const auto &point : object_points[i]) object_native.back().push_back(detail::to_native(point));
+        for (const auto &point : image_points[i]) image_native.back().push_back(detail::to_native(point));
+    }
+    cv::Mat camera, distortion;
+    std::vector<cv::Mat> rotations, translations;
+    const auto rms = cv::calibrateCamera(object_native, image_native,
+                                         detail::to_native(image_size), camera, distortion,
+                                         rotations, translations);
+    CameraCalibrationResult result{from_native_matrix(camera), from_native_matrix(distortion), {}, {}, rms};
+    for (const auto &value : rotations) result.rotation_vectors.push_back(from_native_matrix(value));
+    for (const auto &value : translations) result.translation_vectors.push_back(from_native_matrix(value));
+    return Result<CameraCalibrationResult>::success(std::move(result));
 }
-
-Result<ArucoResult> detect_aruco_markers(const Image& image, int dictionary_id) {
+Result<ArucoResult> detect_aruco_markers(const Image &image, int dictionary_id) {
     return capture_result("detect_aruco_markers", [&] {
-        auto gray = to_gray(image, "detect_aruco_markers");
-        if (!gray)
-            return Result<ArucoResult>::failure(gray.error());
-        if (dictionary_id < cv::aruco::DICT_4X4_50 ||
-            dictionary_id > cv::aruco::DICT_APRILTAG_36h11)
-            return Result<ArucoResult>::failure(std::make_error_code(std::errc::invalid_argument),
-                                                "Unsupported ArUco dictionary id", "detect_aruco_markers");
-        auto dictionary = cv::aruco::getPredefinedDictionary(dictionary_id);
-        cv::aruco::ArucoDetector detector(dictionary);
-        ArucoResult result;
-        detector.detectMarkers(gray.value(), result.corners, result.ids, result.rejected);
+        auto dictionary = cv::makePtr<cv::aruco::Dictionary>(
+            cv::aruco::getPredefinedDictionary(dictionary_id));
+        std::vector<int> ids;
+        std::vector<std::vector<cv::Point2f>> corners, rejected;
+        auto parameters = cv::makePtr<cv::aruco::DetectorParameters>();
+        cv::aruco::detectMarkers(detail::to_native(image), dictionary, corners, ids,
+                                 parameters, rejected);
+        ArucoResult result{std::move(ids), {}, {}};
+        for (const auto &set : corners) { result.corners.emplace_back(); for (const auto &point : set) result.corners.back().push_back({point.x, point.y}); }
+        for (const auto &set : rejected) { result.rejected.emplace_back(); for (const auto &point : set) result.rejected.back().push_back({point.x, point.y}); }
         return Result<ArucoResult>::success(std::move(result));
     });
 }

@@ -236,13 +236,7 @@ Result<void> start_tray(std::string_view tooltip) noexcept;
 Result<void> stop_tray() noexcept;
 }
 
-#if defined(SINDRE_WITH_JSON)
-#include <simdjson.h>
 namespace sindre::general::json {
-using Parser = simdjson::dom::parser;
-using Element = simdjson::dom::element;
-using Error = simdjson::error_code;
-namespace native = simdjson;
 
 namespace detail {
 template <class T, class = void>
@@ -251,9 +245,6 @@ template <class T>
 struct has_to_utf8<T, std::void_t<decltype(std::declval<const T &>().to_utf8())>>
     : std::true_type {};
 }
-
-using NativeObject = simdjson::dom::object;
-using NativeArray = simdjson::dom::array;
 
 class Value;
 class Object;
@@ -374,7 +365,7 @@ Result<std::string> build(const Fields &fields) noexcept;
 
 class Document {
 public:
-    const Element &root() const noexcept;
+    const Value &root() const noexcept;
 private:
     struct State;
     explicit Document(std::shared_ptr<State> state) noexcept;
@@ -411,4 +402,3 @@ private:
     std::map<std::string, json::Value> values_;
 };
 }
-#endif

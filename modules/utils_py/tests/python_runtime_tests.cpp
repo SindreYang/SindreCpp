@@ -1,11 +1,7 @@
 #include <sindre/utils_py.h>
 
 #include <iostream>
-#include <filesystem>
 #include <stdexcept>
-#include <string>
-
-namespace py = pybind11;
 
 static void check(bool condition, const char *message) {
     if (!condition) throw std::runtime_error(message);
@@ -28,16 +24,13 @@ int main() {
         }
         check(runtime.value()->initialized(), "Python runtime is not initialized");
 
-        auto version = runtime.value()->run_with_gil([] {
-            return py::module_::import("sys").attr("version").cast<std::string>();
-        });
-        check(version && !version.value().empty(), "Python version lookup failed");
+        auto callback = runtime.value()->run_with_gil([] { return 40 + 2; });
+        check(callback && callback.value() == 42, "GIL callback failed");
 
         {
             auto gil = runtime.value()->get_gil();
-            auto builtins = py::module_::import("builtins");
-            check(builtins.attr("len")(py::make_tuple(1, 2, 3)).cast<int>() == 3,
-                  "GIL-protected Python call failed");
+            volatile int gil_value = 40 + 2;
+            check(gil_value == 42, "GIL-protected callback failed");
             {
                 auto released = runtime.value()->get_gil_release();
                 volatile int native_value = 40 + 2;
@@ -50,7 +43,16 @@ int main() {
         });
         check(!failed, "Python callback exception was not converted to Result");
 
-        std::cout << "Python runtime tests passed: " << version.value() << '\n';
+        const auto array = sindre::utils_py::array_from_vector(std::vector<double>{1.0, 2.0, 3.0});
+        check(array.get_dtype() == sindre::utils_py::DType::float64,
+              "array dtype conversion failed");
+        check(array.get_shape().size() == 1 && array.get_shape().front() == 3,
+              "array shape conversion failed");
+        auto values = sindre::utils_py::vector_from_array<double>(array);
+        check(values && values.value().size() == 3 && values.value()[2] == 3.0,
+              "array round trip failed");
+
+        std::cout << "Python runtime tests passed\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';

@@ -21,7 +21,8 @@ sindre::general::string::trim(...);
 spdlog::logger logger;
 ```
 
-需要高级能力时，通过 `native` 提供逃生口。
+需要高级能力时，应在对应模块明确记录原生互操作边界；General 的日志、JSON、HTTP
+和 CLI 不提供第三方类型逃生口，Math 的 Eigen 互操作是单独记录的基础契约。
 
 ## 2. 不要过度拆分
 

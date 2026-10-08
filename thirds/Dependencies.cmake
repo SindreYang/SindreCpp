@@ -7,6 +7,17 @@ include(FetchContent)
 set(SINDRE_THIRDS_DIR "${CMAKE_CURRENT_LIST_DIR}" CACHE PATH
     "sindre third-party dependency registry")
 
+# Keep downloaded sources and generated FetchContent trees out of the source
+# tree.  A caller may point this cache at a shared local/CI location; the
+# default remains inside the build directory and is never installed or
+# exported as part of sindrecpp.
+set(SINDRE_THIRD_PARTY_CACHE_DIR "${CMAKE_BINARY_DIR}/_third_party_cache" CACHE PATH
+    "Local cache for downloaded third-party sources and generated build data")
+set(FETCHCONTENT_BASE_DIR "${SINDRE_THIRD_PARTY_CACHE_DIR}/fetchcontent" CACHE PATH
+    "FetchContent source cache for sindrecpp third-party dependencies")
+
+include("${SINDRE_THIRDS_DIR}/general/Dependencies.cmake")
+
 function(sindre_thirds_declare_git name repository tag)
     if(NOT repository OR NOT tag)
         message(FATAL_ERROR

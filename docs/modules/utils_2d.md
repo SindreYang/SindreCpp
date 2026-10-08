@@ -4,9 +4,8 @@
 说明模块 target 和启用方式；依赖要求见 [Utils_2d 依赖说明](../dependencies/utils_2d.md)。
 
 `sindre::utils_2d` is a static library target. 图像 I/O、预处理和算法接口统一使用
-`sindre::general::Result<T>` 表达失败。OpenCV remains
-available through `sindre::utils_2d::native`, so the wrapper does not hide the
-native `cv::Mat` API.
+`sindre::general::Result<T>` 表达失败。公共头只使用 Sindre 自有的 `Image`、几何
+结构和 `Matrix`；OpenCV 只在静态库实现中加载，不会进入消费者的编译接口。
 
 Enable with `SINDRE_WITH_UTILS_2D=ON`. CMake discovers an installed OpenCV 4
 SDK with matching `opencv_contrib` modules and registers `sindre.utils_2d` when tests are enabled. The module is
@@ -19,17 +18,19 @@ an official archive, `OpenCV_DIR` must point to the directory containing
 OpenCV DLL directory must also be on `PATH` when an executable starts; the
 module copies it beside its own tests when the directory can be inferred.
 
-算法封装覆盖滤波、阈值、形态学、边缘、轮廓、连通域、Hough、NMS、特征匹配、
-单应性、光流、去畸变、相机标定和 ArUco。基础测试覆盖 Unicode 路径、读写、颜色转换、
-letterbox 和 NCHW tensor 转换。OpenCV 4.8 或更高版本必须是带匹配版本 contrib
-的构建，缺少 contrib 模块时配置阶段直接失败。当前仓库代码和算法测试已用本机
-OpenCV 4.9 + contrib 头文件完成 clang-cl 语法编译；完整运行测试仍需要可运行的
+稳定 facade 当前覆盖滤波、阈值、形态学、边缘、轮廓、连通域、霍夫线/圆、NMS、
+仿射/透视变换、ORB/SIFT/AKAZE/FAST/GFTT 特征、BF/FLANN 匹配、单应性、
+Lucas-Kanade 稀疏跟踪、去畸变、相机标定、ArUco 和 NCHW tensor；BRIEF/FREAK、
+Farneback/RLOF 及 dense flow 因为公共 `Image` 只承载拥有的 8-bit 像素，当前明确
+返回 `function_not_supported`。不会把 OpenCV 对象泄漏给调用方。基础测试覆盖 Unicode
+路径、读写、letterbox、NCHW tensor 和核心算法调用。OpenCV 4.8 或更高版本必须是带匹配
+版本 contrib 的构建，缺少 contrib 模块时配置阶段直接失败。完整运行测试仍需要可运行的
 CPU 或 CUDA DLL 集合。
 
 ## SindreImage 高级封装
 
-`Image` 仍然是 OpenCV `cv::Mat` 的别名，适合需要直接使用 OpenCV 的高级用户。
-普通图像处理可以使用 `SindreImage`，它复用同一组 OpenCV 后端和自由函数：
+`Image` 是由模块拥有的连续 8-bit 图像数据结构，包含宽、高、通道数和像素字节。
+普通图像处理可以使用 `SindreImage`，它复用同一组私有 OpenCV 后端和自由函数：
 
 ```cpp
 #include <sindre/utils_2d.h>
@@ -60,8 +61,7 @@ std::cout << *copy;
 tensor 转换。修改操作成功后才替换内部图像，失败时保留原图。需要 `scale/left/top`
 等 letterbox 元数据时继续使用 `create_letterbox()`。
 
-`operator<<` 只输出图像信息，例如 `empty`、`width`、`height`、`channels`、类型、字节数
-和连续性，不会输出像素数据。
+`operator<<` 只输出图像信息，不会输出像素数据。
 
 内存编解码适合网络或 AI 推理管线，不需要中间临时文件：
 
@@ -77,11 +77,6 @@ if (!decoded)
 `show()` 使用 OpenCV HighGUI，默认窗口名为 `sindre_image`，默认等待窗口关闭。
 无桌面环境或窗口后端不可用时返回结构化错误；因此服务器和 CI 应优先使用保存或
 tensor API，不要在后台任务中调用 `show()`。
-
-启用日志时，`SindreImage` 会按需创建固定名称的 logger
-`sindre.utils_2d.image`。它继承 General 默认 logger 的输出目标和格式，不会调用
-`init_log()`，也不会替换宿主程序的全局默认 logger；图像操作失败会保留 `Result` 错误，
-日志失败不会改变图像操作结果。
 
 独立示例位于 [`examples/utils_2d_image`](../../examples/utils_2d_image)，构建命令：
 

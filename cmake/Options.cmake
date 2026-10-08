@@ -39,7 +39,6 @@ set(SINDRE_MSVC_STATIC_RUNTIME ON)
 
 # General is the mandatory foundation. Its public integrations and dependency
 # profile are fixed; they are deliberately not user-selectable feature flags.
-include("${SINDRE_THIRDS_DIR}/general/Dependencies.cmake")
 set(SINDRE_WITH_MATH ON)
 option(SINDRE_GENERAL_BUILD_LIBRARY "Build the compiled General runtime library" ON)
 option(SINDRE_GENERAL_SHARED "Build General as a shared library" OFF)

@@ -5,7 +5,8 @@
 
 `utils_py` provides the optional Python/NumPy bridge for sindre. It is kept
 outside `General` because it requires a Python development installation and
-pybind11.
+pybind11. pybind11 and CPython are implementation details: the public header
+does not expose pybind11, NumPy, Eigen, or Python object types.
 
 The module is a compiled shared library. It is disabled by default and is
 enabled with `SINDRE_WITH_UTILS_PY=ON`. The supported runtime is Python 3.12+
@@ -24,13 +25,15 @@ if (!interpreter) {
 }
 auto gil = interpreter.value()->get_gil();
 auto array = sindre::utils_py::array_from_vector(std::vector<double>{1.0, 2.0});
+auto values = sindre::utils_py::vector_from_array<double>(array);
 ```
 
 跨线程执行 Python 代码时可以让模块自动管理 GIL，并统一接收错误：
 
 ```cpp
 auto result = interpreter.value()->run_with_gil([&] {
-    return pybind11::module_::import("numpy").attr("__version__").cast<std::string>();
+    // Python-facing work is performed by the private implementation layer.
+    return 40 + 2;
 });
 if (!result) {
     // result.error() is sindre::general::Error
@@ -50,7 +53,9 @@ auto gil = interpreter.value()->get_gil();
 use_python_objects_again();
 ```
 
-`pybind11` 对象的创建、使用和销毁都应位于 `GilGuard` 作用域内。
+如果应用确实需要直接使用 pybind11，可以在应用自己的实现层引入它；
+`sindre::utils_py` 的公共接口只负责解释器生命周期、GIL 和自有字节数组，
+不会把第三方对象跨越 DLL 边界。
 
 `utils_py` is a compiled shared library. `get_runtime()` uses CPython's
 `PyPreConfig` and `PyConfig` internally and initializes or attaches to the
@@ -113,18 +118,20 @@ cmake -S . -B build_win -G Ninja `
 cmake --build build_win --parallel 4
 ```
 
-The runtime test does not require VTK or `utils_3d`. If `SINDRE_WITH_UTILS_3D=ON`
-is also enabled, the additional NumPy/mesh conversion test is built.
+The runtime test does not require VTK or `utils_3d`. The array bridge test also
+uses only the public `Array` value type, so it does not require NumPy or
+`utils_3d`.
 
-The Windows clang-cl verification used uv-managed Python 3.12.9, NumPy 2.5.3
-and pybind11 3.1.0. Both the embedded runtime test and the NumPy/mesh exchange
-test passed. This module remains a shared library because it embeds CPython;
+The Windows clang-cl verification used uv-managed Python 3.12.9 and pybind11
+3.1.0. The embedded runtime and public byte-array exchange tests passed. A
+separate NumPy/mesh exchange API is no longer part of the public contract. This
+module remains a shared library because it embeds CPython;
 the other C++ modules can stay static without changing this boundary.
 
 The public CMake target is `sindre::utils_py`, enabled with
 `SINDRE_WITH_UTILS_PY=ON`. The namespace is `sindre::utils_py`, matching the
 module directory and public include path.
 
-NumPy is imported by the caller's Python environment at runtime. Mesh/Math
-conversion helpers are available when `SINDRE_WITH_UTILS_3D=ON` is enabled
-for the consuming target as well.
+NumPy remains an implementation/runtime dependency for applications that
+embed NumPy, but the stable public exchange format is `Array` (dtype, shape,
+and owned bytes). This keeps the C++ ABI independent of NumPy and Eigen.

@@ -7,9 +7,28 @@
 `thirds/` 是 sindrecpp 的第三方依赖登记区。每个公共模块在这里维护自己的
 依赖来源、版本和接入方式；模块实现只负责选择功能，不再散落 Git 地址和版本号。
 
+顶层 `CMakeLists.txt` 只负责配置入口和模块编排；模块自己的
+`modules/<module>/CMakeLists.txt` 继续负责目标、源文件和模块测试。
+
+General 的平台依赖选择位于：
+
+```text
+thirds/general/
+├── Dependencies.cmake       # 公共入口和平台分派
+├── common.cmake             # 固定版本、来源和缓存位置
+├── win/Dependencies.cmake   # Windows profile/triplet
+└── linux/Dependencies.cmake # Linux/WSL profile/triplet
+```
+
 General 的固定源码和固定 vcpkg 二进制包已经登记在 `thirds/general/`；Math 的
 Eigen/OpenBLAS 固定依赖登记在 `thirds/math/`，配置时强制使用这些版本。其他模块的可选依赖仍可由 CMake
 FetchContent 下载到构建目录 `_deps/`；宿主项目也可以按模块规则显式提供 SDK/target。
+
+下载源码、FetchContent 树、vcpkg `installed/` 包和构建产物均属于本地缓存，不能作为
+项目核心源码提交。FetchContent 默认使用 `${CMAKE_BINARY_DIR}/_third_party_cache`，也可通过
+`SINDRE_THIRD_PARTY_CACHE_DIR` 指定 CI 或共享缓存目录。General 当前已有的固定源码和包缓存
+仍可通过 `SINDRE_THIRD_GENERAL_SOURCE_ROOT`、`SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT`
+指定；这些目录默认被 Git 忽略。
 
 ## 目录
 

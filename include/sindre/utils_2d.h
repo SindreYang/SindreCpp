@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file
-/// @brief OpenCV 图像、预处理和 2D 算法聚合入口。
+/// @brief 不暴露 OpenCV 的 2D 图像和预处理 facade。
 
 #if !defined(SINDRE_WITH_UTILS_2D)
 #error "Enable SINDRE_WITH_UTILS_2D and link sindre::utils_2d."
@@ -9,10 +9,7 @@
 
 #include <sindre/general/core.h>
 
-#include <opencv2/core.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
-
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -22,86 +19,134 @@ namespace sindre::utils_2d {
 
 using ::sindre::general::Result;
 
-/// @brief OpenCV 图像类型别名；高级用户可直接使用 native 命名空间。
-using Image = cv::Mat;
-namespace native = cv;
+struct Size {
+    int width = 0;
+    int height = 0;
+};
 
-/// @brief 校验图像非空且确实是二维图像。
-Result<void> validate_image(const Image& image);
-/// @brief 将平台路径转换为 OpenCV 可接受的 UTF-8 字符串。
-std::string path_to_utf8(const std::filesystem::path& path);
+struct Point {
+    int x = 0;
+    int y = 0;
+};
 
-/// @brief 从文件加载图像。
-Result<Image> load_image(const std::string& path, int flags = cv::IMREAD_COLOR);
-Result<Image> load_image(const std::filesystem::path& path, int flags = cv::IMREAD_COLOR);
+struct Point2f {
+    float x = 0.0f;
+    float y = 0.0f;
+};
 
-/// @brief 将图像保存到文件。
-Result<void> save_image(const Image& image, const std::string& path,
-                        const std::vector<int>& options = {});
-Result<void> save_image(const Image& image, const std::filesystem::path& path,
-                        const std::vector<int>& options = {});
+struct Point3f {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+};
 
-/// @brief 调整图像尺寸。
-Result<Image> resize_image(const Image& image, cv::Size size,
-                           int interpolation = cv::INTER_LINEAR);
-/// @brief 裁剪矩形区域。
-Result<Image> crop_image(const Image& image, cv::Rect region);
-/// @brief 执行 OpenCV 颜色空间转换。
-Result<Image> convert_color(const Image& image, int conversion);
-/// @brief 按 scale 和 offset 对像素执行归一化。
-Result<Image> normalize_image(const Image& image, double scale = 1.0 / 255.0,
+struct Rect {
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+};
+
+struct Rect2f {
+    float x = 0.0f;
+    float y = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
+};
+
+struct Scalar {
+    double values[4] = {0.0, 0.0, 0.0, 0.0};
+
+    constexpr Scalar() = default;
+    constexpr Scalar(double value) : values{value, value, value, value} {}
+    constexpr Scalar(double first, double second, double third,
+                     double fourth = 0.0)
+        : values{first, second, third, fourth} {}
+    constexpr double operator[](std::size_t index) const { return values[index]; }
+};
+
+/// @brief 由模块拥有的连续 8-bit 图像数据。
+struct Image {
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    std::vector<std::uint8_t> pixels;
+
+    Image() = default;
+    Image(int image_height, int image_width, int image_channels,
+          std::vector<std::uint8_t> image_pixels = {});
+
+    [[nodiscard]] bool empty() const noexcept;
+    [[nodiscard]] Size size() const noexcept { return {width, height}; }
+    [[nodiscard]] std::size_t byte_size() const noexcept { return pixels.size(); }
+    [[nodiscard]] const std::uint8_t *data() const noexcept { return pixels.data(); }
+    [[nodiscard]] std::uint8_t *data() noexcept { return pixels.data(); }
+};
+
+// Stable values used by the public API; the implementation maps them to its
+// selected image backend rather than requiring backend headers from callers.
+inline constexpr int read_grayscale = 0;
+inline constexpr int read_color = 1;
+inline constexpr int read_unchanged = -1;
+inline constexpr int interpolation_nearest = 0;
+inline constexpr int interpolation_linear = 1;
+inline constexpr int interpolation_cubic = 2;
+inline constexpr int interpolation_area = 3;
+inline constexpr int interpolation_lanczos4 = 4;
+inline constexpr int morphology_rect = 0;
+inline constexpr int retrieval_external = 0;
+inline constexpr int chain_approx_simple = 2;
+
+Result<void> validate_image(const Image &image);
+std::string path_to_utf8(const std::filesystem::path &path);
+Result<Image> load_image(const std::string &path, int flags = read_color);
+Result<Image> load_image(const std::filesystem::path &path, int flags = read_color);
+Result<void> save_image(const Image &image, const std::string &path,
+                        const std::vector<int> &options = {});
+Result<void> save_image(const Image &image, const std::filesystem::path &path,
+                        const std::vector<int> &options = {});
+Result<Image> resize_image(const Image &image, Size size,
+                           int interpolation = interpolation_linear);
+Result<Image> crop_image(const Image &image, Rect region);
+Result<Image> convert_color(const Image &image, int conversion);
+Result<Image> normalize_image(const Image &image, double scale = 1.0 / 255.0,
                               double offset = 0.0);
 
 struct Letterbox {
     Image image;
-    float scale;
-    int left;
-    int top;
+    float scale = 1.0f;
+    int left = 0;
+    int top = 0;
 };
 
-/// @brief 将图像等比缩放并填充到目标尺寸，记录缩放比例和边距。
-Result<Letterbox> create_letterbox(const Image& image, cv::Size size,
-                                   cv::Scalar color = cv::Scalar(114, 114, 114));
+Result<Letterbox> create_letterbox(const Image &image, Size size,
+                                   Scalar color = Scalar(114.0));
 
 struct ImageTensor {
-    std::vector<std::int64_t> shape; // NCHW, batch=1.
+    std::vector<std::int64_t> shape;
     std::vector<float> data;
 };
 
-/// @brief 轮廓及其常用几何属性。
 struct ContourInfo {
-    std::vector<cv::Point> points;
+    std::vector<Point> points;
     double area = 0.0;
     double perimeter = 0.0;
-    cv::Rect bounding_box;
-    cv::RotatedRect minimum_box;
+    Rect bounding_box;
+    Rect2f minimum_box;
     bool convex = false;
 };
 
-/// @brief 将 BGR 图像转换为 NCHW float tensor。
-/// @details 默认转换为 RGB，归一化公式为 (pixel * scale - mean) / deviation。
-Result<ImageTensor> convert_to_tensor(const Image& image, bool rgb = true,
-                                      float scale = 1.f / 255.f,
-                                      cv::Scalar mean = {},
-                                      cv::Scalar deviation = cv::Scalar(1, 1, 1, 1));
+Result<ImageTensor> convert_to_tensor(const Image &image, bool rgb = true,
+                                      float scale = 1.0f / 255.0f,
+                                      Scalar mean = {},
+                                      Scalar deviation = Scalar(1.0));
 
-/// @brief 可用的平滑滤波器。
 enum class BlurAlgorithm { gaussian, median, bilateral };
-/// @brief 可用的固定、自适应和自动阈值算法。
 enum class ThresholdAlgorithm {
-    binary,
-    binary_inverse,
-    trunc,
-    to_zero,
-    to_zero_inverse,
-    otsu,
-    triangle,
-    adaptive_mean,
-    adaptive_gaussian
+    binary, binary_inverse, trunc, to_zero, to_zero_inverse, otsu, triangle,
+    adaptive_mean, adaptive_gaussian
 };
-/// @brief 形态学操作类型。
 enum class MorphologyOperation { erode, dilate, open, close, gradient, top_hat, black_hat };
-/// @brief 边缘检测算法。
 enum class EdgeAlgorithm { canny, sobel, scharr, laplacian };
 
 } // namespace sindre::utils_2d

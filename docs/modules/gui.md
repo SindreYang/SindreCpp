@@ -7,13 +7,10 @@ target 的编译开关和运行时边界；GUI 依赖见 [GUI 依赖说明](../d
 GLFW/OpenGL, stb_image and the GUI wrappers are compiled once by the module;
 consumer translation units only include the public declarations and link the target.
 
-The module provides ImGui context helpers, CJK font lookup, image assets and
+The module provides an opaque ImGui context, CJK font lookup, image assets and
 cache helpers, texture upload callbacks, and an optional GLFW/OpenGL3
-`GuiApplication`.
-
-The complete Dear ImGui API is also exposed as `sindre::gui::imgui`; for example,
-applications can call `sindre::gui::imgui::Begin(...)` and use the regular ImGui
-types directly. `sindre::gui::native` remains as a compatibility alias.
+`GuiApplication`. Dear ImGui and GLFW types remain private to the implementation;
+the public facade uses `Vec2`, `Color`, `TextureHandle`, and `InputFlags`.
 
 For a single-window application, the short lifecycle API is usually enough:
 
@@ -27,10 +24,9 @@ auto initialized = sindre::gui::gui_init(config);
 if (!initialized) return 1;
 
 while (auto frame = sindre::gui::gui_begin()) {
-    ImGui::Begin("Main");
-    ImGui::Text("Hello Sindre");
-    if (ImGui::Button("Exit")) sindre::gui::gui_request_close();
-    ImGui::End();
+    std::string text = "Hello Sindre";
+    sindre::gui::input_text("Main", text);
+    sindre::gui::help_marker("中文字体会自动选择");
 }
 
 sindre::gui::gui_shutdown();
@@ -50,7 +46,7 @@ controlled independently by `SINDRE_GUI_STB_IMAGE` (and can use
 test is `sindre.gui`; runtime window testing is opt-in via
 `SINDRE_BUILD_GUI_RUNTIME_TESTS`.
 
-The Windows verification used the vcpkg-provided Dear ImGui 1.90.6 source,
+The Windows verification used the vcpkg-provided Dear ImGui source,
 GLFW 3.4 and stb headers. The optional runtime test created a real GLFW/OpenGL
 window, ran an ImGui frame and closed it successfully; it is not a substitute
 for validating an application's own renderer and event loop.

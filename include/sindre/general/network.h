@@ -6,9 +6,7 @@
 #include <sindre/general/core.h>
 #include <sindre/general/runtime.h>
 
-#if defined(SINDRE_WITH_JSON)
 #include <sindre/general/system.h>
-#endif
 
 #include <chrono>
 #include <cstdint>
@@ -217,7 +215,6 @@ Result<Response> post(std::string_view target,
                       CancellationToken token = {},
                       Headers headers = {}) noexcept;
 
-#if defined(SINDRE_WITH_JSON)
 Result<json::Value> get_json(const Url &target, RequestOptions options = {}) noexcept;
 Result<json::Value> request_json(const Request &request, RequestOptions options = {}) noexcept;
 Result<Response> post_json(const Url &target,
@@ -226,7 +223,6 @@ Result<Response> post_json(const Url &target,
 Result<Response> post_json(std::string_view target,
                            const json::Object &fields,
                            RequestOptions options = {}) noexcept;
-#endif
 
 using Progress = std::function<void(std::uint64_t current, std::uint64_t total)>;
 

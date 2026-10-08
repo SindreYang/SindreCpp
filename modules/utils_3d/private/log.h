@@ -2,8 +2,8 @@
 
 /// @brief Utils_3d 的私有模块日志适配；不把 spdlog 暴露到公共头。
 
+#include <string>
 #include <string_view>
-#include <utility>
 
 #if defined(SINDRE_WITH_LOG)
 #include <sindre/general/diag.h>
@@ -16,9 +16,8 @@ namespace sindre::utils_3d::detail::logging {
 inline ::sindre::general::log::LoggerPtr module_logger() noexcept {
     static const auto logger = []() noexcept {
         auto result = ::sindre::general::log::create_logger("sindre.utils_3d");
-        if (result)
-            return std::move(result).value();
-        return ::sindre::general::log::native::default_logger();
+        if (result) return std::move(result).value();
+        return ::sindre::general::log::LoggerPtr{};
     }();
     return logger;
 }
@@ -28,7 +27,8 @@ inline void error(std::string_view context, std::string_view message) noexcept {
     try {
 #endif
         if (const auto logger = module_logger())
-            logger->error("[{}] {}", context, message);
+            (void)logger->write(::sindre::general::log::Level::error,
+                                "[" + std::string(context) + "] " + std::string(message));
 #if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (...) {
     }
@@ -40,7 +40,8 @@ inline void warning(std::string_view context, std::string_view message) noexcept
     try {
 #endif
         if (const auto logger = module_logger())
-            logger->warn("[{}] {}", context, message);
+            (void)logger->write(::sindre::general::log::Level::warning,
+                                "[" + std::string(context) + "] " + std::string(message));
 #if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (...) {
     }

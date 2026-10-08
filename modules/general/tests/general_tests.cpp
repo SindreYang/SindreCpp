@@ -11,7 +11,6 @@
 #endif
 #if defined(SINDRE_WITH_LOG)
 #include <sindre/general/diag.h>
-#include <spdlog/async_logger.h>
 #endif
 
 #include <cstdlib>
@@ -692,29 +691,26 @@ int main() {
     auto preinitialized_logger_result = sindre::general::log::create_logger(
         "sindre.test.preinitialized", sindre::general::log::Level::info);
     CHECK(preinitialized_logger_result);
-    CHECK(sindre::general::log::native::default_logger()->name() !=
+    CHECK(preinitialized_logger_result.value()->get_name() ==
           "sindre.test.preinitialized");
-    preinitialized_logger_result.value()->info("未初始化全局日志也可以使用");
+    CHECK(preinitialized_logger_result.value()->write(
+        sindre::general::log::Level::info, "未初始化全局日志也可以使用"));
+    CHECK(preinitialized_logger_result.value()->flush());
     preinitialized_logger_result.value().reset();
-    sindre::general::log::native::drop("sindre.test.preinitialized");
 
     CHECK(sindre::general::log::init_log("sindre"));
     CHECK(sindre::general::log::init_log("sindre"));
-    const auto default_logger_before_module =
-        sindre::general::log::native::default_logger();
     auto module_logger_result = sindre::general::log::create_logger(
         "sindre.test.module", sindre::general::log::Level::debug);
     CHECK(module_logger_result);
     auto module_logger = std::move(module_logger_result).value();
-    CHECK(module_logger->name() == "sindre.test.module" &&
-          module_logger->level() == sindre::general::log::Level::debug &&
-          module_logger->sinks().size() == default_logger_before_module->sinks().size());
-    CHECK(sindre::general::log::native::default_logger() == default_logger_before_module);
+    CHECK(module_logger->get_name() == "sindre.test.module" &&
+          module_logger->get_level() == sindre::general::log::Level::debug);
 
     auto reused_logger_result = sindre::general::log::create_logger(
-        "sindre.test.module", sindre::general::log::Level::err);
+        "sindre.test.module", sindre::general::log::Level::error);
     CHECK(reused_logger_result && reused_logger_result.value() == module_logger &&
-          module_logger->level() == sindre::general::log::Level::debug);
+          module_logger->get_level() == sindre::general::log::Level::debug);
 
     std::mutex concurrent_logger_mutex;
     std::vector<sindre::general::log::LoggerPtr> concurrent_loggers;
@@ -737,15 +733,12 @@ int main() {
     auto logger_result = sindre::general::log::try_rotating_file("sindre-general-test", log_path);
     CHECK(logger_result);
     auto logger = std::move(logger_result).value();
-    logger->info("中文日志");
-    logger->flush();
+    CHECK(logger->write(sindre::general::log::Level::info, "中文日志"));
+    CHECK(logger->flush());
     CHECK(std::filesystem::is_regular_file(log_path));
     logger.reset();
-    sindre::general::log::native::drop("sindre-general-test");
     module_logger.reset();
     concurrent_loggers.clear();
-    sindre::general::log::native::drop("sindre.test.module");
-    sindre::general::log::native::drop("sindre.test.concurrent");
     std::filesystem::remove(log_path);
     CHECK(!sindre::general::log::rotating_file("sindre-null-filename", nullptr));
     CHECK(sindre::general::log::shutdown());
@@ -755,28 +748,29 @@ int main() {
     CHECK(sindre::general::log::init_log(
         "sindre-file", sindre::general::log::Level::info,
         sindre::general::log::default_pattern, log_path, 1024, 2, true));
-    auto file_logger = sindre::general::log::native::default_logger();
-    file_logger->info("中文初始化轮转日志");
-    file_logger->flush();
+    auto file_logger_result = sindre::general::log::create_logger("sindre-file");
+    CHECK(file_logger_result);
+    auto file_logger = std::move(file_logger_result).value();
+    CHECK(file_logger->write(sindre::general::log::Level::info, "中文初始化轮转日志"));
+    CHECK(file_logger->flush());
     CHECK(std::filesystem::is_regular_file(log_path));
-    file_logger->sinks().clear();
     CHECK(sindre::general::log::shutdown());
-    sindre::general::log::native::drop("sindre-file");
+    file_logger.reset();
     std::filesystem::remove(log_path);
     const auto async_log_path = std::filesystem::temp_directory_path() / L"sindre-中文异步日志.log";
     CHECK(sindre::general::log::init_log(
         "sindre-async", sindre::general::log::Level::info,
         sindre::general::log::default_pattern, async_log_path, 1024, 2, false, true,
         64, 1, sindre::general::log::AsyncOverflowPolicy::overrun_oldest));
-    auto async_logger = sindre::general::log::native::default_logger();
-    CHECK(std::dynamic_pointer_cast<spdlog::async_logger>(async_logger) != nullptr);
-    async_logger->info("中文异步初始化日志");
-    async_logger->flush();
+    auto async_logger_result = sindre::general::log::create_logger("sindre-async");
+    CHECK(async_logger_result);
+    auto async_logger = std::move(async_logger_result).value();
+    CHECK(async_logger->write(sindre::general::log::Level::info, "中文异步初始化日志"));
+    CHECK(async_logger->flush());
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     CHECK(std::filesystem::is_regular_file(async_log_path));
     CHECK(sindre::general::log::shutdown());
     async_logger.reset();
-    sindre::general::log::native::drop("sindre-async");
     std::filesystem::remove(async_log_path);
 #endif
 

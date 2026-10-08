@@ -14,7 +14,7 @@ General 对外只提供七个稳定入口，根聚合头 `sindre/general.h` 会�
 | `sindre/general/system.h` | 路径、文件、目录、`glob`、文件监控、临时文件、环境、系统信息、JSON 配置、通知、托盘、对话框、文件选择、剪切板和自启动 |
 | `sindre/general/runtime.h` | 线程池、同步/异步任务、取消、超时、进程和动态库 |
 | `sindre/general/cli.h` | CLI 参数定义、解析和类型化访问 |
-| `sindre/general/string.h` | CsString 编码字符串、转换和正则表达式 |
+| `sindre/general/string.h` | UTF-8 编码字符串、转换和正则表达式 |
 | `sindre/general/network.h` | URL、HTTP、GET/POST、重试、超时、上传、下载和 JSON 网络响应 |
 | `sindre/general/diag.h` | 日志、诊断计时、条件检查和 Crashpad |
 
@@ -295,8 +295,9 @@ auto name = parsed.value().find("name")->get_string();
 ```
 
 `Value` 支持 `null`、布尔、整数、浮点、字符串、对象和数组，并提供
-`get_string()`、`get_int()`、`get_float()`、`get_bool()` 类型读取。`json::try_parse()`
-保留为需要直接访问 simdjson DOM 的底层接口；普通业务代码使用 `json::parse()`。
+`get_string()`、`get_int()`、`get_float()`、`get_bool()` 类型读取。需要保留文档根节点
+生命周期时使用 `json::try_parse()`；它返回的 `Document` 仍然只包含 Sindre 自有的
+值类型，不暴露 simdjson DOM。普通业务代码使用 `json::parse()` 即可。
 
 应用配置使用 map 风格的 `config::Config`，键支持点号路径，类型不会被转换成字符串：
 
@@ -385,9 +386,12 @@ auto check = sindre::general::diagnostics::check(true, "ready");
 auto image_logger = sindre::general::log::create_logger(
     "sindre.utils_2d.image", sindre::general::log::Level::info);
 if (!image_logger)
-    return image_logger.error();
+    return 1;
 
-image_logger.value()->info("image loaded");
+auto logged = image_logger.value()->write(
+    sindre::general::log::Level::info, "image loaded");
+if (!logged)
+    return 1;
 ```
 
 `create_logger()` 返回 `Result<LoggerPtr>`，名称不能为空；只有默认 logger 被宿主显式移除等

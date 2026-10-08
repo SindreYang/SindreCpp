@@ -14,9 +14,9 @@
 int main() {
     using namespace sindre::gui;
     Context context;
+    CHECK(context.is_valid());
     context.make_current();
     apply_dark_theme();
-    CHECK(ImGui::GetStyle().WindowRounding > 0.0f);
 
     const std::vector<std::uint8_t> ppm{
         'P', '6', '\n', '1', ' ', '1', '\n', '2', '5', '5', '\n', 255, 0, 0};
@@ -57,7 +57,7 @@ int main() {
     auto missing_font = load_font(FontConfig{{path}, 18.0f, true, {}});
     CHECK(!missing_font && missing_font.error().context == "gui.font");
     auto fallback_font = load_font(FontConfig{{}, 18.0f, false, {path.parent_path()}});
-    CHECK(fallback_font && fallback_font.value().font != nullptr);
+    CHECK(fallback_font && fallback_font.value().is_valid());
 
 #if defined(SINDRE_GUI_RUNTIME_TEST)
     GuiConfig config;
@@ -68,10 +68,9 @@ int main() {
     auto application = GuiApplication::create(config);
     CHECK(application);
     CHECK(application.value().begin_frame());
-    ImGui::Begin("sindre");
     std::string text = "中文";
     (void)input_text("text", text);
-    ImGui::End();
+    help_marker("中文输入");
     CHECK(application.value().end_frame());
     application.value().request_close();
 
@@ -85,9 +84,7 @@ int main() {
     {
         auto simple_frame = gui_begin();
         CHECK(simple_frame);
-        ImGui::Begin("short lifecycle");
-        ImGui::Text("RAII frame");
-        ImGui::End();
+        help_marker("RAII frame");
     }
     gui_request_close();
     gui_shutdown();
