@@ -11,9 +11,9 @@
 ## 根工程构建
 
 ```bash
-cmake -S . -B build/windows -G Ninja -DSINDRE_BUILD_EXAMPLES=ON
-cmake --build build/windows --target sindre_example_general_basics
-build/windows/bin/sindre_example_general_basics.exe
+cmake --preset windows-clang-cl
+cmake --build --preset windows-clang-cl --target sindre_example_general_basics
+build_win/bin/sindre_example_general_basics.exe
 ```
 
 默认构建的 `general_basics` 展示字符串、Result、版本、Base64、scope guard、
@@ -22,18 +22,18 @@ build/windows/bin/sindre_example_general_basics.exe
 启用 JSON 示例：
 
 ```bash
-cmake -S . -B build/windows -G Ninja -DSINDRE_BUILD_EXAMPLES=ON
-cmake --build build/windows --target sindre_example_general_json_config
+cmake --preset windows-clang-cl
+cmake --build --preset windows-clang-cl --target sindre_example_general_json_config
 ```
 
 启用 utils_3d 示例时需要本机可用的 VTK 9.7.1 或兼容的 VTK 9 SDK；官方
 SDK 的 `VTK_DIR` 应指向包含 `vtk-config.cmake` 的 `cmake` 目录：
 
 ```bash
-cmake -S . -B build/windows -G Ninja \
+cmake --preset windows-clang-cl \
   -DVTK_DIR="D:/software/VTK/vtk_sdk-9.7.1-cp312/vtk_sdk/cmake" \
   -DSINDRE_BUILD_EXAMPLES=ON -DSINDRE_WITH_UTILS_3D=ON
-cmake --build build/windows --target sindre_example_utils_3d_mesh
+cmake --build --preset windows-clang-cl --target sindre_example_utils_3d_mesh
 ```
 
 Windows 运行时还需要把 VTK `content/bin`、OpenBLAS `bin` 和 General
@@ -43,9 +43,9 @@ Windows 运行时还需要把 VTK `content/bin`、OpenBLAS `bin` 和 General
 ## 单独配置一个示例
 
 ```bash
-cmake -S examples/general_basics -B build_general_basics -G Ninja
-cmake --build build_general_basics
-build_general_basics/bin/sindre_example_general_basics.exe
+cmake -S examples/general_basics -B build_win/examples/general_basics -G "Visual Studio 17 2022" -A x64 -T ClangCL
+cmake --build build_win/examples/general_basics --config RelWithDebInfo
+build_win/examples/general_basics/bin/sindre_example_general_basics.exe
 ```
 
 JSON 和 utils_3d 示例也可以用相同方式从自己的目录配置；它们会自动启用
@@ -57,9 +57,9 @@ JSON 和 utils_3d 示例也可以用相同方式从自己的目录配置；它�
 核心类型，失败仍通过 `Result` 返回：
 
 ```powershell
-cmake -S examples/utils_2d_image -B build_utils_2d_image -G Ninja
-cmake --build build_utils_2d_image --parallel
-build_utils_2d_image/sindre_example_utils_2d_image.exe input.png output.png
+cmake -S examples/utils_2d_image -B build_win/examples/utils_2d_image -G "Visual Studio 17 2022" -A x64 -T ClangCL
+cmake --build build_win/examples/utils_2d_image --config RelWithDebInfo --parallel
+build_win/examples/utils_2d_image/bin/sindre_example_utils_2d_image.exe input.png output.png
 ```
 
 示例会加载图片、调整到 `400x400`、深拷贝、保存并显示窗口。服务器或无桌面环境
@@ -88,9 +88,8 @@ cmake --build --preset ai-trt-dispatch
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\examples\ai_tensorrt_segmentation\download_model.ps1
-cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg -G Ninja `
-  -DSINDRE_TENSORRT_ROOT=C:/TensorRT
-cmake --build build_ai_seg --parallel
+cmake --preset ai-trt-full
+cmake --build --preset ai-trt-full
 ```
 
 该示例不能在没有 CUDA、TensorRT、Ninja 和 C++ 编译器的机器上完成运行验证；

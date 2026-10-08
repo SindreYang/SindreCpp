@@ -655,14 +655,14 @@ SINDRE_GENERAL_SHARED=OFF
 
 如果应用需要共享库，可设置 `SINDRE_GENERAL_SHARED=ON`；这不是 header-only 开关。
 
-General 的全部依赖由 `thirds/general/Dependencies.cmake` 固定，不能通过
+General 的全部依赖由 `3rdparty/find_dependencies.cmake` 及其配方固定，不能通过
 `SINDRE_WITH_*` 关闭，也不能用宿主环境中的同名 target 覆盖。缺少固定源码
 或固定包时，CMake 在配置阶段直接失败。
 
 默认构建：
 
 ```powershell
-cmake -S . -B build/windows -G Ninja -DCMAKE_BUILD_TYPE=Release -DSINDRE_BUILD_TESTS=ON
-cmake --build build/windows --parallel
-ctest --test-dir build/windows --output-on-failure
+cmake --preset windows-clang-cl
+cmake --build --preset windows-clang-cl
+ctest --test-dir build_win -C RelWithDebInfo --output-on-failure
 ```

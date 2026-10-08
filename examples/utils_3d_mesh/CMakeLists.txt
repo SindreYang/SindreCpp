@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
+
+# Utils_3d 网格示例：验证 VTK 运行时和可选网格/点云后端的消费方式。
 project(sindreExampleUtils_3dMesh LANGUAGES CXX)
 
 # VTK/Eigen are discovered by the Utils_3d module. This block also makes the

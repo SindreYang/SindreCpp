@@ -1,5 +1,8 @@
 include_guard(GLOBAL)
 
+# 统一所有生成器的输出位置，便于运行测试、收集 DLL 和清理构建产物。
+# 该目录属于构建树，不属于源码安装包。
+
 set(SINDRE_BIN_DIR "${CMAKE_BINARY_DIR}/bin" CACHE PATH
     "Directory for sindre executables and runtime libraries")
 

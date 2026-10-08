@@ -134,10 +134,11 @@ cmake -S . -B build -G Ninja -DSINDRE_WITH_UTILS_PY=ON \
 ```powershell
 uv venv --python 3.12 .venv
 uv pip install --python .venv\Scripts\python.exe numpy pybind11
-cmake -S . -B build_win -G Ninja `
+cmake --preset windows-clang-cl `
   -DPython3_EXECUTABLE="F:/My_Github/SindreCpp/.venv/Scripts/python.exe" `
   -Dpybind11_DIR="F:/My_Github/SindreCpp/.venv/Lib/site-packages/pybind11/share/cmake/pybind11" `
   -DSINDRE_WITH_UTILS_PY=ON
+cmake --build --preset windows-clang-cl --parallel 4
 ```
 
 运行时使用 `sindre::utils_py::InterpreterConfig` 传入

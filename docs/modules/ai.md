@@ -61,7 +61,7 @@ auto output = model->try_infer_typed({input.value()});
 
 The CPU/GPU backend implementations require the matching ONNX Runtime or
 TensorRT SDK to be present. The validated Windows ONNX Runtime package is
-fixed under `thirds/ai` and is automatically used by default. TensorRT remains
+fixed under `3rdparty/onnxruntime` and is automatically used by default. TensorRT remains
 an installed SDK because it must match the host CUDA and GPU driver. Without
 those SDKs, only the backend-independent AI execution target can be compiled
 and tested.
@@ -90,7 +90,7 @@ cmake --preset ai-trt-dispatch
 cmake --build --preset ai-trt-dispatch
 ```
 
-两个预设分别使用 `build/ai-trt-full` 和 `build/ai-trt-dispatch`，不能共用同一个构建
+两个预设分别使用 `build_win/ai-trt-full` 和 `build_win/ai-trt-dispatch`，不能共用同一个构建
 目录。Full 预设用于构建 ONNX engine，Dispatch 预设用于生成小体积推理程序。
 
 The ONNX Runtime backend also exposes `try_get_available_backends`; the model
@@ -174,15 +174,11 @@ TensorRT 后端支持两种链接模式，由 `SINDRE_AI_TRT_RUNTIME` 选择：
 例如分别构建 Full 和 Dispatch：
 
 ```powershell
-cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg_full -G Ninja `
-  -DSINDRE_TENSORRT_ROOT="C:/Program Files/NVIDIA/TensorRT-10.11.0.33" `
-  -DSINDRE_AI_TRT_RUNTIME=FULL
-cmake --build build_ai_seg_full --parallel
+cmake --preset ai-trt-full
+cmake --build --preset ai-trt-full
 
-cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg_dispatch -G Ninja `
-  -DSINDRE_TENSORRT_ROOT="C:/Program Files/NVIDIA/TensorRT-10.11.0.33" `
-  -DSINDRE_AI_TRT_RUNTIME=DISPATCH
-cmake --build build_ai_seg_dispatch --parallel
+cmake --preset ai-trt-dispatch
+cmake --build --preset ai-trt-dispatch
 ```
 
 推荐在 Full 构建机上生成版本兼容且不内嵌 Lean 的 plan：

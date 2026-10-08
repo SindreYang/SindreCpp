@@ -1,7 +1,10 @@
 @PACKAGE_INIT@
 
+# 已安装包配置模板：恢复安装前缀、导入项目 target，并按安装时的后端选项
+# 查找必要的第三方依赖。这里不能引用构建树中的临时路径。
+
 # Nested find_dependency() calls may change PACKAGE_PREFIX_DIR. Preserve the
-# sindrecpp installation prefix before resolving any external package.
+# sindre installation prefix before resolving any external package.
 set(_sindre_package_prefix_dir "${PACKAGE_PREFIX_DIR}")
 
 include(CMakeFindDependencyMacro)
@@ -14,6 +17,9 @@ include(CMakeFindDependencyMacro)
 # configuration to the shipped Release dependency set while importing the
 # package targets, then restore the caller's global mapping variables.
 if(WIN32 AND "@SINDRE_GENERAL_SHARED@" STREQUAL "OFF")
+    # Resolve the fixed external dependency profile to Release.  The own
+    # exported targets are restored to RelWithDebInfo below when that
+    # configuration was installed.
     foreach(_sindre_config IN ITEMS DEBUG RELWITHDEBINFO MINSIZEREL)
         string(TOLOWER "${_sindre_config}" _sindre_config_lower)
         set(_sindre_map_var "CMAKE_MAP_IMPORTED_CONFIG_${_sindre_config}")
@@ -89,7 +95,7 @@ if(@SINDRE_WITH_UTILS_2D@)
     if(OpenCV_VERSION VERSION_LESS
         "@SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION@")
         message(FATAL_ERROR
-            "sindrecpp Utils_2d requires OpenCV >= "
+            "sindre Utils_2d requires OpenCV >= "
             "@SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION@; found ${OpenCV_VERSION}")
     endif()
 endif()
@@ -106,7 +112,9 @@ if(@SINDRE_WITH_UTILS_3D@)
 endif()
 if(@SINDRE_WITH_UTILS_PY@)
     find_dependency(Python3 3.12 COMPONENTS Interpreter Development.Embed)
-    find_dependency(pybind11 CONFIG)
+    if(NOT @SINDRE_PYBIND11_BUNDLED@)
+        find_dependency(pybind11 CONFIG)
+    endif()
 endif()
 if(@SINDRE_WITH_AI@ AND @SINDRE_AI_ONNXRUNTIME@)
     if(@SINDRE_AI_ONNXRUNTIME_BUNDLED@)
@@ -123,7 +131,7 @@ if(@SINDRE_WITH_AI@ AND @SINDRE_AI_ONNXRUNTIME@)
         elseif(TARGET onnxruntime)
             set(_sindre_onnxruntime_target onnxruntime)
         else()
-            message(FATAL_ERROR "sindrecpp AI requires an onnxruntime CMake target")
+            message(FATAL_ERROR "sindre AI requires an onnxruntime CMake target")
         endif()
         add_library(sindre::ai_onnxruntime_native INTERFACE IMPORTED)
         set_target_properties(sindre::ai_onnxruntime_native PROPERTIES
@@ -172,7 +180,7 @@ if(@SINDRE_WITH_AI@ AND @SINDRE_AI_TRT@)
            NOT _sindre_nvinfer_plugin OR
            ("@SINDRE_AI_TRT_RUNTIME@" STREQUAL "FULL" AND NOT _sindre_nvonnxparser))
             message(FATAL_ERROR
-                "sindrecpp TensorRT requires TensorRT:: targets or TENSORRT_ROOT")
+                "sindre TensorRT requires TensorRT:: targets or TENSORRT_ROOT")
         endif()
         if("@SINDRE_AI_TRT_RUNTIME@" STREQUAL "DISPATCH")
             set(_sindre_tensorrt_libraries
@@ -193,10 +201,56 @@ if(@SINDRE_WITH_GUI@ AND @SINDRE_GUI_GLFW_OPENGL3@)
     find_dependency(OpenGL)
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/sindrecppTargets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/sindreTargets.cmake")
+
+# The bundled General archives are installed next to this package.  The
+# build-tree wrappers intentionally use BUILD_INTERFACE target names, while
+# the generated export cannot know the eventual install prefix at configure
+# time.  Rebind those three small wrappers here using the resolved package
+# prefix so consumers never receive relative names such as `lib/spdlog.lib`.
+if(WIN32)
+    set(_sindre_cs_string_link
+        "${_sindre_package_prefix_dir}/lib/CsString.lib")
+    set(_sindre_spdlog_link
+        "${_sindre_package_prefix_dir}/lib/spdlog.lib")
+    set(_sindre_simdjson_link
+        "${_sindre_package_prefix_dir}/lib/simdjson.lib")
+else()
+    set(_sindre_cs_string_link
+        "${_sindre_package_prefix_dir}/lib/libCsString.so")
+    set(_sindre_spdlog_link
+        "${_sindre_package_prefix_dir}/lib/libspdlog.a")
+    set(_sindre_simdjson_link
+        "${_sindre_package_prefix_dir}/lib/libsimdjson.a")
+endif()
+if(TARGET sindre::general_cs_string)
+    set_property(TARGET sindre::general_cs_string PROPERTY
+        INTERFACE_LINK_LIBRARIES "${_sindre_cs_string_link}")
+endif()
+if(TARGET sindre::general_spdlog)
+    set_property(TARGET sindre::general_spdlog PROPERTY
+        INTERFACE_LINK_LIBRARIES "${_sindre_spdlog_link}")
+endif()
+if(TARGET sindre::general_simdjson)
+    set_property(TARGET sindre::general_simdjson PROPERTY
+        INTERFACE_LINK_LIBRARIES "${_sindre_simdjson_link}")
+endif()
+foreach(_sindre_own_target IN ITEMS sindre::general_runtime sindre::utils_py)
+    if(TARGET ${_sindre_own_target})
+        get_target_property(_sindre_own_configs ${_sindre_own_target}
+            IMPORTED_CONFIGURATIONS)
+        if(_sindre_own_configs AND
+           "RELWITHDEBINFO" IN_LIST _sindre_own_configs)
+            set_property(TARGET ${_sindre_own_target} PROPERTY
+                MAP_IMPORTED_CONFIG_RELWITHDEBINFO RelWithDebInfo)
+        endif()
+    endif()
+endforeach()
+unset(_sindre_own_target)
+unset(_sindre_own_configs)
 
 if(WIN32 AND "@SINDRE_GENERAL_SHARED@" STREQUAL "OFF")
-    foreach(_sindre_config IN ITEMS DEBUG RELWITHDEBINFO MINSIZEREL)
+    foreach(_sindre_config IN ITEMS DEBUG MINSIZEREL)
         string(TOLOWER "${_sindre_config}" _sindre_config_lower)
         set(_sindre_map_var "CMAKE_MAP_IMPORTED_CONFIG_${_sindre_config}")
         if(_sindre_saved_map_defined_${_sindre_config_lower})

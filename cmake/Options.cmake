@@ -1,3 +1,5 @@
+# 项目选项与平台约束集中定义在这里。模块 CMake 文件只消费这些选项，
+# 不在各模块重复声明会改变整个工程行为的全局开关。
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(sindre_build_extras_default ON)
 else()
@@ -9,19 +11,19 @@ endif()
 # partial backend on macOS or another Unix-like system.
 if(APPLE OR NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
     message(FATAL_ERROR
-        "sindrecpp supports Windows and Linux/WSL only; macOS and other platforms are unsupported")
+        "sindre supports Windows and Linux/WSL only; macOS and other platforms are unsupported")
 endif()
 
-# The fixed static dependency profiles are Release ABI packages.  Make a
-# single-config generator safe by selecting Release when the caller did not
+# The fixed static dependency profiles use the RelWithDebInfo ABI policy.
+# Make a single-config generator safe by selecting RelWithDebInfo when the caller did not
 # choose a build type explicitly; a Debug selection would mix /MTd vcpkg
 # archives with the library's fixed /MT profile on Windows.
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release CACHE STRING "sindrecpp single-config build type" FORCE)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "sindre single-config build type" FORCE)
 elseif(MSVC AND NOT CMAKE_CONFIGURATION_TYPES AND
-       NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+       NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
         message(FATAL_ERROR
-            "sindrecpp fixed static dependency profiles require CMAKE_BUILD_TYPE=Release "
+            "sindre fixed static dependency profiles require CMAKE_BUILD_TYPE=RelWithDebInfo "
             "for single-config generators; got '${CMAKE_BUILD_TYPE}'")
 endif()
 
@@ -46,13 +48,6 @@ set(SINDRE_MATH_BLAS_BACKEND "OPENBLAS" CACHE STRING
     "Math BLAS backend: OPENBLAS or EIGEN")
 set_property(CACHE SINDRE_MATH_BLAS_BACKEND PROPERTY STRINGS OPENBLAS EIGEN)
 option(SINDRE_MATH_NATIVE_ARCH "Optimize Math for the local CPU" ON)
-if(WIN32)
-    set(sindre_openblas_default_root "${SINDRE_THIRDS_DIR}/math/openblas")
-else()
-    set(sindre_openblas_default_root "${SINDRE_THIRDS_DIR}/math/openblas-linux")
-endif()
-set(SINDRE_MATH_OPENBLAS_ROOT "${sindre_openblas_default_root}" CACHE PATH
-    "Fixed platform OpenBLAS root used by Math")
 # 仅把当前平台的固定 profile 加入查找路径，绝不混用其他平台二进制包。
 list(PREPEND CMAKE_PREFIX_PATH "${SINDRE_GENERAL_PACKAGE_ROOT}")
 # 固定 Windows Crashpad profile 使用 Release STL iterator ABI。
@@ -60,6 +55,14 @@ list(PREPEND CMAKE_PREFIX_PATH "${SINDRE_GENERAL_PACKAGE_ROOT}")
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
     add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
+    # The fixed General profile contains Release static archives.  CMake does
+    # not reliably infer RelWithDebInfo -> Release when a package exports only
+    # Debug and Release configurations, so make that ABI choice explicit for
+    # all dependencies resolved from the source tree.
+    foreach(sindre_dependency_config IN ITEMS DEBUG RELWITHDEBINFO MINSIZEREL)
+        set(CMAKE_MAP_IMPORTED_CONFIG_${sindre_dependency_config} Release
+            CACHE STRING "Map ${sindre_dependency_config} to the fixed Release dependency profile" FORCE)
+    endforeach()
 endif()
 option(SINDRE_WITH_AI "Build the AI module" OFF)
 option(SINDRE_WITH_GUI "Build the GUI module" OFF)
@@ -90,7 +93,7 @@ set_property(CACHE SINDRE_AI_TRT_RUNTIME PROPERTY STRINGS FULL DISPATCH)
 set(SINDRE_ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime C/C++ SDK root")
 set(SINDRE_CUDNN_ROOT "" CACHE PATH "cuDNN runtime root")
 set(sindre_bundled_onnxruntime_root
-    "${SINDRE_THIRDS_DIR}/ai/onnxruntime/1.22.0/onnxruntime-win-x64-1.22.0")
+    "${SINDRE_THIRD_PARTY_CACHE_DIR}/ai/onnxruntime/1.22.0/onnxruntime-win-x64-1.22.0")
 if(NOT SINDRE_ONNXRUNTIME_ROOT
    AND EXISTS "${sindre_bundled_onnxruntime_root}/include/onnxruntime_cxx_api.h")
     set(SINDRE_ONNXRUNTIME_ROOT "${sindre_bundled_onnxruntime_root}" CACHE PATH
@@ -103,7 +106,7 @@ option(SINDRE_UTILS_3D_PCL "Enable PCL point-cloud algorithms" ON)
 foreach(sindre_utils_3d_sdk IN ITEMS PCL)
     string(TOLOWER "${sindre_utils_3d_sdk}" _sindre_utils_3d_sdk_lower)
     set(_sindre_utils_3d_default_root
-        "${SINDRE_THIRDS_DIR}/utils_3d/${_sindre_utils_3d_sdk_lower}")
+        "${SINDRE_THIRD_PARTY_CACHE_DIR}/utils_3d/${_sindre_utils_3d_sdk_lower}")
     if(NOT SINDRE_${sindre_utils_3d_sdk}_ROOT
        AND IS_DIRECTORY "${_sindre_utils_3d_default_root}")
         set(SINDRE_${sindre_utils_3d_sdk}_ROOT "${_sindre_utils_3d_default_root}"

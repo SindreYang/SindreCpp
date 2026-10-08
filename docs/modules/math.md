@@ -94,7 +94,7 @@ aliases. Geometry algorithms remain in `sindre::utils_3d`.
 ## Backend and options
 
 Math uses the fixed Eigen 3.4.1 source and OpenBLAS 0.3.34 profile registered
-under `thirds/math/`. OpenBLAS is the default backend and is not silently
+under `3rdparty/eigen/` and `3rdparty/openblas/`. OpenBLAS is the default backend and is not silently
 replaced by a system BLAS. The explicit fallback for platforms without the
 fixed OpenBLAS profile is:
 
@@ -102,9 +102,9 @@ fixed OpenBLAS profile is:
 -DSINDRE_MATH_BLAS_BACKEND=EIGEN
 ```
 
-`SINDRE_MATH_NATIVE_ARCH` controls local CPU tuning and
-`SINDRE_MATH_OPENBLAS_ROOT` selects the fixed OpenBLAS root. `AUTO`, MKL, and
-unregistered BLAS backends are not supported.
+`SINDRE_MATH_NATIVE_ARCH` controls local CPU tuning. OpenBLAS is built by the
+fixed third-party ExternalProject recipe; `AUTO`, MKL, and unregistered BLAS
+backends are not supported.
 
 The native-architecture flag is exported as a compiler-dependent generator
 expression: MSVC consumers receive `/arch:AVX2`, while Clang and GCC consumers

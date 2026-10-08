@@ -1,5 +1,8 @@
 include_guard(GLOBAL)
 
+# 编译器默认策略：统一警告、C++ 一致性、异常开关和 MSVC 运行时库设置。
+# 这些选项通过 target 传播，避免修改宿主项目的全局编译参数。
+
 function(sindre_apply_compiler_defaults target)
     if(NOT TARGET ${target})
         message(FATAL_ERROR "Cannot apply compiler defaults to unknown target '${target}'")

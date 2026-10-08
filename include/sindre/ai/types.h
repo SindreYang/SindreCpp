@@ -77,7 +77,7 @@ guarded_result_t<Function> guarded(Function &&function, std::string_view context
 
 } // namespace detail
 
-/// @brief sindrecpp 支持的张量元素类型。
+/// @brief sindre 支持的张量元素类型。
 enum class DataType {
     float32,
     float16,

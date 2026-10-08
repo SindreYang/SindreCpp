@@ -37,7 +37,7 @@ try_get_available_backends() noexcept;
 
 /// @brief 线程安全边界内的 ONNX Runtime 模型句柄。
 ///
-/// SDK 类型和异常均隐藏在实现文件中；调用方只依赖 sindrecpp 的张量和错误类型。
+/// SDK 类型和异常均隐藏在实现文件中；调用方只依赖 sindre 的张量和错误类型。
 class Model {
 public:
     /// @brief 从 ONNX 文件创建模型；失败时抛出标准异常。

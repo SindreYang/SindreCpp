@@ -1,11 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
+
+# TensorRT 示例：验证 AI 模块与 CUDA/TensorRT 运行时的真实组合，
+# 因此只在显式开启 AI 和 TensorRT 时构建，并复制最小运行时文件集。
 project(sindreExampleAiTensorRtSegmentation LANGUAGES CXX)
 
-# The repository's fixed Windows dependency profile is static Release CRT with
+# The repository's fixed Windows dependency profile is static non-Debug CRT with
 # iterator debugging disabled. Keep a standalone example ABI-compatible with
 # the libraries brought in below instead of inheriting CMake's Debug default.
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING
@@ -14,8 +17,8 @@ if(MSVC)
 endif()
 
 # This example is independently configurable:
-# cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg -G Ninja \
-#   -DSINDRE_TENSORRT_ROOT=C:/TensorRT -DCUDAToolkit_ROOT=C:/CUDA
+# cmake --preset ai-trt-full
+# cmake --build --preset ai-trt-full
 if(NOT TARGET sindre::ai)
     set(SINDRE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(SINDRE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

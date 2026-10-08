@@ -20,12 +20,12 @@ sindrecpp/
 ├── modules/              # general/math/utils_py/ai/gui/utils_2d/utils_3d
 │   └── <module>/{src,tests,CMakeLists.txt}
 ├── examples/            # 最小可运行示例
-├── thirds/              # 按模块登记的第三方依赖来源、版本和接入方式
+├── 3rdparty/            # 第三方依赖发现、版本和接入方式
 ├── tests/               # 单元测试
 ├── docs/                # 全部项目、模块和依赖文档
 ├── scripts/             # Windows/Linux 快捷构建脚本
 ├── cmake/               # 编译器默认值、选项和公共 CMake 函数
-├── CMakePresets.json    # Ninja 构建的可选入口
+├── CMakePresets.json    # Windows ClangCL / Linux Clang 的统一构建入口
 ├── CMakeLists.txt       # CMake 配置
 ├── docs/README.md       # 项目入口文档
 └── LICENSE
@@ -107,43 +107,34 @@ General 固定使用静态依赖和静态 MSVC CRT；Windows 宿主必须与 Gen
 
 ## 构建目录和运行时
 
-统一使用 `build/<profile>` 作为构建目录，并使用 Ninja 生成器；生成文件放在对应的
-`build/<profile>/bin/` 中。Windows 下 General、AI、GUI、utils_2d 和 utils_3d 的测试/示例
+Windows 使用 Visual Studio 生成器和 ClangCL，Linux/WSL 使用 Ninja 和 Clang。构建目录固定为
+`build_win/` 和 `build_linux/`，生成文件放在对应目录的 `bin/` 中。Windows 下 General、AI、GUI、utils_2d 和 utils_3d 的测试/示例
 目标会在构建后复制已发现的 DLL 到目标文件同目录，避免加载到系统中不匹配的版本。
 
 ## 快捷构建
 
 根目录提供 `scripts/build.bat` 和 `scripts/build.sh`，默认执行 Linux/WSL 或 Windows
-Release 配置、编译和模块测试。两个脚本都要求 Ninja；OpenBLAS 为默认 Math 后端，
-可以显式指定固定根目录：
-
-```powershell
-$env:SINDRE_MATH_OPENBLAS_ROOT = 'C:\sdk\OpenBLAS'
-scripts\build.bat
-```
-
-```bash
-SINDRE_MATH_OPENBLAS_ROOT=/opt/OpenBLAS ./scripts/build.sh
-```
+`RelWithDebInfo` 配置、编译和模块测试。Windows 脚本使用 Visual Studio + ClangCL，Linux
+脚本使用 Ninja + Clang；OpenBLAS 为默认 Math 后端，
+由 `3rdparty/openblas/openblas.cmake` 通过固定 ExternalProject 自动构建。
 
 也可以把额外的 CMake 选项直接传给脚本，例如
 `scripts\build.bat -DSINDRE_WITH_UTILS_2D=ON` 或
 `./scripts/build.sh -DSINDRE_MATH_NATIVE_ARCH=OFF`。
 
-固定的 Windows 静态依赖使用 Release ABI。Ninja 等单配置生成器如果显式传入
-非 `Release` 的 `CMAKE_BUILD_TYPE` 会在配置阶段直接失败，避免把 Debug CRT 或
-iterator-debug ABI 与固定 Release 包混链；多配置生成器应构建 `Release` 配置。
+固定的 Windows 静态依赖使用统一的非 Debug CRT ABI。单配置生成器默认使用
+`RelWithDebInfo`；Windows Visual Studio 多配置生成器必须构建 `RelWithDebInfo`，
+不能构建 Debug 配置，避免 Debug CRT 或 iterator-debug ABI 与固定依赖混链。
 
 ## 安装包消费者验证
 
 安装后包的 CMake 导出也要单独验证，不能只验证源码树内的 target：
 
 ```powershell
-cmake -S tests/installed_consumer -B build-installed-consumer -G Ninja `
-  -DCMAKE_BUILD_TYPE=Release `
+cmake -S tests/installed_consumer -B build_win/installed-consumer -G "Visual Studio 17 2022" -A x64 -T ClangCL `
   -DCMAKE_PREFIX_PATH="<install>;<fixed-third-party-prefixes>"
-cmake --build build-installed-consumer --parallel
-ctest --test-dir build-installed-consumer --output-on-failure
+cmake --build build_win/installed-consumer --config RelWithDebInfo --parallel
+ctest --test-dir build_win/installed-consumer -C RelWithDebInfo --output-on-failure
 ```
 
 AI 的安装消费者测试会真实加载并运行固定版本的 ONNX Runtime。Windows
@@ -155,10 +146,79 @@ AI 的安装消费者测试会真实加载并运行固定版本的 ONNX Runtime�
 ### CMake
 
 ```text
-项目名：sindrecpp
+仓库/项目名：sindrecpp；对外 CMake 包名：sindre
 目标名：sindre::general、sindre::math 或 sindre::utils_3d
 选项名：SINDRE_WITH_UTILS_3D；CsString 是 General 的固定依赖，不提供独立开关
 ```
+
+## 注释规范
+
+注释采用 Google 风格：先说明代码的目的和约束，再说明参数、返回值、异常或
+平台差异。注释正文统一使用中文，专有名词、类型名、宏名、target 名和命令保留
+原始英文拼写。注释服务于维护者和 API 使用者，不重复翻译显而易见的代码。
+
+### 通用规则
+
+- 注释解释“为什么这样做”和“有什么约束”，不要逐行描述“代码正在做什么”；
+- 注释使用完整、简短的句子，句末使用中文句号或英文句点；
+- 修改行为、依赖、平台支持或 ABI 约束时，同时更新相邻注释；
+- 不在注释中承诺未经测试的性能、线程安全、异常安全或跨平台行为；
+- 代码注释不得保留过期方案、被删除 API 或与实现不一致的示例；
+- 临时事项使用 `TODO(负责人): 具体事项`，必须说明原因或后续动作；
+- 禁止使用无意义的分隔线、重复注释和大段注释掉的旧代码；旧代码应删除，交给 Git 保留历史。
+
+### C++ 和公共 API
+
+公共头文件中的类、结构体、枚举、函数、模板参数和重要成员使用 Doxygen 兼容的
+Google 风格块注释。标签顺序固定为 `@brief`、补充说明、`@tparam`、`@param`、
+`@return`、`@throws`、`@note`、`@warning`；不适用的标签省略。
+
+```cpp
+/**
+ * @brief 读取指定路径的 UTF-8 文本。
+ *
+ * 文件不存在、权限不足或内容不是有效 UTF-8 时返回失败结果；不会修改调用者
+ * 提供的路径，也不会让第三方异常穿过公共 API 边界。
+ *
+ * @param path 要读取的 UTF-8 文件路径。
+ * @return 成功时返回文本内容，失败时返回包含 code、message 和 context 的 Error。
+ * @note 调用者负责处理 Result 的失败状态。
+ */
+Result<std::string> read_text(const std::filesystem::path& path);
+```
+
+实现文件中的局部注释使用 `//`，只解释算法意图、资源所有权、生命周期、平台
+分支、第三方库限制和不明显的性能取舍。公共 API 的线程安全、阻塞行为、取消、
+超时、资源释放和错误语义必须在头文件注释中明确。
+
+### CMake
+
+CMake 文件使用 `#` 编写中文注释。每个 `CMakeLists.txt`、`.cmake` 和
+`.cmake.in` 文件至少包含一段文件级说明，说明该文件的职责、作用范围和不会负责
+的内容。较长文件按“选项、依赖、target、安装、测试、运行时”分段，并在每个
+非显然的逻辑块前说明原因。
+
+```cmake
+# Utils_3d 的构建入口：VTK 提供基础数据结构，CGAL 和 PCL 作为可选后端。
+# 本文件只负责依赖、target、安装和测试，不实现具体网格算法。
+
+# 只有启用 3D 模块时才查找大型后端，避免默认配置引入无关依赖。
+find_package(VTK REQUIRED COMPONENTS CommonCore CommonDataModel)
+```
+
+CMake 注释至少应覆盖以下情况：
+
+- `option()` 和 `CACHE` 变量的默认值、用户覆盖方式和作用范围；
+- 第三方依赖的来源、固定版本、校验值、隔离构建方式和缓存目录；
+- `find_package()`、`ExternalProject`、`FetchContent` 选择某种方式的原因；
+- 平台、编译器、CRT、ABI、配置映射和运行时 DLL 处理；
+- target 的可见性、安装导出、生成器表达式和测试注册；
+- 失败分支为何拒绝配置，或为何允许降级到兼容实现。
+
+CMake 的 `CACHE` 描述字符串、错误信息和状态输出也应使用中文或中英混合的明确
+短语；target 名、变量名、依赖库官方名称和命令行参数不得翻译。JSON 格式的
+`CMakePresets.json` 不支持 `#` 注释，应使用合法的 `displayName` 或 `description`
+字段表达用途，不得插入非法注释。
 
 ### C++
 
@@ -305,10 +365,10 @@ if (!result) {
 
 ## 依赖管理
 
-- 第三方依赖登记在 `thirds/<module>/`，包括来源、固定版本、许可证/SDK 说明和 CMake cache 覆盖点；
-- General 的全部依赖和版本必须固定在 `thirds/general/`，配置时只允许使用固定源码和固定二进制包；其余模块才可以按需接入固定 Git/URL 依赖；
+- 第三方依赖登记在 `3rdparty/` 及其依赖子目录，包括来源、固定版本、许可证/SDK 说明和 CMake cache 覆盖点；
+- General 的全部依赖和版本必须固定在 `3rdparty/`，源码型依赖通过 ExternalProject 隔离，配置时只允许使用固定源码和固定二进制包；其余模块才可以按需接入固定 Git/URL 依赖；
 - 优先复用父项目中已经存在的 CMake target；
-- 没有现成 target 时才使用 FetchContent；
+- 源码型依赖优先使用固定 URL/SHA256 的 ExternalProject；只有宿主项目集成入口才保留 FetchContent；
 - 第三方库的测试、示例和文档默认关闭；
 - 每个依赖必须固定版本；
 - General 不接受宿主环境中同名 target 或系统包覆盖固定版本；缺少固定依赖必须修复依赖配置，不能通过外部包绕过；
@@ -320,19 +380,20 @@ if (!result) {
 本地构建：
 
 ```bash
-cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DSINDRE_BUILD_TESTS=ON
-cmake --build build/linux
-ctest --test-dir build/linux --output-on-failure
+cmake --preset linux-clang
+cmake --build --preset linux-clang
+ctest --preset linux-clang
 ```
 
-也可以使用根目录 `CMakePresets.json` 的快捷入口。预设统一使用 Ninja，AI
-预设把构建目录分开，避免 Full 和 Dispatch 的缓存互相污染：
+也可以使用根目录 `CMakePresets.json` 的快捷入口。Windows 使用 Visual Studio + ClangCL，
+Linux 使用 Ninja + Clang；AI 预设把构建目录放在 `build_win/` 下并分开，避免 Full 和
+Dispatch 的缓存互相污染：
 
 ```powershell
 cmake --list-presets
 
-cmake --preset windows-clang
-cmake --build --preset windows-clang
+cmake --preset windows-clang-cl
+cmake --build --preset windows-clang-cl
 
 $env:SINDRE_TENSORRT_ROOT = "C:\Program Files\NVIDIA\TensorRT-10.11.0.33"
 $env:CUDAToolkit_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
@@ -344,8 +405,8 @@ cmake --build --preset ai-trt-dispatch
 ```
 
 `ai-trt-full` 用于 ONNX 转 engine，`ai-trt-dispatch` 用于只加载已有 engine 的
-部署程序。TensorRT 和 CUDA 路径只从环境变量读取，不写入仓库；Linux 使用
-`linux-clang`，AI 预设的 Windows clang-cl 配置可按同样方式复制到本机 toolchain。
+部署程序。TensorRT 和 CUDA 路径只从环境变量读取，不写入仓库；Windows AI 预设继承
+`windows-clang-cl`，Linux AI 构建使用 `linux-clang`。
 
 The General layer is non-throwing at its public boundary in every build. Use
 `-DSINDRE_NO_EXCEPTIONS=ON` for the strict compiler-no-exceptions validation build.

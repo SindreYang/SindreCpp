@@ -21,7 +21,7 @@ the package, so SDKs that omit a separate `OpenCVConfigVersion.cmake` remain
 supported.
 
 ```powershell
-cmake -S . -B build/windows-utils2d -G Ninja `
+cmake --preset windows-clang-cl `
   -DOpenCV_DIR="D:/software/OpenCV/opencv-4.12.0/opencv/build/x64/vc16/lib" `
   -DSINDRE_WITH_UTILS_2D=ON -DSINDRE_BUILD_TESTS=ON
 ```

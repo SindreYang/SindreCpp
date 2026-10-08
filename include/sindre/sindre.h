@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file
-/// @brief sindrecpp 所有已启用模块的聚合入口。
+/// @brief sindre 所有已启用模块的聚合入口。
 
 #if defined(SINDRE_WITH_GENERAL)
 #include <sindre/general.h>

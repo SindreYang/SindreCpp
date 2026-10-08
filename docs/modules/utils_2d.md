@@ -81,9 +81,9 @@ tensor API，不要在后台任务中调用 `show()`。
 独立示例位于 [`examples/utils_2d_image`](../../examples/utils_2d_image)，构建命令：
 
 ```powershell
-cmake -S examples/utils_2d_image -B build_utils_2d_image -G Ninja
-cmake --build build_utils_2d_image --parallel
-build_utils_2d_image/sindre_example_utils_2d_image.exe 1.png resized.png
+cmake -S examples/utils_2d_image -B build_win/examples/utils_2d_image -G "Visual Studio 17 2022" -A x64 -T ClangCL
+cmake --build build_win/examples/utils_2d_image --config RelWithDebInfo --parallel
+build_win/examples/utils_2d_image/bin/sindre_example_utils_2d_image.exe 1.png resized.png
 ```
 
 ```cpp

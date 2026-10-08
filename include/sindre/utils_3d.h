@@ -22,6 +22,5 @@ using Vector2 = ::sindre::math::Vector2;
 using Vector3 = ::sindre::math::Vector3;
 using Matrix3 = ::sindre::math::Matrix3;
 using Matrix4 = ::sindre::math::Matrix4;
-namespace native = ::sindre::math::eigen;
 
 } // namespace sindre::utils_3d

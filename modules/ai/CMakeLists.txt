@@ -1,3 +1,5 @@
+# AI 模块的构建入口。ONNX Runtime、TensorRT 和 CUDA 都是可选后端，
+# 只在相应开关启用时查找、链接和复制运行时文件。
 sindre_add_static_target(ai "${SINDRE_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ai.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/execution.cpp")
@@ -7,7 +9,6 @@ endif()
 if(SINDRE_AI_TRT)
     target_sources(sindre_ai PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/trt.cpp")
 endif()
-include("${SINDRE_THIRDS_DIR}/ai/Dependencies.cmake")
 target_compile_definitions(sindre_ai PUBLIC SINDRE_WITH_AI=1)
 target_link_libraries(sindre_ai PUBLIC sindre::general)
 
@@ -47,7 +48,7 @@ if(SINDRE_AI_ONNXRUNTIME)
         $<BUILD_INTERFACE:${sindre_ort_target}>
         $<INSTALL_INTERFACE:sindre::ai_onnxruntime_native>)
     target_link_libraries(sindre_ai PUBLIC sindre_ai_onnxruntime)
-    install(TARGETS sindre_ai_onnxruntime EXPORT sindrecppTargets)
+    install(TARGETS sindre_ai_onnxruntime EXPORT sindreTargets)
     target_compile_definitions(sindre_ai PUBLIC SINDRE_AI_ONNXRUNTIME=1)
     if(SINDRE_AI_CUDA)
         target_compile_definitions(sindre_ai PUBLIC SINDRE_AI_CUDA=1)
@@ -78,7 +79,7 @@ if(SINDRE_AI_ONNXRUNTIME)
     endif()
     if(TARGET sindre_onnxruntime)
         get_filename_component(_sindre_bundled_ort_root
-            "${SINDRE_THIRDS_DIR}/ai/onnxruntime/1.22.0/onnxruntime-win-x64-1.22.0"
+            "${SINDRE_THIRD_PARTY_CACHE_DIR}/ai/onnxruntime/1.22.0/onnxruntime-win-x64-1.22.0"
             REALPATH)
         get_filename_component(_sindre_selected_ort_root
             "${SINDRE_ONNXRUNTIME_ROOT}" REALPATH)
@@ -96,7 +97,7 @@ if(SINDRE_AI_ONNXRUNTIME)
             install(FILES
                 "${SINDRE_ONNXRUNTIME_ROOT}/LICENSE"
                 "${SINDRE_ONNXRUNTIME_ROOT}/ThirdPartyNotices.txt"
-                DESTINATION "${CMAKE_INSTALL_DATADIR}/sindrecpp/licenses/onnxruntime"
+                DESTINATION "${CMAKE_INSTALL_DATADIR}/sindre/licenses/onnxruntime"
                 OPTIONAL)
         endif()
     endif()
@@ -152,7 +153,7 @@ if(SINDRE_AI_TRT)
         $<BUILD_INTERFACE:${sindre_trt_targets};CUDA::cudart>
         $<INSTALL_INTERFACE:sindre::ai_tensorrt_native>)
     target_link_libraries(sindre_ai PUBLIC sindre_ai_tensorrt)
-    install(TARGETS sindre_ai_tensorrt EXPORT sindrecppTargets)
+    install(TARGETS sindre_ai_tensorrt EXPORT sindreTargets)
     target_compile_definitions(sindre_ai PUBLIC SINDRE_AI_TRT=1)
     if(sindre_ai_trt_runtime STREQUAL "DISPATCH")
         target_compile_definitions(sindre_ai PRIVATE SINDRE_AI_TRT_DISPATCH=1)

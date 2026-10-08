@@ -21,14 +21,4 @@ CMakeUserPresets.json
 /build-openblas-official.zip
 
 # Downloaded/extracted third-party caches
-/thirds/*/win/cache/
-/thirds/*/linux/cache/
-/thirds/*/cache/
-/thirds/ai/onnxruntime/
-/thirds/general/openblas/
-/thirds/general/packages/
-/thirds/general/sources/
-/thirds/math/eigen/
-/thirds/math/openblas/
-/thirds/math/openblas-linux/
-/thirds/math/*.zip
+/3rdparty_downloads/

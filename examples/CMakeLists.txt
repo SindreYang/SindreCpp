@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
+# 示例统一由此入口管理，并按模块开关决定是否加入。每个示例仍保持独立目录，
+# 便于用户直接用 add_subdirectory 或单独配置验证已安装包。
+
 # The examples are intentionally separate targets. This keeps each example's
 # dependency surface visible and lets users configure an example directory on
 # its own, while the root project can still build all enabled examples.

@@ -9,14 +9,14 @@ Eigen and OpenBLAS belong to the separate Math foundation; see
 
 | Feature | Dependency | Source | Version | Required |
 | --- | --- | --- | --- | --- |
-| string | [CsString](https://github.com/copperspice/cs_string) | fixed source + static implementation | `string-1.4.1` | yes |
-| logging | [spdlog](https://github.com/gabime/spdlog) | fixed source under `thirds/general/sources` | `v1.17.0` | yes |
+| string | [CsString](https://github.com/copperspice/cs_string) | fixed ExternalProject shared runtime | `string-1.4.1` | yes |
+| logging | [spdlog](https://github.com/gabime/spdlog) | fixed ExternalProject static runtime | `v1.17.0` | yes |
 | HTTP/HTTPS and encryption | [cpp-httplib](https://github.com/yhirose/cpp-httplib) + OpenSSL | fixed source + fixed package | `v0.56.0` / OpenSSL 3.3.0 | yes |
-| JSON/config | [simdjson](https://github.com/simdjson/simdjson) | fixed source under `thirds/general/sources` | `v4.6.11` | yes |
-| CLI | [argparse](https://github.com/p-ranav/argparse) | fixed source under `thirds/general/sources` | `v3.2` | yes |
-| regular expressions | [RE2](https://github.com/google/re2) | fixed package under `thirds/general/packages` | `2024-04-01#2` | yes |
-| crash reporting | [Crashpad](https://chromium.googlesource.com/crashpad/crashpad/) | fixed platform package under `thirds/general/packages` | `2022-09-05#5` | yes |
-| compression | [zlib](https://zlib.net/) | fixed package under `thirds/general/packages` | `1.3.1` | yes |
+| JSON/config | [simdjson](https://github.com/simdjson/simdjson) | fixed ExternalProject static runtime | `v4.6.11` | yes |
+| CLI | [argparse](https://github.com/p-ranav/argparse) | fixed ExternalProject header source | `v3.2` | yes |
+| regular expressions | [RE2](https://github.com/google/re2) | fixed package under external third-party cache | `2024-04-01#2` | yes |
+| crash reporting | [Crashpad](https://chromium.googlesource.com/crashpad/crashpad/) | fixed platform package under external third-party cache | `2022-09-05#5` | yes |
+| compression | [zlib](https://zlib.net/) | fixed package under external third-party cache | `1.3.1` | yes |
 
 cpp-httplib and OpenSSL are implementation dependencies of `sindre_general_runtime`. OpenSSL
 also backs General's AES-256-GCM/PBKDF2 file and memory encryption APIs. The installed
@@ -28,16 +28,22 @@ The General dependency registry is split into a common manifest and platform
 profiles:
 
 ```text
-thirds/general/Dependencies.cmake
-thirds/general/common.cmake
-thirds/general/win/Dependencies.cmake
-thirds/general/linux/Dependencies.cmake
+3rdparty/find_dependencies.cmake
+3rdparty/general.cmake
+3rdparty/cs_string/cs_string.cmake
+3rdparty/spdlog/spdlog.cmake
+3rdparty/cpp_httplib/cpp_httplib.cmake
+3rdparty/simdjson/simdjson.cmake
+3rdparty/argparse/argparse.cmake
+3rdparty/re2/re2.cmake
+3rdparty/openssl/openssl.cmake
+3rdparty/zlib/zlib.cmake
+3rdparty/crashpad/crashpad.cmake
 ```
 
-The fixed General source trees are provisioned under the ignored
-`thirds/general/sources` cache. The fixed binary package set for RE2, Crashpad,
-zlib and OpenSSL is provisioned under the ignored `thirds/general/packages`
-cache and selected before any host package path. These generated caches are not
+The fixed General source trees are downloaded and built through isolated
+ExternalProject targets under the ignored build/cache directories selected by `SINDRE_THIRD_PARTY_CACHE_DIR`. The fixed binary package set for RE2, Crashpad,
+zlib and OpenSSL is provisioned under the same external cache and selected before any host package path. These generated caches are not
 part of the repository's core source and must not be committed.
 Crashpad is linked through the `crashpad::crashpad` target when available.
 
@@ -47,18 +53,16 @@ no-exceptions flags and uses General's internal no-exception CLI parser instead;
 not change the public CLI API or its parsing semantics.
 
 The General dependency versions and package metadata are registered in
-`thirds/general/common.cmake`. CMake selects a fixed platform profile from
-`thirds/general/win/Dependencies.cmake` or
-`thirds/general/linux/Dependencies.cmake` with `NO_DEFAULT_PATH`; system/vcpkg
-installations cannot silently replace it.
+`3rdparty/general.cmake`. CMake selects the fixed Windows or Linux profile there
+with `NO_DEFAULT_PATH`; system/vcpkg installations cannot silently replace it.
 
 | Platform | Profile | Triplet | Fixed Crashpad | Provisioned packages |
 | --- | --- | --- | --- | --- |
 | Windows/MSVC | `general-x64-windows-static` | `x64-windows-static` | `2022-09-05#5` | RE2, Crashpad, OpenSSL, zlib |
 | Linux/WSL | `general-x64-linux` | `x64-linux` | `2022-09-05#5` | RE2, Crashpad, OpenSSL, zlib |
 
-The platform profiles are provisioned below `thirds/general/packages/` and are
-intentionally ignored by Git because they contain generated binaries. The
+The platform profiles are provisioned below `SINDRE_THIRD_PARTY_CACHE_DIR` and
+are intentionally outside the source tree because they contain generated binaries. The
 profile directory is part of the local build environment and must exist before
 CMake configuration. The Linux profile was provisioned with the fixed vcpkg
 2024.04.23 baseline; the Windows profile uses the matching fixed package set.

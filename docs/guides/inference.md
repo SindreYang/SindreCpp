@@ -189,16 +189,14 @@ cmake --preset ai-trt-dispatch
 cmake --build --preset ai-trt-dispatch
 ```
 
-预设分别生成 `build/ai-trt-full` 和 `build/ai-trt-dispatch`，不会复用或覆盖普通
+预设分别生成 `build_win/ai-trt-full` 和 `build_win/ai-trt-dispatch`，不会复用或覆盖普通
 Windows/Linux 构建缓存。
 
 ```powershell
-cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg_dispatch -G Ninja `
-  -DSINDRE_TENSORRT_ROOT="C:/Program Files/NVIDIA/TensorRT-10.11.0.33" `
-  -DSINDRE_AI_TRT_RUNTIME=DISPATCH
-cmake --build build_ai_seg_dispatch --parallel
+cmake --preset ai-trt-dispatch
+cmake --build --preset ai-trt-dispatch
 
-build_ai_seg_dispatch/sindre_example_ai_tensorrt_segmentation.exe `
+build_win/ai-trt-dispatch/bin/sindre_example_ai_tensorrt_segmentation.exe `
   --input sample.ppm --engine fcn.plan `
   --lean-runtime nvinfer_lean_10.dll
 ```
@@ -250,11 +248,11 @@ TRT和CUDA在无GPU runner仅检查官方API编译，不能证明GPU执行或跨
 ```bash
 uv run --with onnx==1.17.0 python tests/create_test_model.py
 # Generates the float32, int32, and float16 fixtures used by the AI tests.
-cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
+cmake -S . -B build_linux -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DSINDRE_WITH_AI=ON -DSINDRE_AI_ONNXRUNTIME=OFF -DSINDRE_AI_TRT=ON \
   -DSINDRE_BUILD_GPU_TESTS=ON -DSINDRE_TENSORRT_ROOT=/path/to/TensorRT
-cmake --build build/linux
-ctest --test-dir build/linux --output-on-failure
+cmake --build build_linux
+ctest --test-dir build_linux --output-on-failure
 ```
 
 测试保留唯一命名的临时identity engine供诊断。

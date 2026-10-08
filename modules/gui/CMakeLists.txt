@@ -1,19 +1,14 @@
+# GUI 模块只在显式启用时构建，负责 ImGui、GLFW/OpenGL3 和 stb_image 的组合。
+# GUI 的第三方运行时不向 General 或默认模块传播。
 sindre_add_static_target(gui "${SINDRE_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/gui.cpp")
-include("${SINDRE_THIRDS_DIR}/gui/Dependencies.cmake")
 target_compile_definitions(sindre_gui PUBLIC
     SINDRE_WITH_GUI=1)
 target_link_libraries(sindre_gui PUBLIC sindre::general)
 
 if(NOT SINDRE_IMGUI_SOURCE_DIR)
-    sindre_thirds_declare_git(imgui
-        "${SINDRE_THIRD_GUI_IMGUI_REPOSITORY}"
-        "v${SINDRE_IMGUI_VERSION}")
-    FetchContent_GetProperties(imgui)
-    if(NOT imgui_POPULATED)
-        FetchContent_Populate(imgui)
-    endif()
-    set(SINDRE_IMGUI_SOURCE_DIR "${imgui_SOURCE_DIR}")
+    sindre_3rdparty_setup_imgui("${SINDRE_IMGUI_VERSION}")
+    set(SINDRE_IMGUI_SOURCE_DIR "${SINDRE_THIRD_GUI_IMGUI_SOURCE_DIR}")
 endif()
 
 if(SINDRE_GUI_STB_IMAGE)
@@ -52,7 +47,7 @@ target_include_directories(sindre_imgui SYSTEM PUBLIC
     "$<INSTALL_INTERFACE:include/sindre/third_party/imgui>"
     "$<INSTALL_INTERFACE:include/sindre/third_party/imgui/backends>")
 target_link_libraries(sindre_gui PUBLIC sindre_imgui)
-install(TARGETS sindre_imgui EXPORT sindrecppTargets
+install(TARGETS sindre_imgui EXPORT sindreTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
+
+# JSON 配置示例：验证 General 对 simdjson 的集成和运行时链接路径。
 project(sindreExampleGeneralJsonConfig LANGUAGES CXX)
 
 # This example needs simdjson. Enabling JSON here makes the directory directly

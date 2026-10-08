@@ -4,8 +4,8 @@
 具体版本和发现方式按模块拆分在本目录下；如果只是使用 General，可先阅读
 [General 依赖](dependencies/general.md)。
 
-`thirds/` 是 sindrecpp 的第三方依赖登记区。每个公共模块在这里维护自己的
-依赖来源、版本和接入方式；模块实现只负责选择功能，不再散落 Git 地址和版本号。
+`3rdparty/` 是 sindrecpp 的第三方依赖登记区。每个依赖配方在这里维护自己的
+来源、版本和接入方式；模块实现只负责选择功能，不再散落 Git 地址和版本号。
 
 顶层 `CMakeLists.txt` 只负责配置入口和模块编排；模块自己的
 `modules/<module>/CMakeLists.txt` 继续负责目标、源文件和模块测试。
@@ -13,22 +13,26 @@
 General 的平台依赖选择位于：
 
 ```text
-thirds/general/
-├── Dependencies.cmake       # 公共入口和平台分派
-├── common.cmake             # 固定版本、来源和缓存位置
-├── win/Dependencies.cmake   # Windows profile/triplet
-└── linux/Dependencies.cmake # Linux/WSL profile/triplet
+3rdparty/
+├── find_dependencies.cmake         # 唯一公共入口
+├── general.cmake                   # General 固定依赖和平台 profile
+├── eigen/                          # Eigen 配方
+├── openblas/                       # OpenBLAS 配方
+├── onnxruntime/                    # ONNX Runtime 配方
+├── imgui/                          # Dear ImGui 配方
+├── opencv/                         # OpenCV 配方
+├── vtk/ cgal/ pcl/                 # 3D 配方
+└── pybind11/                       # Python 配方
 ```
 
-General 的固定源码和固定 vcpkg 二进制包已经登记在 `thirds/general/`；Math 的
-Eigen/OpenBLAS 固定依赖登记在 `thirds/math/`，配置时强制使用这些版本。其他模块的可选依赖仍可由 CMake
-FetchContent 下载到构建目录 `_deps/`；宿主项目也可以按模块规则显式提供 SDK/target。
+General 的固定源码配方和固定 vcpkg 二进制包已经登记在 `3rdparty/`；Math 的
+Eigen/OpenBLAS 固定依赖登记在 `3rdparty/eigen/` 和 `3rdparty/openblas/`，配置时强制使用这些版本。源码型依赖由
+`ExternalProject_Add` 隔离下载、构建和安装；宿主项目仍可按模块规则显式提供 SDK/target。
 
-下载源码、FetchContent 树、vcpkg `installed/` 包和构建产物均属于本地缓存，不能作为
-项目核心源码提交。FetchContent 默认使用 `${CMAKE_BINARY_DIR}/_third_party_cache`，也可通过
+下载源码、ExternalProject 构建树、vcpkg `installed/` 包和构建产物均属于本地缓存，不能作为
+项目核心源码提交。缓存默认使用 `${CMAKE_BINARY_DIR}/_third_party_cache`，也可通过
 `SINDRE_THIRD_PARTY_CACHE_DIR` 指定 CI 或共享缓存目录。General 当前已有的固定源码和包缓存
-仍可通过 `SINDRE_THIRD_GENERAL_SOURCE_ROOT`、`SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT`
-指定；这些目录默认被 Git 忽略。
+由 `SINDRE_THIRD_PARTY_CACHE_DIR` 管理；这些目录默认被 Git 忽略。
 
 ## 目录
 
@@ -50,7 +54,7 @@ FetchContent 下载到构建目录 `_deps/`；宿主项目也可以按模块规�
 - URL 下载必须填写固定版本和校验值；当前仓库暂未需要二进制 URL 依赖。
 - 大型 SDK、商业/系统库和 GPU 运行时不自动下载，使用现有的 `*_ROOT`、
   `CMAKE_PREFIX_PATH` 或 CMake package target；General 不适用该替换规则。
-- General 只接受 `thirds/general` 中登记的固定版本和固定包路径，禁止宿主 target、
+- General 只接受 `3rdparty/general.cmake` 中登记的固定版本和固定包路径，禁止宿主 target、
   系统包或用户 cache 覆盖；缺少固定依赖时配置直接失败。
 - 第三方测试、示例和文档默认关闭，避免污染 sindrecpp 的构建目标。
 - 不把第三方头文件复制到 `include/`，对外只暴露 sindrecpp 的模块头文件。

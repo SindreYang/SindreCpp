@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
+# 项目根配置：统一 C++ 标准、依赖注册、模块开关、安装导出和测试入口。
+# 具体模块的编译逻辑放在 modules/<module>/CMakeLists.txt，避免根文件过度膨胀。
+
 project(sindrecpp VERSION 0.1.0 LANGUAGES C CXX)
 
 # The public library contract is C++17.  Keep this fixed at the project
@@ -10,12 +13,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(SINDRE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-set(SINDRE_THIRDS_DIR "${SINDRE_SOURCE_DIR}/thirds" CACHE PATH
+set(SINDRE_3RDPARTY_DIR "${SINDRE_SOURCE_DIR}/3rdparty" CACHE PATH
     "sindre third-party dependency registry")
 list(APPEND CMAKE_MODULE_PATH "${SINDRE_SOURCE_DIR}/cmake")
 
 include(CTest)
-include("${SINDRE_THIRDS_DIR}/Dependencies.cmake")
+include("${SINDRE_3RDPARTY_DIR}/find_dependencies.cmake")
 include(Options)
 include(OutputLayout)
 include(Common)
@@ -50,24 +53,24 @@ endif()
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 set_target_properties(sindre_base PROPERTIES EXPORT_NAME base)
-install(TARGETS sindre_base EXPORT sindrecppTargets)
+install(TARGETS sindre_base EXPORT sindreTargets)
 foreach(module IN ITEMS general math ai gui utils_2d utils_3d utils_py)
     if(TARGET sindre::${module})
-        install(TARGETS sindre_${module} EXPORT sindrecppTargets)
+        install(TARGETS sindre_${module} EXPORT sindreTargets)
     endif()
 endforeach()
-install(EXPORT sindrecppTargets
-    FILE sindrecppTargets.cmake
+install(EXPORT sindreTargets
+    FILE sindreTargets.cmake
     NAMESPACE sindre::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sindrecpp)
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sindre)
 configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sindrecppConfig.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/sindrecppConfig.cmake"
-    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/sindrecpp")
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sindreConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/sindreConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/sindre")
 write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/sindrecppConfigVersion.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/sindreConfigVersion.cmake"
     COMPATIBILITY SameMajorVersion)
 install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/sindrecppConfig.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/sindrecppConfigVersion.cmake"
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sindrecpp)
+    "${CMAKE_CURRENT_BINARY_DIR}/sindreConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/sindreConfigVersion.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sindre)

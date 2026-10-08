@@ -1,4 +1,5 @@
-include("${SINDRE_THIRDS_DIR}/utils_3d/Dependencies.cmake")
+# Utils_3d 的公共入口：VTK 提供基础网格/点云能力，CGAL 和 PCL 作为可选后端。
+# 复杂算法仍在 algorithms 源文件中维护，模块级 CMake 只负责依赖、导出和测试。
 set(_sindre_vtk_components CommonCore CommonDataModel CommonTransforms
     FiltersCore FiltersGeneral FiltersGeometry FiltersModeling IOGeometry IOLegacy IOPLY IOXML)
 set(SINDRE_UTILS_3D_VTK_COMPONENTS "${_sindre_vtk_components}" CACHE INTERNAL
@@ -26,7 +27,7 @@ if(SINDRE_UTILS_3D_NATIVE_ARCH)
         target_compile_options(sindre_utils_3d_native_arch INTERFACE -march=native)
     endif()
     target_link_libraries(sindre_utils_3d PUBLIC sindre_utils_3d_native_arch)
-    install(TARGETS sindre_utils_3d_native_arch EXPORT sindrecppTargets)
+    install(TARGETS sindre_utils_3d_native_arch EXPORT sindreTargets)
 endif()
 
 foreach(backend IN ITEMS CGAL PCL)

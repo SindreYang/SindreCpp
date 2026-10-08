@@ -50,15 +50,14 @@ cmake --preset ai-trt-dispatch
 cmake --build --preset ai-trt-dispatch
 ```
 
-预设输出目录分别是 `build/ai-trt-full` 和 `build/ai-trt-dispatch`。如果只构建本示例，
+预设输出目录分别是 `build_win/ai-trt-full` 和 `build_win/ai-trt-dispatch`。如果只构建本示例，
 仍可使用下面的独立 CMake 命令。
 
 ```powershell
-cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg -G Ninja `
-  -DSINDRE_TENSORRT_ROOT=C:/TensorRT
-cmake --build build_ai_seg --parallel
+cmake --preset ai-trt-full
+cmake --build --preset ai-trt-full
 
-build_ai_seg/sindre_example_ai_tensorrt_segmentation.exe `
+build_win/ai-trt-full/bin/sindre_example_ai_tensorrt_segmentation.exe `
   --onnx models/fcn-resnet50-12.onnx `
   --input sample.ppm `
   --engine artifacts/fcn.plan `
@@ -70,12 +69,10 @@ build_ai_seg/sindre_example_ai_tensorrt_segmentation.exe `
 时可以使用更小的 Dispatch 运行时：
 
 ```powershell
-cmake -S examples/ai_tensorrt_segmentation -B build_ai_seg_dispatch -G Ninja `
-  -DSINDRE_TENSORRT_ROOT="C:/Program Files/NVIDIA/TensorRT-10.11.0.33" `
-  -DSINDRE_AI_TRT_RUNTIME=DISPATCH
-cmake --build build_ai_seg_dispatch --parallel
+cmake --preset ai-trt-dispatch
+cmake --build --preset ai-trt-dispatch
 
-build_ai_seg_dispatch/sindre_example_ai_tensorrt_segmentation.exe `
+build_win/ai-trt-dispatch/bin/sindre_example_ai_tensorrt_segmentation.exe `
   --input sample.ppm --engine artifacts/fcn.plan `
   --lean-runtime nvinfer_lean_10.dll
 ```

@@ -1,9 +1,11 @@
 include_guard(GLOBAL)
 
+# 通用 CMake 辅助函数：创建模块 target、注册测试以及复制运行时依赖。
+# 本文件只提供项目级工具，不负责选择具体第三方依赖版本。
+
 include(FetchContent)
 include(CompilerDefaults)
 find_package(Threads REQUIRED)
-include("${SINDRE_THIRDS_DIR}/general/Dependencies.cmake")
 
 # Keep the helper-script location available when an individual example embeds
 # the repository with add_subdirectory(). Normal directory variables can be

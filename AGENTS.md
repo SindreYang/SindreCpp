@@ -12,7 +12,7 @@
   `sindre::gui`、`sindre::utils_2d`、`sindre::utils_3d`。
 - 项目文档唯一位置：`docs/`，分为 `guides/`、`modules/`、`dependencies/`、
   `development/`；代码目录不放 README 或模块文档。
-- 第三方依赖登记在 `thirds/<module>/`，不把第三方头文件复制进项目。
+- 第三方依赖登记在 `3rdparty/` 及其依赖子目录，不把第三方头文件复制进项目。
 
 不要恢复旧的 `include/<module>/index.h`、模块本地公共头、Json/Http/Log 独立
 target 或 catch-all 聚合 target。项目自己的头文件统一使用 `.h`，第三方头文件
@@ -45,13 +45,25 @@ target 或 catch-all 聚合 target。项目自己的头文件统一使用 `.h`�
 
 ## 构建入口
 
-从仓库根目录配置：
+从仓库根目录配置。Windows 固定使用 Visual Studio 生成器 + ClangCL，Linux/WSL
+固定使用 Ninja + Clang；默认配置为 `RelWithDebInfo`：
 
 ```powershell
-cmake -S . -B build -G Ninja -DSINDRE_BUILD_TESTS=ON
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
+cmake --preset windows-clang-cl
+cmake --build --preset windows-clang-cl
+ctest --preset windows-clang-cl
 ```
+
+Linux/WSL：
+
+```bash
+cmake --preset linux-clang
+cmake --build --preset linux-clang
+ctest --preset linux-clang
+```
+
+构建目录固定为 `build_win/` 和 `build_linux/`；不要为普通测试或模块验证在
+仓库根目录创建临时 `build_*` 目录。
 
 模块开关、依赖要求、编译器策略、测试边界和模块内部规则以 `docs/` 为准；当仓库
 规则变化时更新本文件，并避免复制一整套长期说明造成双份规范。

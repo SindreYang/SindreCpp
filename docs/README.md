@@ -25,7 +25,7 @@
 | CMake 选项 | Target | 公共入口 | 能力范围 |
 | --- | --- | --- | --- |
 | 固定启用 | `sindre::general` | `sindre/general.h` | Result/Error、字符串、JSON、配置、文件、网络、运行时和系统能力 |
-| `SINDRE_WITH_MATH` | `sindre::math` | `sindre/math.h` | Eigen 行主序类型、Quaternion、Transform3 和固定 OpenBLAS 后端 |
+| 固定启用 | `sindre::math` | `sindre/math.h` | Eigen 行主序类型、Quaternion、Transform3 和固定 OpenBLAS 后端 |
 | `SINDRE_WITH_UTILS_PY` | `sindre::utils_py` | `sindre/utils_py.h` | Python、NumPy、网格数据交换 |
 | `SINDRE_WITH_GUI` | `sindre::gui` | `sindre/gui.h` | ImGui、GLFW/OpenGL3、字体、图片和 GUI 辅助 |
 | `SINDRE_WITH_UTILS_2D` | `sindre::utils_2d` | `sindre/utils_2d.h` | OpenCV 图像、传统视觉算法、预处理和 Tensor 转换 |
@@ -40,10 +40,10 @@ General 和 Math 默认启用，其余领域模块默认关闭。各模块的 ta
 
 ```cmake
 include(FetchContent)
-FetchContent_Declare(sindrecpp
+FetchContent_Declare(sindre
     GIT_REPOSITORY https://github.com/SindreYang/SindreCpp.git
     GIT_TAG main) # 生产环境请固定到经过验证的提交
-FetchContent_MakeAvailable(sindrecpp)
+FetchContent_MakeAvailable(sindre)
 
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE sindre::general)

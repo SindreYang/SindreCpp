@@ -1,9 +1,10 @@
+# Utils_2d 仅封装 OpenCV 相关能力。依赖和 DLL 运行时都限制在本模块，
+# 只有显式开启 SINDRE_WITH_UTILS_2D 时才参与配置和构建。
 sindre_add_static_target(utils_2d "${SINDRE_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/utils_2d.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/image.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms.cpp")
 target_compile_definitions(sindre_utils_2d PUBLIC SINDRE_WITH_UTILS_2D=1)
-include("${SINDRE_THIRDS_DIR}/utils_2d/Dependencies.cmake")
 find_package(OpenCV CONFIG REQUIRED COMPONENTS ${SINDRE_THIRD_UTILS_2D_OPENCV_COMPONENTS})
 if(NOT DEFINED OpenCV_VERSION)
     message(FATAL_ERROR "OpenCV package did not provide OpenCV_VERSION")

@@ -5,12 +5,12 @@
 
 | Capability | Dependency | Source | Requirement | Default |
 | --- | --- | --- | --- | --- |
-| CPU inference | ONNX Runtime C/C++ SDK | bundled `thirds/ai/onnxruntime/1.22.0/` or `SINDRE_ONNXRUNTIME_ROOT` | 1.22+ | AI on, ORT on |
+| CPU inference | ONNX Runtime C/C++ SDK | external cache `SINDRE_THIRD_PARTY_CACHE_DIR/ai/onnxruntime/1.22.0/` or `SINDRE_ONNXRUNTIME_ROOT` | 1.22+ | AI on, ORT on |
 | CUDA inference | ONNX Runtime GPU + CUDA + cuDNN | installed SDK/runtime | matching versions | off |
 | TensorRT inference | TensorRT + CUDA Toolkit | installed SDK or `SINDRE_TENSORRT_ROOT` | TensorRT 10.11+, CUDA 12+ | off |
 
 The repository keeps the validated Windows x64 ONNX Runtime 1.22.0 package under
-`thirds/ai/onnxruntime/1.22.0/`. CMake uses it automatically when the extracted
+The external cache under `SINDRE_THIRD_PARTY_CACHE_DIR/ai/onnxruntime/1.22.0/` is used automatically when the extracted
 package is present; set `SINDRE_ONNXRUNTIME_ROOT` to override it. The downloaded
 archive is a local cache and is not required by CMake after extraction. When the
 fixed package is used, `cmake --install` also installs its headers, import

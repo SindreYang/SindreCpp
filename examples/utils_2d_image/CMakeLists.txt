@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
+
+# Utils_2d 示例：仅在启用 OpenCV 后端时构建，避免默认配置强制拉取图像依赖。
 project(sindreExampleUtils2dImage LANGUAGES CXX)
 
 if(NOT TARGET sindre::utils_2d)

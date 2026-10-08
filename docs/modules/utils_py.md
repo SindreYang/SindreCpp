@@ -111,11 +111,11 @@ Configure the module with the same Python used by the virtual environment.
 The explicit `pybind11_DIR` is needed when pybind11 was installed by uv:
 
 ```powershell
-cmake -S . -B build_win -G Ninja `
+cmake --preset windows-clang-cl `
   -DPython3_EXECUTABLE="F:/My_Github/SindreCpp/.venv/Scripts/python.exe" `
   -Dpybind11_DIR="F:/My_Github/SindreCpp/.venv/Lib/site-packages/pybind11/share/cmake/pybind11" `
   -DSINDRE_WITH_UTILS_PY=ON -DSINDRE_BUILD_TESTS=ON
-cmake --build build_win --parallel 4
+cmake --build --preset windows-clang-cl --parallel 4
 ```
 
 The runtime test does not require VTK or `utils_3d`. The array bridge test also
