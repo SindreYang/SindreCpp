@@ -47,6 +47,28 @@ namespace sindre::gui {
 #if defined(SINDRE_GUI_GLFW_OPENGL3)
 namespace {
 
+std::mutex &backend_instance_mutex() noexcept {
+    static std::mutex mutex;
+    return mutex;
+}
+
+bool &backend_instance_active() noexcept {
+    static bool active = false;
+    return active;
+}
+
+bool acquire_backend_instance() noexcept {
+    std::lock_guard<std::mutex> lock(backend_instance_mutex());
+    if (backend_instance_active()) return false;
+    backend_instance_active() = true;
+    return true;
+}
+
+void release_backend_instance() noexcept {
+    std::lock_guard<std::mutex> lock(backend_instance_mutex());
+    backend_instance_active() = false;
+}
+
 class GlfwRuntime {
 public:
     static bool acquire() noexcept {
@@ -347,6 +369,12 @@ void ImageCache::clear() noexcept {
         return ::sindre::general::Result<GuiApplication>::failure(
             std::make_error_code(std::errc::invalid_argument),
             "Invalid GUI configuration", "gui.create");
+    if (!acquire_backend_instance())
+        return ::sindre::general::Result<GuiApplication>::failure(
+            std::make_error_code(std::errc::device_or_resource_busy),
+            "Another GUI application is already active", "gui.instance");
+    auto release_instance = ::sindre::general::scope_guard(
+        [] { release_backend_instance(); });
     if (!GlfwRuntime::acquire()) return ::sindre::general::Result<GuiApplication>::failure(
         std::make_error_code(std::errc::not_supported),
         "GLFW initialization failed", "gui.glfw");
@@ -405,6 +433,7 @@ void ImageCache::clear() noexcept {
     GuiApplication result(std::move(context), static_cast<void *>(window),
                           config.clear_color, scale, true);
     result.backend_initialized_ = true;
+    result.backend_instance_acquired_ = true;
     glfwSetWindowUserPointer(window, &result);
     glfwSetWindowContentScaleCallback(window, [](GLFWwindow *value, float x, float y) {
         GuiApplication::content_scale_callback(static_cast<void *>(value), x, y);
@@ -414,6 +443,7 @@ void ImageCache::clear() noexcept {
     glfwShowWindow(window);
     cleanup.dismiss();
     destroy_window.dismiss();
+    release_instance.dismiss();
     return ::sindre::general::Result<GuiApplication>::success(std::move(result));
 }
 
@@ -428,9 +458,11 @@ GuiApplication::GuiApplication(GuiApplication &&other) noexcept
       window_(std::exchange(other.window_, nullptr)),
       clear_color_(other.clear_color_), dpi_scale_(other.dpi_scale_),
       backend_initialized_(other.backend_initialized_),
-      glfw_runtime_acquired_(other.glfw_runtime_acquired_) {
+      glfw_runtime_acquired_(other.glfw_runtime_acquired_),
+      backend_instance_acquired_(other.backend_instance_acquired_) {
     other.backend_initialized_ = false;
     other.glfw_runtime_acquired_ = false;
+    other.backend_instance_acquired_ = false;
     if (window_) glfwSetWindowUserPointer(static_cast<GLFWwindow *>(window_), this);
 }
 
@@ -443,8 +475,10 @@ GuiApplication &GuiApplication::operator=(GuiApplication &&other) noexcept {
         dpi_scale_ = other.dpi_scale_;
         backend_initialized_ = other.backend_initialized_;
         glfw_runtime_acquired_ = other.glfw_runtime_acquired_;
+        backend_instance_acquired_ = other.backend_instance_acquired_;
         other.backend_initialized_ = false;
         other.glfw_runtime_acquired_ = false;
+        other.backend_instance_acquired_ = false;
         if (window_) glfwSetWindowUserPointer(static_cast<GLFWwindow *>(window_), this);
     }
     return *this;
@@ -510,6 +544,10 @@ void GuiApplication::shutdown() noexcept {
     if (glfw_runtime_acquired_) {
         GlfwRuntime::release();
         glfw_runtime_acquired_ = false;
+    }
+    if (backend_instance_acquired_) {
+        release_backend_instance();
+        backend_instance_acquired_ = false;
     }
 }
 

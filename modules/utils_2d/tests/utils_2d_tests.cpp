@@ -1,6 +1,7 @@
 #include <sindre/utils_2d.h>
 
 #include <cstdlib>
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
@@ -36,7 +37,9 @@ int main() {
     description << facade;
     CHECK(description.str().find("SindreImage") != std::string::npos);
 
-    const auto path = std::filesystem::temp_directory_path() / L"sindre-中文图像.png";
+    const auto unique_id = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto path = std::filesystem::temp_directory_path() /
+        ("sindre-中文图像-" + std::to_string(unique_id) + ".png");
     CHECK(facade.save(path));
     auto loaded = SindreImage::load(path);
     CHECK(loaded && loaded.value().get_width() == 4);

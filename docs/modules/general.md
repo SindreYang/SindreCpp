@@ -540,8 +540,10 @@ URL 百分号编码严格按 RFC3986 非保留字符处理，`+` 不转换为空
 
 ### 字符串
 
-公共层只提供一个 `sindre::general::string::String` 和它的非拥有视图
-`sindre::general::string::StringView`。用户不需要选择编码模板，
+公共层提供 `sindre::general::String`（完整名称为
+`sindre::general::string::String`）和对应的非拥有视图
+`sindre::general::StringView`。顶层别名用于常规业务代码，`string` 命名空间仍保留
+给字符串算法和底层完整类型路径。用户不需要选择编码模板，
 也不需要区分 UTF-8 字符串和 UTF-16 字符串。当前公共 `String` 固定使用 CsString
 的 UTF-8 后端作为实现，转换和存储细节由 General 内部管理；这不是运行时自动选择
 物理编码的承诺：
@@ -549,7 +551,7 @@ URL 百分号编码严格按 RFC3986 非保留字符处理，`+` 不转换为空
 ```cpp
 #include <sindre/general/string.h>
 
-using sindre::general::string::String;
+using sindre::general::String;
 
 String text("中文");
 String windows_text(u"中文");
@@ -666,3 +668,7 @@ cmake --preset windows-clang-cl
 cmake --build --preset windows-clang-cl
 ctest --test-dir build_win -C RelWithDebInfo --output-on-failure
 ```
+
+Windows General 的固定依赖使用 `/MT` 和 `_ITERATOR_DEBUG_LEVEL=0`。`Debug`、
+`RelWithDebInfo` 和 `Release` 均可构建；其中 `RelWithDebInfo` 是推荐配置。Debug 仍使用
+该非 Debug CRT/iterator ABI，不能期待固定第三方库提供 `/MTd` 调试 ABI。

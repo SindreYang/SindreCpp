@@ -32,7 +32,9 @@
 | `SINDRE_WITH_UTILS_3D` | `sindre::utils_3d` | `sindre/utils_3d.h` | Mesh、PointCloud、SindreMesh、Math 和私有几何后端 |
 | `SINDRE_WITH_AI` | `sindre::ai` | `sindre/ai.h` | Tensor、执行流水线、ONNX Runtime、TensorRT |
 
-General 和 Math 默认启用，其余领域模块默认关闭。各模块的 target、开关、
+General、Math 和 Utils_3d 默认启用；AI、GUI、Utils_2d、Utils_Py 默认关闭。
+Utils_3d 的默认配置要求本机提供 VTK、独立 CGAL、Boost、GMP、MPFR SDK；若只构建
+General/Math，应显式设置 `-DSINDRE_WITH_UTILS_3D=OFF`。各模块的 target、开关、
 公共头文件和测试入口见 [`modules/`](modules/)；第三方 SDK、版本和发现方式见
 [`dependencies.md`](dependencies.md)。
 
@@ -63,6 +65,7 @@ target_link_libraries(my_app PRIVATE sindre::general)
 - [guides/](guides/examples.md)：面向使用者的构建、示例、推理和 2D/3D 指南。
 - [modules/](modules/general.md)：模块 API、CMake 选项和使用边界。
 - [dependencies/](dependencies.md)：第三方依赖、SDK、版本和发现方式。
-- [development/](development/development.md)：目录约定、实现规范、测试和维护注意事项。
+- [development/](development/development.md)：目录约定、实现规范、测试和维护注意事项；
+  [依赖与完整性审计](development/dependency-audit.md)记录依赖来源和实际验证范围。
 
 MIT；第三方依赖遵循各自许可证。

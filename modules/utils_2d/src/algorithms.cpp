@@ -7,6 +7,9 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/optflow.hpp>
 #include <opencv2/video.hpp>
+#if defined(SINDRE_OPENCV_HAS_XFEATURES2D)
+#include <opencv2/xfeatures2d.hpp>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -72,11 +75,6 @@ float iou(const Rect2f &a, const Rect2f &b) {
     const auto intersection = std::max(0.0f, right - left) * std::max(0.0f, bottom - top);
     const auto area = a.width * a.height + b.width * b.height - intersection;
     return area > 0.0f ? intersection / area : 0.0f;
-}
-
-Result<std::vector<BoundingBox>> unsupported_boxes(const char *context) {
-    return Result<std::vector<BoundingBox>>::failure(std::make_error_code(std::errc::function_not_supported),
-                                                     "The selected feature backend is not available", context);
 }
 
 } // namespace
@@ -303,18 +301,51 @@ Result<FeatureSet> detect_features(const Image &image, FeatureAlgorithm algorith
         if (max_features <= 0) return Result<FeatureSet>::failure(std::make_error_code(std::errc::invalid_argument),
                                                                    "max_features must be positive", "detect_features");
         cv::Ptr<cv::Feature2D> detector;
+        std::vector<cv::KeyPoint> keypoints;
         switch (algorithm) {
         case FeatureAlgorithm::fast: detector = cv::FastFeatureDetector::create(); break;
         case FeatureAlgorithm::gftt: detector = cv::GFTTDetector::create(max_features); break;
         case FeatureAlgorithm::orb: detector = cv::ORB::create(max_features); break;
         case FeatureAlgorithm::sift: detector = cv::SIFT::create(max_features); break;
         case FeatureAlgorithm::akaze: detector = cv::AKAZE::create(); break;
+        case FeatureAlgorithm::brief:
+        case FeatureAlgorithm::freak: {
+#if defined(SINDRE_OPENCV_HAS_XFEATURES2D)
+            auto keypoint_detector = cv::FastFeatureDetector::create();
+            keypoint_detector->detect(detail::to_native(gray.value()), keypoints);
+            if (algorithm == FeatureAlgorithm::brief)
+                detector = cv::xfeatures2d::BriefDescriptorExtractor::create();
+            else
+                detector = cv::xfeatures2d::FREAK::create();
+            // Both descriptor implementations sample a neighborhood around
+            // each keypoint.  OpenCV's FREAK backend can overrun for border
+            // keypoints on small images instead of reporting an exception;
+            // discard points that cannot fit the largest sampling pattern.
+            constexpr float descriptor_radius = 24.0f;
+            keypoints.erase(std::remove_if(keypoints.begin(), keypoints.end(),
+                                           [&](const cv::KeyPoint &point) {
+                return point.pt.x < descriptor_radius ||
+                       point.pt.y < descriptor_radius ||
+                       point.pt.x >= gray.value().width - descriptor_radius ||
+                       point.pt.y >= gray.value().height - descriptor_radius;
+            }), keypoints.end());
+            break;
+#else
+            return Result<FeatureSet>::failure(
+                std::make_error_code(std::errc::function_not_supported),
+                "BRIEF/FREAK requires OpenCV xfeatures2d", "detect_features");
+#endif
+        }
         default: return Result<FeatureSet>::failure(std::make_error_code(std::errc::function_not_supported),
                                                     "Selected feature backend is unavailable", "detect_features");
         }
-        std::vector<cv::KeyPoint> keypoints;
         cv::Mat descriptors;
-        detector->detectAndCompute(detail::to_native(gray.value()), cv::noArray(), keypoints, descriptors);
+#if defined(SINDRE_OPENCV_HAS_XFEATURES2D)
+        if (algorithm == FeatureAlgorithm::brief || algorithm == FeatureAlgorithm::freak)
+            detector->compute(detail::to_native(gray.value()), keypoints, descriptors);
+        else
+#endif
+            detector->detectAndCompute(detail::to_native(gray.value()), cv::noArray(), keypoints, descriptors);
         FeatureSet result;
         for (const auto &point : keypoints)
             result.keypoints.push_back({{point.pt.x, point.pt.y}, point.size, point.angle,
@@ -334,11 +365,21 @@ Result<MatchSet> match_features(const FeatureSet &source, const FeatureSet &targ
                                              "Descriptor dimensions do not match", "match_features");
         const auto norm = algorithm == MatcherAlgorithm::brute_force_hamming ? cv::NORM_HAMMING : cv::NORM_L2;
         cv::Mat left = to_native_matrix(source.descriptors), right = to_native_matrix(target.descriptors);
-        if (norm == cv::NORM_L2) { left.convertTo(left, CV_32F); right.convertTo(right, CV_32F); }
-        else { left.convertTo(left, CV_8U); right.convertTo(right, CV_8U); }
-        cv::BFMatcher matcher(norm);
+        if (algorithm == MatcherAlgorithm::flann || norm == cv::NORM_L2) {
+            left.convertTo(left, CV_32F);
+            right.convertTo(right, CV_32F);
+        } else {
+            left.convertTo(left, CV_8U);
+            right.convertTo(right, CV_8U);
+        }
         std::vector<std::vector<cv::DMatch>> candidates;
-        matcher.knnMatch(left, right, candidates, 2);
+        if (algorithm == MatcherAlgorithm::flann) {
+            cv::FlannBasedMatcher matcher;
+            matcher.knnMatch(left, right, candidates, 2);
+        } else {
+            cv::BFMatcher matcher(norm);
+            matcher.knnMatch(left, right, candidates, 2);
+        }
         MatchSet result;
         for (const auto &pair : candidates) if (pair.size() == 2 && pair[0].distance < ratio * pair[1].distance)
             result.matches.push_back({pair[0].queryIdx, pair[0].trainIdx, pair[0].imgIdx, pair[0].distance});
@@ -365,9 +406,6 @@ Result<HomographyResult> estimate_homography(const std::vector<Point2f> &source,
 Result<SparseFlowResult> track_points(const Image &previous, const Image &current,
                                       const std::vector<Point2f> &points,
                                       OpticalFlowAlgorithm algorithm) {
-    if (algorithm != OpticalFlowAlgorithm::lucas_kanade)
-        return Result<SparseFlowResult>::failure(std::make_error_code(std::errc::function_not_supported),
-                                                 "Only Lucas-Kanade is currently exposed", "track_points");
     auto left = to_gray(previous, "track_points");
     auto right = to_gray(current, "track_points");
     if (!left || !right) return Result<SparseFlowResult>::failure(left ? right.error() : left.error());
@@ -376,17 +414,98 @@ Result<SparseFlowResult> track_points(const Image &previous, const Image &curren
     std::vector<cv::Point2f> next;
     std::vector<uchar> status;
     std::vector<float> errors;
-    cv::calcOpticalFlowPyrLK(detail::to_native(left.value()), detail::to_native(right.value()),
-                             native_points, next, status, errors);
+    if (algorithm == OpticalFlowAlgorithm::lucas_kanade) {
+        cv::calcOpticalFlowPyrLK(detail::to_native(left.value()), detail::to_native(right.value()),
+                                 native_points, next, status, errors);
+    } else if (algorithm == OpticalFlowAlgorithm::farneback) {
+        cv::Mat flow;
+        cv::calcOpticalFlowFarneback(detail::to_native(left.value()),
+                                     detail::to_native(right.value()), flow,
+                                     0.5, 3, 15, 3, 5, 1.2, 0);
+        next.reserve(native_points.size());
+        status.reserve(native_points.size());
+        errors.reserve(native_points.size());
+        for (const auto &point : native_points) {
+            const int x = static_cast<int>(std::lround(point.x));
+            const int y = static_cast<int>(std::lround(point.y));
+            if (x < 0 || y < 0 || x >= flow.cols || y >= flow.rows) {
+                next.push_back(point);
+                status.push_back(0);
+                errors.push_back(0.0f);
+                continue;
+            }
+            const auto vector = flow.at<cv::Vec2f>(y, x);
+            next.push_back({point.x + vector[0], point.y + vector[1]});
+            status.push_back(1);
+            errors.push_back(std::sqrt(vector[0] * vector[0] + vector[1] * vector[1]));
+        }
+    } else {
+        // The OpenCV 4.12 RLOF implementation currently has an unsafe native
+        // failure path for valid small-image inputs on the supported Windows
+        // toolchain. Do not expose that backend until it can be isolated or
+        // upgraded without allowing a process-level crash.
+        return Result<SparseFlowResult>::failure(
+            std::make_error_code(std::errc::function_not_supported),
+            "Selected optical-flow backend is unavailable", "track_points");
+    }
     SparseFlowResult result;
     for (const auto &point : next) result.points.push_back({point.x, point.y});
     result.status.assign(status.begin(), status.end());
     result.errors = std::move(errors);
     return Result<SparseFlowResult>::success(std::move(result));
 }
-Result<Image> calculate_dense_flow(const Image &, const Image &, double, int, int, int) {
-    return Result<Image>::failure(std::make_error_code(std::errc::function_not_supported),
-                                  "Optical-flow backend is not yet part of the stable facade", "calculate_dense_flow");
+Result<Image> calculate_dense_flow(const Image &previous, const Image &current,
+                                   double pyramid_scale, int levels,
+                                   int window_size, int iterations) {
+    return capture_result("calculate_dense_flow", [&] {
+        if (!(pyramid_scale > 0.0 && pyramid_scale < 1.0) || levels <= 0 ||
+            window_size <= 0 || window_size % 2 == 0 || iterations <= 0) {
+            return Result<Image>::failure(
+                std::make_error_code(std::errc::invalid_argument),
+                "Dense-flow parameters are invalid", "calculate_dense_flow");
+        }
+        auto left = to_gray(previous, "calculate_dense_flow");
+        auto right = to_gray(current, "calculate_dense_flow");
+        if (!left) return Result<Image>::failure(left.error());
+        if (!right) return Result<Image>::failure(right.error());
+        if (left.value().width != right.value().width ||
+            left.value().height != right.value().height) {
+            return Result<Image>::failure(
+                std::make_error_code(std::errc::invalid_argument),
+                "Dense-flow images must have equal dimensions",
+                "calculate_dense_flow");
+        }
+
+        cv::Mat flow;
+        cv::calcOpticalFlowFarneback(
+            detail::to_native(left.value()), detail::to_native(right.value()), flow,
+            pyramid_scale, levels, window_size, iterations, 5, 1.2, 0);
+
+        // Image is intentionally an owning 8-bit facade, so expose the dense
+        // vector field as a stable HSV-to-BGR visualization: hue is direction
+        // and value is normalized magnitude. This avoids leaking cv::Mat or a
+        // backend-specific two-channel floating-point buffer.
+        std::vector<cv::Mat> components;
+        cv::split(flow, components);
+        cv::Mat magnitude, angle;
+        cv::cartToPolar(components[0], components[1], magnitude, angle, true);
+        double maximum = 0.0;
+        cv::minMaxLoc(magnitude, nullptr, &maximum);
+        cv::Mat hsv(flow.size(), CV_8UC3);
+        std::vector<cv::Mat> hsv_channels;
+        cv::split(hsv, hsv_channels);
+        angle.convertTo(hsv_channels[0], CV_8U, 0.5);
+        hsv_channels[1].setTo(255);
+        if (maximum > 0.0) {
+            magnitude.convertTo(hsv_channels[2], CV_8U, 255.0 / maximum);
+        } else {
+            hsv_channels[2].setTo(0);
+        }
+        cv::merge(hsv_channels, hsv);
+        cv::Mat bgr;
+        cv::cvtColor(hsv, bgr, cv::COLOR_HSV2BGR);
+        return Result<Image>::success(detail::from_native(bgr));
+    });
 }
 Result<Image> undistort_image(const Image &image, const Matrix &camera_matrix,
                               const Matrix &distortion_coefficients) {

@@ -20,5 +20,9 @@ CMakeUserPresets.json
 /show_mesh_preview.png
 /build-openblas-official.zip
 
+# Runtime-generated GUI state
+/imgui.ini
+
 # Downloaded/extracted third-party caches
 /3rdparty_downloads/
+/.sindre_cache/

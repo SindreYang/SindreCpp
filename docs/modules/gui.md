@@ -37,16 +37,17 @@ submits the frame when it leaves scope. Closing the window is reported as a fail
 frame with `operation_canceled`; other failures retain their `Result` error. The
 configuration fields have usable defaults, so an application can simply call
 `gui_init()` for the default window. `GuiApplication` remains available when an
-application needs manual frame control or multiple independent contexts.
+application needs manual frame control. Because the GLFW/OpenGL3 ImGui backends
+own process-level state, only one `GuiApplication` (including the `gui_init()`
+global application) may be active at a time; destroy it before creating another.
 
-Configure with `SINDRE_WITH_GUI=ON`. Dear ImGui is fetched unless
-`SINDRE_IMGUI_SOURCE_DIR` points at an existing source tree. Image decoding is
-controlled independently by `SINDRE_GUI_STB_IMAGE` (and can use
-`SINDRE_STB_IMAGE_ROOT`). Set `SINDRE_GUI_GLFW_OPENGL3=OFF` for the headless helper surface. The module
+Configure with `SINDRE_WITH_GUI=ON`. Dear ImGui 1.92.9b, GLFW 3.4 and stb_image
+are fetched from fixed, SHA256-verified source recipes; system and vcpkg
+replacements are rejected. Image decoding is controlled independently by
+`SINDRE_GUI_STB_IMAGE`. Set `SINDRE_GUI_GLFW_OPENGL3=OFF` for the headless helper surface. The module
 test is `sindre.gui`; runtime window testing is opt-in via
 `SINDRE_BUILD_GUI_RUNTIME_TESTS`.
 
-The Windows verification used the vcpkg-provided Dear ImGui source,
-GLFW 3.4 and stb headers. The optional runtime test created a real GLFW/OpenGL
-window, ran an ImGui frame and closed it successfully; it is not a substitute
-for validating an application's own renderer and event loop.
+The optional runtime test creates a real GLFW/OpenGL window, runs an ImGui frame
+and closes it successfully; it is not a substitute for validating an
+application's own renderer and event loop.

@@ -1,6 +1,7 @@
 #include <sindre/gui.h>
 
 #include <cstdlib>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -20,7 +21,9 @@ int main() {
 
     const std::vector<std::uint8_t> ppm{
         'P', '6', '\n', '1', ' ', '1', '\n', '2', '5', '5', '\n', 255, 0, 0};
-    const auto path = std::filesystem::temp_directory_path() / L"sindre-中文图标.ppm";
+    const auto unique_id = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto path = std::filesystem::temp_directory_path() /
+        ("sindre-中文图标-" + std::to_string(unique_id) + ".ppm");
     auto memory_image = ImageAsset::load_memory(ppm);
 #if defined(SINDRE_GUI_STB_IMAGE)
     CHECK(memory_image && memory_image.value().width == 1 && memory_image.value().height == 1 &&
@@ -60,19 +63,24 @@ int main() {
     CHECK(fallback_font && fallback_font.value().is_valid());
 
 #if defined(SINDRE_GUI_RUNTIME_TEST)
-    GuiConfig config;
-    config.title = "sindre 中文 GUI";
-    config.width = 640;
-    config.height = 480;
-    config.load_cjk_font = false;
-    auto application = GuiApplication::create(config);
-    CHECK(application);
-    CHECK(application.value().begin_frame());
-    std::string text = "中文";
-    (void)input_text("text", text);
-    help_marker("中文输入");
-    CHECK(application.value().end_frame());
-    application.value().request_close();
+    {
+        GuiConfig config;
+        config.title = "sindre 中文 GUI";
+        config.width = 640;
+        config.height = 480;
+        config.load_cjk_font = false;
+        auto application = GuiApplication::create(config);
+        CHECK(application);
+        auto duplicate = GuiApplication::create(config);
+        CHECK(!duplicate && duplicate.error().code ==
+              std::make_error_code(std::errc::device_or_resource_busy));
+        CHECK(application.value().begin_frame());
+        std::string text = "中文";
+        (void)input_text("text", text);
+        help_marker("中文输入");
+        CHECK(application.value().end_frame());
+        application.value().request_close();
+    }
 
     GuiConfig simple_config;
     simple_config.title = "sindre short lifecycle";

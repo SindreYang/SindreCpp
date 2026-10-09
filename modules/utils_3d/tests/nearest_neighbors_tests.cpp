@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <limits>
 
 using namespace sindre::utils_3d;
 
@@ -29,7 +30,8 @@ int main() {
     auto invalid = index.value().get_knn(::sindre::math::Vector3::Zero(), 0);
     if (invalid || invalid.error().context != "utils_3d.nearest_neighbors.knn") return 5;
 
-    Vertices invalid_points(2, 2);
+    Vertices invalid_points(2, 3);
+    invalid_points(0, 0) = std::numeric_limits<double>::quiet_NaN();
     auto invalid_index = NearestNeighborIndex::create(invalid_points);
     if (invalid_index || invalid_index.error().code != std::make_error_code(std::errc::invalid_argument))
         return 6;

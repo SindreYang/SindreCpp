@@ -41,6 +41,7 @@ powershell -ExecutionPolicy Bypass -File .\download_model.ps1
 从仓库根目录构建时，推荐使用预设：
 
 ```powershell
+$env:SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT = "F:\My_Github\SindreCpp\.sindre_cache\SindreCpp\general\packages"
 $env:SINDRE_TENSORRT_ROOT = "C:\Program Files\NVIDIA\TensorRT-10.11.0.33"
 $env:CUDAToolkit_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
 cmake --preset ai-trt-full

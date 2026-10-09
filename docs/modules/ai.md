@@ -60,11 +60,13 @@ auto output = model->try_infer_typed({input.value()});
 `bool8` I/O。不同后端仍必须以 `get_inputs()` 返回的精度和 shape 为准。
 
 The CPU/GPU backend implementations require the matching ONNX Runtime or
-TensorRT SDK to be present. The validated Windows ONNX Runtime package is
-fixed under `3rdparty/onnxruntime` and is automatically used by default. TensorRT remains
-an installed SDK because it must match the host CUDA and GPU driver. Without
-those SDKs, only the backend-independent AI execution target can be compiled
-and tested.
+TensorRT SDK to be present. ONNX Runtime is a large external SDK supplied by
+the host or by an explicitly configured package prefix; this repository only
+pins its minimum supported version and does not copy the SDK into
+`3rdparty/` or silently download it. The validated Windows package was
+ONNX Runtime GPU 1.26.0. TensorRT remains an installed SDK because it must
+match the host CUDA and GPU driver. Without those SDKs, only the
+backend-independent AI execution target can be compiled and tested.
 
 ## CMake switches
 
@@ -80,6 +82,7 @@ Use `SINDRE_ONNXRUNTIME_ROOT`, `SINDRE_TENSORRT_ROOT`, and
 根目录提供 `CMakePresets.json` 快速入口：
 
 ```powershell
+$env:SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT = "F:\My_Github\SindreCpp\.sindre_cache\SindreCpp\general\packages"
 $env:SINDRE_TENSORRT_ROOT = "C:\Program Files\NVIDIA\TensorRT-10.11.0.33"
 $env:CUDAToolkit_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
 
@@ -109,8 +112,8 @@ production hosts should use the `try_*` boundary and inspect `Error.code`,
 and the shared progress callback contract; the backend reports completion as a
 single inference task.
 
-The repository contains the CMake wiring and fixtures for the bundled ONNX
-Runtime 1.22.0 Windows x64 package. Backend execution is only considered
+The repository contains the CMake wiring for an external ONNX Runtime SDK
+whose version must satisfy the pinned 1.22+ minimum. Backend execution is only considered
 validated when the matching SDK, runtime DLLs, compiler, and test command are
 available on the target machine; a configure or compile check alone does not
 prove provider loading or inference correctness.

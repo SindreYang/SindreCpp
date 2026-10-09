@@ -1,26 +1,27 @@
 # GUI 模块只在显式启用时构建，负责 ImGui、GLFW/OpenGL3 和 stb_image 的组合。
 # GUI 的第三方运行时不向 General 或默认模块传播。
+set(SINDRE_GUI_GLFW_BUNDLED OFF)
 sindre_add_static_target(gui "${SINDRE_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/gui.cpp")
 target_compile_definitions(sindre_gui PUBLIC
     SINDRE_WITH_GUI=1)
 target_link_libraries(sindre_gui PUBLIC sindre::general)
 
-if(NOT SINDRE_IMGUI_SOURCE_DIR)
-    sindre_3rdparty_setup_imgui("${SINDRE_IMGUI_VERSION}")
-    set(SINDRE_IMGUI_SOURCE_DIR "${SINDRE_THIRD_GUI_IMGUI_SOURCE_DIR}")
-endif()
+sindre_3rdparty_setup_imgui("${SINDRE_IMGUI_VERSION}")
+set(SINDRE_IMGUI_SOURCE_DIR "${SINDRE_THIRD_GUI_IMGUI_SOURCE_DIR}")
 
 if(SINDRE_GUI_STB_IMAGE)
+    sindre_3rdparty_setup_stb()
     find_path(_sindre_stb_image_include stb_image.h
         HINTS
-            "${SINDRE_STB_IMAGE_ROOT}"
-            "${SINDRE_STB_IMAGE_ROOT}/include"
+            "${SINDRE_THIRD_GUI_STB_SOURCE_DIR}"
             "${SINDRE_IMGUI_SOURCE_DIR}/examples/example_glfw_opengl3"
-            "${SINDRE_IMGUI_SOURCE_DIR}/examples/example_sdl2_opengl3")
+            "${SINDRE_IMGUI_SOURCE_DIR}/examples/example_sdl2_opengl3"
+        NO_DEFAULT_PATH)
     if(NOT _sindre_stb_image_include)
         message(FATAL_ERROR
-            "SINDRE_GUI_STB_IMAGE requires stb_image.h; set SINDRE_STB_IMAGE_ROOT or install stb.")
+            "SINDRE_GUI_STB_IMAGE requires the fixed stb source recipe to "
+            "provide stb_image.h")
     endif()
     target_compile_definitions(sindre_gui PUBLIC SINDRE_GUI_STB_IMAGE=1)
     target_include_directories(sindre_gui SYSTEM PUBLIC
@@ -65,23 +66,36 @@ if(SINDRE_GUI_STB_IMAGE)
 endif()
 
 if(SINDRE_GUI_GLFW_OPENGL3)
-    find_package(glfw3 CONFIG QUIET)
+    sindre_3rdparty_setup_glfw()
     if(TARGET glfw)
         set(_sindre_glfw_target glfw)
     elseif(TARGET glfw3::glfw)
         set(_sindre_glfw_target glfw3::glfw)
     else()
-        find_package(glfw3 REQUIRED)
-        if(TARGET glfw)
-            set(_sindre_glfw_target glfw)
-        else()
-            set(_sindre_glfw_target glfw3::glfw)
-        endif()
+        message(FATAL_ERROR "Pinned GLFW did not provide a usable target")
     endif()
     find_package(OpenGL REQUIRED)
-    target_link_libraries(sindre_imgui PUBLIC ${_sindre_glfw_target} OpenGL::GL)
+    if(WIN32)
+        set(_sindre_opengl_target opengl32)
+    else()
+        set(_sindre_opengl_target OpenGL::GL)
+    endif()
+    target_link_libraries(sindre_imgui PUBLIC ${_sindre_glfw_target}
+        ${_sindre_opengl_target})
+    if(TARGET glfw)
+        # The static ImGui backend has a real link-time dependency on GLFW.
+        # Export the fixed in-tree GLFW target with the GUI package so an
+        # installed consumer does not need to rediscover a system/vcpkg GLFW.
+        install(TARGETS glfw EXPORT sindreTargets
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        set(SINDRE_GUI_GLFW_BUNDLED ON)
+    endif()
     target_compile_definitions(sindre_gui PUBLIC SINDRE_GUI_GLFW_OPENGL3=1)
 endif()
+
+set(SINDRE_GUI_GLFW_BUNDLED "${SINDRE_GUI_GLFW_BUNDLED}" PARENT_SCOPE)
 
 if(SINDRE_BUILD_GUI_RUNTIME_TESTS)
     target_compile_definitions(sindre_gui PUBLIC SINDRE_GUI_RUNTIME_TEST=1)

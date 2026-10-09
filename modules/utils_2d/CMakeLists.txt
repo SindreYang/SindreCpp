@@ -5,13 +5,31 @@ sindre_add_static_target(utils_2d "${SINDRE_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/image.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/algorithms.cpp")
 target_compile_definitions(sindre_utils_2d PUBLIC SINDRE_WITH_UTILS_2D=1)
-find_package(OpenCV CONFIG REQUIRED COMPONENTS ${SINDRE_THIRD_UTILS_2D_OPENCV_COMPONENTS})
+set(_sindre_opencv_components "${SINDRE_THIRD_UTILS_2D_OPENCV_COMPONENTS}")
+set(_sindre_utils_2d_has_xfeatures2d OFF)
+if(NOT WIN32)
+    # Ubuntu/Debian OpenCV packages commonly omit the non-free xfeatures2d
+    # module even when opencv-contrib is installed. Keep the core API usable.
+    list(REMOVE_ITEM _sindre_opencv_components xfeatures2d)
+endif()
+if(WIN32)
+    find_package(OpenCV ${SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION} EXACT CONFIG REQUIRED
+        COMPONENTS ${_sindre_opencv_components})
+else()
+    find_package(OpenCV ${SINDRE_THIRD_UTILS_2D_OPENCV_LINUX_MIN_VERSION} CONFIG REQUIRED
+        COMPONENTS ${_sindre_opencv_components})
+endif()
 if(NOT DEFINED OpenCV_VERSION)
     message(FATAL_ERROR "OpenCV package did not provide OpenCV_VERSION")
 endif()
-if(OpenCV_VERSION VERSION_LESS SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION)
+if(WIN32)
+    set(_sindre_opencv_min_version "${SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION}")
+else()
+    set(_sindre_opencv_min_version "${SINDRE_THIRD_UTILS_2D_OPENCV_LINUX_MIN_VERSION}")
+endif()
+if(OpenCV_VERSION VERSION_LESS _sindre_opencv_min_version)
     message(FATAL_ERROR
-        "Utils_2d requires OpenCV >= ${SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION}; "
+        "Utils_2d requires OpenCV >= ${_sindre_opencv_min_version}; "
         "found ${OpenCV_VERSION}")
 endif()
 set(_sindre_opencv_targets)
@@ -22,6 +40,24 @@ foreach(component IN LISTS SINDRE_THIRD_UTILS_2D_OPENCV_COMPONENTS)
         list(APPEND _sindre_opencv_targets OpenCV::opencv_${component})
     endif()
 endforeach()
+if(NOT WIN32)
+    find_path(_sindre_xfeatures2d_include_dir
+        NAMES opencv2/xfeatures2d.hpp
+        PATHS ${OpenCV_INCLUDE_DIRS}
+        NO_DEFAULT_PATH)
+    find_library(_sindre_xfeatures2d_library
+        NAMES opencv_xfeatures2d
+        PATHS ${OpenCV_LIBRARY_DIRS}
+        NO_DEFAULT_PATH)
+    if(_sindre_xfeatures2d_include_dir AND _sindre_xfeatures2d_library)
+        set(_sindre_utils_2d_has_xfeatures2d ON)
+        target_compile_definitions(sindre_utils_2d PRIVATE SINDRE_OPENCV_HAS_XFEATURES2D=1)
+        list(APPEND _sindre_opencv_targets "${_sindre_xfeatures2d_library}")
+    endif()
+else()
+    set(_sindre_utils_2d_has_xfeatures2d ON)
+    target_compile_definitions(sindre_utils_2d PRIVATE SINDRE_OPENCV_HAS_XFEATURES2D=1)
+endif()
 if(_sindre_opencv_targets)
     target_link_libraries(sindre_utils_2d PUBLIC sindre::general
         ${_sindre_opencv_targets})
@@ -48,6 +84,7 @@ if(WIN32)
     if(_sindre_opencv_runtime_dir)
         set_property(TARGET sindre_utils_2d PROPERTY SINDRE_RUNTIME_DIRS
             "${_sindre_opencv_runtime_dir}")
+        sindre_install_runtime_dirs("${_sindre_opencv_runtime_dir}")
     endif()
 endif()
 
@@ -62,6 +99,10 @@ if(SINDRE_BUILD_TESTS)
 
     add_executable(sindre_utils_2d_algorithms_tests tests/algorithms_tests.cpp)
     target_link_libraries(sindre_utils_2d_algorithms_tests PRIVATE sindre::utils_2d)
+    if(_sindre_utils_2d_has_xfeatures2d)
+        target_compile_definitions(sindre_utils_2d_algorithms_tests
+            PRIVATE SINDRE_OPENCV_HAS_XFEATURES2D=1)
+    endif()
     sindre_copy_target_runtime_dlls(sindre_utils_2d_algorithms_tests)
     if(_sindre_opencv_runtime_dir)
         sindre_copy_runtime_dirs(sindre_utils_2d_algorithms_tests "${_sindre_opencv_runtime_dir}")

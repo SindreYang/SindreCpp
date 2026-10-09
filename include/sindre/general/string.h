@@ -297,6 +297,16 @@ inline std::string concat(Parts &&...parts) {
 
 } // namespace sindre::general::string
 
+namespace sindre::general {
+
+/// @brief General 的 UTF-8 拥有字符串便捷别名。
+using String = string::String;
+
+/// @brief General 的非拥有 UTF-8 字符串视图便捷别名。
+using StringView = string::StringView;
+
+} // namespace sindre::general
+
 namespace sindre::general::regex {
 class Regex {
 public:

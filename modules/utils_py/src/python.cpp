@@ -95,6 +95,36 @@ GilReleaseGuard Interpreter::get_gil_release() const {
     return GilReleaseGuard(impl.release());
 }
 
+::sindre::general::Result<void>
+Interpreter::import_module(std::string_view module_name) const noexcept {
+    try {
+        if (module_name.empty()) {
+            return ::sindre::general::Result<void>::failure(
+                interpreter_error(std::errc::invalid_argument,
+                                  "Python module name must not be empty",
+                                  "utils_py.import_module"));
+        }
+        const std::string name(module_name);
+        auto result = run_with_gil([&] {
+            native::module_::import(name.c_str());
+        });
+        if (!result) {
+            auto error = result.error();
+            error.context = "utils_py.import_module." + name;
+            return ::sindre::general::Result<void>::failure(std::move(error));
+        }
+        return ::sindre::general::Result<void>::success();
+    } catch (const std::exception &error) {
+        return ::sindre::general::Result<void>::failure(
+            interpreter_error(std::errc::io_error, error.what(),
+                              "utils_py.import_module"));
+    } catch (...) {
+        return ::sindre::general::Result<void>::failure(
+            interpreter_error(std::errc::io_error, "Python module import failed",
+                              "utils_py.import_module"));
+    }
+}
+
 ::sindre::general::Result<std::shared_ptr<Interpreter>>
 Interpreter::create(const InterpreterConfig &config) noexcept {
     auto normalized = normalize_config(config);

@@ -134,6 +134,9 @@ Result<T> guarded(Function &&function, std::string context) noexcept {
                                   "String operation failed", std::move(context));
     }
 #endif
+#if defined(SINDRE_NO_EXCEPTIONS)
+    (void)context;
+#endif
 }
 
 template <class Function>
@@ -154,6 +157,9 @@ Result<void> guarded_void(Function &&function, std::string context) noexcept {
         return Result<void>::failure(std::make_error_code(std::errc::io_error),
                                      "String operation failed", std::move(context));
     }
+#endif
+#if defined(SINDRE_NO_EXCEPTIONS)
+    (void)context;
 #endif
 }
 
@@ -281,7 +287,10 @@ std::vector<std::string> split(std::string_view text, std::string_view delimiter
         const auto end = text.find(delimiter, begin);
         const auto part = text.substr(begin, end == npos ? end : end - begin);
         if (keep_empty || !part.empty()) result.emplace_back(part);
-        if (end == npos) break; begin = end + delimiter.size();
+        if (end == npos) {
+            break;
+        }
+        begin = end + delimiter.size();
     }
     return result;
 }
@@ -545,7 +554,15 @@ bool Regex::match(std::string_view text) const noexcept {
 Result<bool> Regex::try_match(std::string_view text) const noexcept { if(!impl_) return Result<bool>::failure(std::make_error_code(std::errc::invalid_argument),"Regex is not initialized","regex.match"); return Result<bool>::success(match(text)); }
 Result<std::string> Regex::replace(std::string_view text,std::string_view replacement) const noexcept {
 #if defined(SINDRE_WITH_RE2)
-    if(!impl_||!impl_->pattern)return Result<std::string>::failure(std::make_error_code(std::errc::invalid_argument),"Regex is not initialized","regex.replace"); std::string result(text); ::re2::RE2::GlobalReplace(&result,*impl_->pattern,std::string(replacement)); return Result<std::string>::success(std::move(result));
+    if (!impl_ || !impl_->pattern) {
+        return Result<std::string>::failure(
+            std::make_error_code(std::errc::invalid_argument),
+            "Regex is not initialized", "regex.replace");
+    }
+    std::string result(text);
+    ::re2::RE2::GlobalReplace(&result, *impl_->pattern,
+                              std::string(replacement));
+    return Result<std::string>::success(std::move(result));
 #else
     (void)text;(void)replacement;return Result<std::string>::failure(std::make_error_code(std::errc::function_not_supported),"RE2 support is not enabled","regex.replace");
 #endif

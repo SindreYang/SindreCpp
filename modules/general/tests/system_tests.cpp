@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -19,7 +20,11 @@
 } while (false)
 
 int main() {
-    const auto root = std::filesystem::temp_directory_path() / L"sindre-system-tests";
+    const auto unique_id = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto thread_id = std::hash<std::thread::id>{}(std::this_thread::get_id());
+    const auto root = std::filesystem::temp_directory_path() /
+        ("sindre-system-tests-" + std::to_string(unique_id) + "-" +
+         std::to_string(thread_id));
     std::error_code cleanup_error;
     std::filesystem::remove_all(root, cleanup_error);
     std::filesystem::create_directories(root);

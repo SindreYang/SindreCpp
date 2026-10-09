@@ -16,17 +16,17 @@ namespace {
 Result<void> validate_points(const Vertices &points,
                              const NearestNeighborOptions &options) {
     if (points.cols() != 3)
-        return Result<void>::failure(std::errc::invalid_argument,
+        return Result<void>::failure(std::make_error_code(std::errc::invalid_argument),
                                      "Nearest-neighbor points must have exactly 3 columns",
                                      "utils_3d.nearest_neighbors.points");
     if (options.leaf_size == 0)
-        return Result<void>::failure(std::errc::invalid_argument,
+        return Result<void>::failure(std::make_error_code(std::errc::invalid_argument),
                                      "Nearest-neighbor leaf_size must be positive",
                                      "utils_3d.nearest_neighbors.leaf_size");
     for (Index row = 0; row < points.rows(); ++row)
         for (Index col = 0; col < 3; ++col)
             if (!std::isfinite(points(row, col)))
-                return Result<void>::failure(std::errc::invalid_argument,
+                return Result<void>::failure(std::make_error_code(std::errc::invalid_argument),
                                              "Nearest-neighbor points must be finite",
                                              "utils_3d.nearest_neighbors.points");
     return Result<void>::success();
@@ -36,7 +36,7 @@ Result<void> validate_query(const ::sindre::math::Vector3 &query,
                             std::string_view context) {
     for (Index i = 0; i < 3; ++i)
         if (!std::isfinite(query(i)))
-            return Result<void>::failure(std::errc::invalid_argument,
+            return Result<void>::failure(std::make_error_code(std::errc::invalid_argument),
                                          "Nearest-neighbor query must be finite",
                                          std::string(context));
     return Result<void>::success();
@@ -105,7 +105,7 @@ Result<Neighbor> NearestNeighborIndex::get_nearest(
     auto valid = validate_query(query, "utils_3d.nearest_neighbors.nearest");
     if (!valid) return Result<Neighbor>::failure(valid.error());
     if (!impl_ || impl_->dataset.points.rows() == 0)
-        return Result<Neighbor>::failure(std::errc::no_such_file_or_directory,
+        return Result<Neighbor>::failure(std::make_error_code(std::errc::no_such_file_or_directory),
                                          "Nearest-neighbor index is empty",
                                          "utils_3d.nearest_neighbors.nearest");
 
@@ -113,7 +113,7 @@ Result<Neighbor> NearestNeighborIndex::get_nearest(
     double distance = 0.0;
     const auto found = impl_->tree->knnSearch(query.data(), 1, &index, &distance);
     if (found != 1)
-        return Result<Neighbor>::failure(std::errc::io_error,
+        return Result<Neighbor>::failure(std::make_error_code(std::errc::io_error),
                                          "Nearest-neighbor query returned no result",
                                          "utils_3d.nearest_neighbors.nearest");
     return Result<Neighbor>::success({static_cast<std::int64_t>(index), distance});
@@ -124,12 +124,12 @@ Result<std::vector<Neighbor>> NearestNeighborIndex::get_knn(
     auto valid = validate_query(query, "utils_3d.nearest_neighbors.knn");
     if (!valid) return Result<std::vector<Neighbor>>::failure(valid.error());
     if (count == 0)
-        return Result<std::vector<Neighbor>>::failure(std::errc::invalid_argument,
+        return Result<std::vector<Neighbor>>::failure(std::make_error_code(std::errc::invalid_argument),
                                                      "KNN count must be positive",
                                                      "utils_3d.nearest_neighbors.knn");
     if (!impl_ || impl_->dataset.points.rows() == 0)
         return Result<std::vector<Neighbor>>::failure(
-            std::errc::no_such_file_or_directory, "Nearest-neighbor index is empty",
+            std::make_error_code(std::errc::no_such_file_or_directory), "Nearest-neighbor index is empty",
             "utils_3d.nearest_neighbors.knn");
 
     count = std::min(count, size());
@@ -149,14 +149,15 @@ Result<std::vector<Neighbor>> NearestNeighborIndex::get_radius(
     if (!valid) return Result<std::vector<Neighbor>>::failure(valid.error());
     if (!std::isfinite(radius) || radius < 0.0)
         return Result<std::vector<Neighbor>>::failure(
-            std::errc::invalid_argument, "Radius must be finite and non-negative",
+            std::make_error_code(std::errc::invalid_argument), "Radius must be finite and non-negative",
             "utils_3d.nearest_neighbors.radius");
     if (!impl_ || impl_->dataset.points.rows() == 0)
         return Result<std::vector<Neighbor>>::failure(
-            std::errc::no_such_file_or_directory, "Nearest-neighbor index is empty",
+            std::make_error_code(std::errc::no_such_file_or_directory), "Nearest-neighbor index is empty",
             "utils_3d.nearest_neighbors.radius");
 
-    std::vector<std::pair<std::size_t, double>> matches;
+    using Match = nanoflann::ResultItem<std::size_t, double>;
+    std::vector<Match> matches;
     impl_->tree->radiusSearch(query.data(), radius * radius, matches,
                               nanoflann::SearchParameters());
     if (max_count > 0 && matches.size() > max_count) matches.resize(max_count);

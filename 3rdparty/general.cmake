@@ -5,9 +5,13 @@ include_guard(GLOBAL)
 
 # General's fixed binary package cache is a local build input. It is
 # intentionally outside the source registry and may be shared by CI.
-set(SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT
-    "${SINDRE_THIRD_PARTY_CACHE_DIR}/general/packages" CACHE PATH
+set(SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT "" CACHE PATH
     "Fixed General platform package cache")
+if(NOT SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT)
+    set(SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT
+        "${SINDRE_THIRD_PARTY_CACHE_DIR}/general/packages" CACHE PATH
+        "Fixed General platform package cache" FORCE)
+endif()
 
 # The platform file is intentionally reduced to profile selection here. The
 # package payload itself is never part of this source tree.

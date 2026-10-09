@@ -20,7 +20,19 @@ function(sindre_3rdparty_setup_openblas)
         return()
     endif()
 
-    set(_prefix "${SINDRE_THIRD_PARTY_CACHE_DIR}/openblas")
+    # The pinned Windows OpenBLAS CMake profile requires the MSVC ABI.  A
+    # GNU-style clang executable can pass the top-level compiler probe but
+    # fails much later inside OpenBLAS' CMake files with incomplete ARCH
+    # detection.  Reject it here and point users to the supported clang-cl
+    # profile instead of allowing a long, misleading external build.
+    if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT MSVC)
+        message(FATAL_ERROR
+            "The fixed Windows OpenBLAS dependency requires clang-cl/MSVC ABI. "
+            "Configure with the Visual Studio LLVM clang-cl compiler; "
+            "GNU-style clang/clang++ is not supported on Windows.")
+    endif()
+
+    set(_prefix "${SINDRE_THIRD_PARTY_BUILD_CACHE_DIR}/openblas")
     ExternalProject_Add(sindre_ext_openblas
         PREFIX "${_prefix}"
         URL "${SINDRE_THIRD_MATH_OPENBLAS_URL}"

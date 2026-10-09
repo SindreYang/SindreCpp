@@ -18,6 +18,19 @@ set(SINDRE_3RDPARTY_DIR "${SINDRE_SOURCE_DIR}/3rdparty" CACHE PATH
 list(APPEND CMAKE_MODULE_PATH "${SINDRE_SOURCE_DIR}/cmake")
 
 include(CTest)
+
+# Reject unsupported strict no-exception module combinations before loading
+# the fixed General package profile.  Utils3D is ON by default; spelling out
+# OFF is required for a core-only -fno-exceptions validation build.
+if(SINDRE_NO_EXCEPTIONS AND
+   (SINDRE_WITH_AI OR
+    (NOT DEFINED SINDRE_WITH_UTILS_3D) OR SINDRE_WITH_UTILS_3D))
+    message(FATAL_ERROR
+        "SINDRE_NO_EXCEPTIONS currently supports General and Math only. "
+        "Configure with -DSINDRE_WITH_AI=OFF -DSINDRE_WITH_UTILS_3D=OFF, "
+        "or build AI/Utils3D with exception support.")
+endif()
+
 include("${SINDRE_3RDPARTY_DIR}/find_dependencies.cmake")
 include(Options)
 include(OutputLayout)
@@ -52,6 +65,15 @@ if(SINDRE_BUILD_TESTS)
 endif()
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+if(SINDRE_WITH_UTILS_3D)
+    # CGAL's installed config asks CMake to find Boost. Ship the tiny adapter
+    # used by the source build so installed consumers cannot accidentally pick
+    # a vcpkg/system Boost package; the consumer still supplies Boost_ROOT.
+    install(FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BoostStandalone/BoostConfig.cmake"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BoostStandalone/BoostConfigVersion.cmake"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/sindre/BoostStandalone")
+endif()
 set_target_properties(sindre_base PROPERTIES EXPORT_NAME base)
 install(TARGETS sindre_base EXPORT sindreTargets)
 foreach(module IN ITEMS general math ai gui utils_2d utils_3d utils_py)

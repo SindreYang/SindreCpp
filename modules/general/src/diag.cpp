@@ -272,20 +272,35 @@ Result<void> Logger::flush() noexcept {
 }
 
 void info(std::string_view message) noexcept {
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try { spdlog::info("{}", std::string(message)); } catch (...) {}
+#else
+    spdlog::info("{}", std::string(message));
+#endif
 }
 void warning(std::string_view message) noexcept {
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try { spdlog::warn("{}", std::string(message)); } catch (...) {}
+#else
+    spdlog::warn("{}", std::string(message));
+#endif
 }
 void error(std::string_view message) noexcept {
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try { spdlog::error("{}", std::string(message)); } catch (...) {}
+#else
+    spdlog::error("{}", std::string(message));
+#endif
 }
 
 Result<void> set_level(Level level) noexcept {
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         std::lock_guard lock(log_mutex);
         spdlog::set_level(to_native(level));
         return Result<void>::success();
+#if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::exception &error) {
         return Result<void>::failure(std::make_error_code(std::errc::io_error),
                                      error.what(), "log.set_level");
@@ -293,6 +308,7 @@ Result<void> set_level(Level level) noexcept {
         return log_failure(std::errc::io_error, "Logger level update failed",
                            "log.set_level");
     }
+#endif
 }
 
 Result<void> init_log(std::string name, Level level, std::string_view pattern,
@@ -304,7 +320,9 @@ Result<void> init_log(std::string name, Level level, std::string_view pattern,
         (!filename.empty() && (max_size_bytes == 0 || max_files == 0)) ||
         (asynchronous && (async_queue_size == 0 || async_worker_threads == 0)))
         return log_failure(std::errc::invalid_argument, "Invalid logger options", "log.init");
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         std::lock_guard lock(log_mutex);
         if (log_initialized) {
             if (name == log_name) return Result<void>::success();
@@ -348,6 +366,7 @@ Result<void> init_log(std::string name, Level level, std::string_view pattern,
         log_owned = owns_logger;
         log_initialized = true;
         return Result<void>::success();
+#if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::bad_alloc &) {
         return log_failure(std::errc::not_enough_memory, "Not enough memory", "log.init");
     } catch (const std::exception &error) {
@@ -356,13 +375,16 @@ Result<void> init_log(std::string name, Level level, std::string_view pattern,
     } catch (...) {
         return log_failure(std::errc::io_error, "Logger initialization failed", "log.init");
     }
+#endif
 }
 
 Result<LoggerPtr> create_logger(std::string name, Level level) noexcept {
     if (name.empty())
         return Result<LoggerPtr>::failure(std::make_error_code(std::errc::invalid_argument),
                                           "Logger name must not be empty", "log.create_logger");
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         std::lock_guard lock(log_mutex);
         if (auto existing = spdlog::get(name)) {
             const auto existing_level = from_native(existing->level());
@@ -381,6 +403,7 @@ Result<LoggerPtr> create_logger(std::string name, Level level) noexcept {
         logger->set_level(to_native(level));
         spdlog::register_logger(logger);
         return Result<LoggerPtr>::success(wrap(std::move(logger), level));
+#if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::bad_alloc &) {
         return Result<LoggerPtr>::failure(std::make_error_code(std::errc::not_enough_memory),
                                           "Not enough memory", "log.create_logger");
@@ -391,11 +414,14 @@ Result<LoggerPtr> create_logger(std::string name, Level level) noexcept {
         return Result<LoggerPtr>::failure(std::make_error_code(std::errc::io_error),
                                           "Logger creation failed", "log.create_logger");
     }
+#endif
 }
 
 Result<void> initialize(LoggerPtr logger, Level level) noexcept {
     if (!logger) return init_log("sindre", level);
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         std::lock_guard lock(log_mutex);
         if (!logger->impl_ || !logger->impl_->native)
             return log_failure(std::errc::invalid_argument, "Logger is not initialized",
@@ -413,6 +439,7 @@ Result<void> initialize(LoggerPtr logger, Level level) noexcept {
         log_owned = false;
         log_initialized = true;
         return Result<void>::success();
+#if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::exception &error) {
         return Result<void>::failure(std::make_error_code(std::errc::io_error),
                                      error.what(), "log.initialize");
@@ -420,10 +447,13 @@ Result<void> initialize(LoggerPtr logger, Level level) noexcept {
         return log_failure(std::errc::io_error, "Logger initialization failed",
                            "log.initialize");
     }
+#endif
 }
 
 Result<void> shutdown() noexcept {
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         std::lock_guard lock(log_mutex);
         if (log_initialized && log_owned && !log_name.empty()) {
             if (auto logger = spdlog::get(log_name)) logger->flush();
@@ -433,9 +463,11 @@ Result<void> shutdown() noexcept {
         log_owned = false;
         log_initialized = false;
         return Result<void>::success();
+#if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (...) {
         return log_failure(std::errc::io_error, "Logger shutdown failed", "log.shutdown");
     }
+#endif
 }
 
 Result<LoggerPtr> try_rotating_file(std::string name, std::string filename,
@@ -452,7 +484,9 @@ Result<LoggerPtr> try_rotating_file(std::string name,
     if (name.empty() || filename.empty() || max_size_bytes == 0 || max_files == 0)
         return Result<LoggerPtr>::failure(std::make_error_code(std::errc::invalid_argument),
                                           "Invalid rotating logger options", "log.rotating_file");
+#if !defined(SINDRE_NO_EXCEPTIONS)
     try {
+#endif
         auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
             native_filename(filename), max_size_bytes, max_files, rotate_on_open);
         auto logger = std::make_shared<spdlog::logger>(std::move(name), sink);
@@ -461,6 +495,7 @@ Result<LoggerPtr> try_rotating_file(std::string name,
                                               "Cannot create rotating logger", "log.rotating_file");
         logger->set_pattern(std::string(default_pattern));
         return Result<LoggerPtr>::success(wrap(std::move(logger), Level::info));
+#if !defined(SINDRE_NO_EXCEPTIONS)
     } catch (const std::exception &error) {
         return Result<LoggerPtr>::failure(std::make_error_code(std::errc::io_error),
                                           error.what(), "log.rotating_file");
@@ -468,6 +503,7 @@ Result<LoggerPtr> try_rotating_file(std::string name,
         return Result<LoggerPtr>::failure(std::make_error_code(std::errc::io_error),
                                           "Cannot create rotating logger", "log.rotating_file");
     }
+#endif
 }
 
 LoggerPtr rotating_file(std::string name, std::string filename,

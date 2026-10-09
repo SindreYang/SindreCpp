@@ -13,6 +13,19 @@
 - 项目文档唯一位置：`docs/`，分为 `guides/`、`modules/`、`dependencies/`、
   `development/`；代码目录不放 README 或模块文档。
 - 第三方依赖登记在 `3rdparty/` 及其依赖子目录，不把第三方头文件复制进项目。
+- 所有本项目产生的下载包、解压目录、依赖构建树、安装前缀、构建目录和测试产物
+  必须位于仓库根目录 `F:\My_Github\SindreCpp` 内（例如 `build/`、`build_win/`、
+  `build_linux/` 和被 `.gitignore` 排除的缓存目录）。禁止写入 `D:\software`、
+  `F:\SindreCppCache`、用户目录、WSL `/home` 或其他仓库外路径；仓库外 SDK 只能
+  只读使用，若必须下载或安装必须先得到用户明确授权。
+
+- Windows 构建只能使用 `build_win/`，Linux/WSL 构建只能使用 `build_linux/`；不同
+  配置应在这两个目录下使用有意义的子目录隔离，例如 `build_linux/core/` 或
+  `build_win/ai-trt-dispatch/`，不得在仓库根目录散落 `build_*` 目录。
+- WSL 即使为了规避 `/mnt/f` 的 9P 性能问题，也不得把本项目的构建树、安装前缀或
+  测试产物长期放在 WSL `/home`、容器卷或临时目录。确需使用临时 ext4 构建时，
+  完成验证后必须迁回仓库的 `build_linux/`；工具虚拟环境（例如 `cmake-venv`）
+  与构建目录分开管理，不得混同。
 
 不要恢复旧的 `include/<module>/index.h`、模块本地公共头、Json/Http/Log 独立
 target 或 catch-all 聚合 target。项目自己的头文件统一使用 `.h`，第三方头文件
@@ -64,6 +77,11 @@ Linux/WSL：
 
 构建目录固定为 `build_win/` 和 `build_linux/`；不要为普通测试或模块验证在
 仓库根目录创建临时 `build_*` 目录。
+
+WSL 构建也必须落在仓库内的 `build_linux/`。如果从 WSL ext4 临时迁回项目目录，
+只能迁移到 `build_linux/<profile>/`，并在迁移完成后确认源目录已消失、目标目录存在。
+由于 CMake 缓存可能保存旧的绝对路径，迁移后的构建目录在继续使用前必须重新运行
+对应的配置命令或预设；不能仅凭目录移动结果声称缓存仍然可复用。
 
 模块开关、依赖要求、编译器策略、测试边界和模块内部规则以 `docs/` 为准；当仓库
 规则变化时更新本文件，并避免复制一整套长期说明造成双份规范。

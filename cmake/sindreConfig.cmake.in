@@ -9,6 +9,33 @@ set(_sindre_package_prefix_dir "${PACKAGE_PREFIX_DIR}")
 
 include(CMakeFindDependencyMacro)
 
+# Components keep a small consumer (for example General or Math) from
+# resolving every enabled module's large SDK. With no components, preserve the
+# historical behavior and make all modules from this installation available.
+set(_sindre_need_general TRUE)
+set(_sindre_need_math @SINDRE_WITH_MATH@)
+set(_sindre_need_ai @SINDRE_WITH_AI@)
+set(_sindre_need_gui @SINDRE_WITH_GUI@)
+set(_sindre_need_utils_2d @SINDRE_WITH_UTILS_2D@)
+set(_sindre_need_utils_3d @SINDRE_WITH_UTILS_3D@)
+set(_sindre_need_utils_py @SINDRE_WITH_UTILS_PY@)
+if(sindre_FIND_COMPONENTS)
+    foreach(_sindre_component IN ITEMS general math ai gui utils_2d utils_3d utils_py)
+        set(_sindre_need_${_sindre_component} FALSE)
+    endforeach()
+    foreach(_sindre_component IN LISTS sindre_FIND_COMPONENTS)
+        if(NOT _sindre_component MATCHES "^(general|math|ai|gui|utils_2d|utils_3d|utils_py)$")
+            message(FATAL_ERROR "Unknown sindre component: ${_sindre_component}")
+        endif()
+        set(_sindre_need_${_sindre_component} TRUE)
+    endforeach()
+    if(_sindre_need_ai OR _sindre_need_gui OR _sindre_need_utils_2d OR
+       _sindre_need_utils_3d OR _sindre_need_utils_py)
+        set(_sindre_need_general TRUE)
+        set(_sindre_need_math TRUE)
+    endif()
+endif()
+
 # Windows static General packages are built and shipped as one Release ABI:
 # static CRT and `_ITERATOR_DEBUG_LEVEL=0`.  A Visual Studio consumer often
 # configures as Debug by default, which would otherwise select the Debug
@@ -17,9 +44,20 @@ include(CMakeFindDependencyMacro)
 # configuration to the shipped Release dependency set while importing the
 # package targets, then restore the caller's global mapping variables.
 if(WIN32 AND "@SINDRE_GENERAL_SHARED@" STREQUAL "OFF")
-    # Resolve the fixed external dependency profile to Release.  The own
-    # exported targets are restored to RelWithDebInfo below when that
-    # configuration was installed.
+    # The package may have been installed from a single-config Ninja build.
+    # Select a configuration that actually has an exported archive instead of
+    # assuming Release and making Debug-only installs unusable.
+    set(_sindre_export_config Release)
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/sindreTargets-relwithdebinfo.cmake")
+        set(_sindre_export_config RelWithDebInfo)
+    elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/sindreTargets-release.cmake")
+        set(_sindre_export_config Release)
+    elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/sindreTargets-debug.cmake")
+        set(_sindre_export_config Debug)
+    elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/sindreTargets-minsizerel.cmake")
+        set(_sindre_export_config MinSizeRel)
+    endif()
+    string(TOUPPER "${_sindre_export_config}" _sindre_export_config_upper)
     foreach(_sindre_config IN ITEMS DEBUG RELWITHDEBINFO MINSIZEREL)
         string(TOLOWER "${_sindre_config}" _sindre_config_lower)
         set(_sindre_map_var "CMAKE_MAP_IMPORTED_CONFIG_${_sindre_config}")
@@ -29,12 +67,26 @@ if(WIN32 AND "@SINDRE_GENERAL_SHARED@" STREQUAL "OFF")
         else()
             set(_sindre_saved_map_defined_${_sindre_config_lower} FALSE)
         endif()
-        set(${_sindre_map_var} Release)
+        # Never map a configuration to itself. CMake 4.4 treats a self-map as
+        # an unresolved imported configuration during generation, even when
+        # the matching IMPORTED_LOCATION_<CONFIG> property exists.
+        if(_sindre_config STREQUAL _sindre_export_config_upper)
+            unset(${_sindre_map_var})
+        else()
+            set(${_sindre_map_var} "${_sindre_export_config}")
+        endif()
     endforeach()
 endif()
 
 find_dependency(Threads)
-if(@SINDRE_WITH_MATH@)
+# The bundled large dependency profile ships one Release static ABI. Map
+# consumer configurations before loading its imported targets so
+# RelWithDebInfo/Debug consumers do not leave OpenSSL/Crashpad locations
+# unset.
+foreach(_sindre_dependency_config IN ITEMS DEBUG MINSIZEREL)
+    set(CMAKE_MAP_IMPORTED_CONFIG_${_sindre_dependency_config} Release)
+endforeach()
+if(_sindre_need_math AND @SINDRE_WITH_MATH@)
     if(@SINDRE_MATH_EIGEN_BUNDLED@)
         if(NOT TARGET Eigen3::Eigen)
             add_library(Eigen3::Eigen INTERFACE IMPORTED)
@@ -45,85 +97,448 @@ if(@SINDRE_WITH_MATH@)
         find_dependency(Eigen3 3.4.1 CONFIG)
     endif()
 endif()
-if(@SINDRE_MATH_BLAS_ENABLED@)
-    set(BLA_VENDOR "@SINDRE_MATH_BLAS_BACKEND@")
-    if(BLA_VENDOR STREQUAL "OPENBLAS")
-        if("@SINDRE_THIRD_MATH_OPENBLAS_VERSION@" STREQUAL "")
-            find_dependency(OpenBLAS CONFIG)
-        else()
-            find_dependency(OpenBLAS @SINDRE_THIRD_MATH_OPENBLAS_VERSION@ EXACT CONFIG)
-        endif()
-        if(NOT DEFINED OpenBLAS_INCLUDE_DIRS)
-            message(FATAL_ERROR "OpenBLAS package did not provide OpenBLAS_INCLUDE_DIRS")
-        endif()
-        get_filename_component(_sindre_openblas_root
-            "${OpenBLAS_INCLUDE_DIRS}" DIRECTORY)
+if(_sindre_need_math AND @SINDRE_MATH_BLAS_ENABLED@)
+    if("@SINDRE_MATH_BLAS_BACKEND@" STREQUAL "OPENBLAS")
         if(WIN32)
-            set(_sindre_openblas_import_name "libopenblas.lib")
+            set(_sindre_openblas_library
+                "${_sindre_package_prefix_dir}/lib/openblas.lib")
         else()
-            set(_sindre_openblas_import_name "libopenblas.a")
+            set(_sindre_openblas_library
+                "${_sindre_package_prefix_dir}/lib/libopenblas.a")
         endif()
-        if(NOT EXISTS "${_sindre_openblas_root}/lib/${_sindre_openblas_import_name}")
-            message(FATAL_ERROR "Fixed OpenBLAS import library is missing")
+        if(NOT EXISTS "${_sindre_openblas_library}")
+            message(FATAL_ERROR
+                "The installed sindre Math package is missing its fixed OpenBLAS archive: "
+                "${_sindre_openblas_library}")
         endif()
-        set(BLAS_LIBRARIES
-            "${_sindre_openblas_root}/lib/${_sindre_openblas_import_name}"
-            CACHE STRING "OpenBLAS import library" FORCE)
+        if(NOT TARGET sindre_openblas)
+            add_library(sindre_openblas STATIC IMPORTED)
+            set_target_properties(sindre_openblas PROPERTIES
+                IMPORTED_CONFIGURATIONS "DEBUG;RELEASE;RELWITHDEBINFO;MINSIZEREL"
+                IMPORTED_LOCATION "${_sindre_openblas_library}"
+                IMPORTED_LOCATION_DEBUG "${_sindre_openblas_library}"
+                IMPORTED_LOCATION_RELEASE "${_sindre_openblas_library}"
+                IMPORTED_LOCATION_RELWITHDEBINFO "${_sindre_openblas_library}"
+                IMPORTED_LOCATION_MINSIZEREL "${_sindre_openblas_library}"
+                INTERFACE_INCLUDE_DIRECTORIES
+                    "${_sindre_package_prefix_dir}/include/openblas")
+            add_library(sindre::openblas ALIAS sindre_openblas)
+        endif()
     endif()
-    find_dependency(BLAS)
 endif()
-if(NOT @SINDRE_SPDLOG_BUNDLED@)
+if(_sindre_need_general AND NOT @SINDRE_SPDLOG_BUNDLED@)
     find_dependency(spdlog CONFIG)
 endif()
-if(NOT @SINDRE_HTTPLIB_BUNDLED@)
+if(_sindre_need_general AND NOT @SINDRE_HTTPLIB_BUNDLED@)
     find_dependency(httplib CONFIG)
 endif()
-find_dependency(OpenSSL CONFIG)
-if(NOT @SINDRE_SIMDJSON_BUNDLED@)
+if(_sindre_need_general)
+    find_dependency(OpenSSL 3.3.0 EXACT CONFIG)
+    # The fixed Windows profile exposes single-configuration static OpenSSL
+    # targets through a generic IMPORTED_LOCATION.  Materialize that location
+    # for every consumer configuration so a Debug/RelWithDebInfo consumer does
+    # not make CMake reject an otherwise valid Release ABI package.
+    foreach(_sindre_openssl_target IN ITEMS OpenSSL::SSL OpenSSL::Crypto)
+        if(TARGET ${_sindre_openssl_target})
+            get_target_property(_sindre_openssl_location
+                ${_sindre_openssl_target} IMPORTED_LOCATION)
+            get_target_property(_sindre_openssl_implib
+                ${_sindre_openssl_target} IMPORTED_IMPLIB)
+            foreach(_sindre_openssl_config IN ITEMS
+                    DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+                if(_sindre_openssl_location)
+                    set_property(TARGET ${_sindre_openssl_target} PROPERTY
+                        IMPORTED_LOCATION_${_sindre_openssl_config}
+                        "${_sindre_openssl_location}")
+                endif()
+                if(_sindre_openssl_implib)
+                    set_property(TARGET ${_sindre_openssl_target} PROPERTY
+                        IMPORTED_IMPLIB_${_sindre_openssl_config}
+                        "${_sindre_openssl_implib}")
+                endif()
+            endforeach()
+        endif()
+    endforeach()
+endif()
+if(_sindre_need_general AND NOT @SINDRE_SIMDJSON_BUNDLED@)
     find_dependency(simdjson CONFIG)
 endif()
-if(@SINDRE_CLI_USE_ARGPARSE@ AND NOT @SINDRE_ARGPARSE_BUNDLED@)
+if(_sindre_need_general AND @SINDRE_CLI_USE_ARGPARSE@ AND NOT @SINDRE_ARGPARSE_BUNDLED@)
     find_dependency(argparse CONFIG)
 endif()
-find_dependency(ZLIB)
-if(@SINDRE_WITH_UTILS_2D@)
-    find_dependency(OpenCV CONFIG REQUIRED
-        COMPONENTS @SINDRE_THIRD_UTILS_2D_OPENCV_COMPONENTS@)
+if(_sindre_need_utils_2d AND @SINDRE_WITH_UTILS_2D@)
+    if(WIN32)
+        find_dependency(OpenCV @SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION@ EXACT CONFIG REQUIRED
+            COMPONENTS @SINDRE_THIRD_UTILS_2D_OPENCV_COMPONENTS@)
+    else()
+        # Linux/macOS use the platform profile's minimum version.  In
+        # particular, do not require the Windows OpenCV contrib component
+        # xfeatures2d when the platform package does not ship it.
+        find_dependency(OpenCV @SINDRE_THIRD_UTILS_2D_OPENCV_LINUX_MIN_VERSION@ CONFIG REQUIRED
+            COMPONENTS core imgproc imgcodecs highgui features2d calib3d video videoio
+                objdetect aruco optflow tracking)
+    endif()
     if(NOT DEFINED OpenCV_VERSION)
         message(FATAL_ERROR "OpenCV package did not provide OpenCV_VERSION")
     endif()
-    if(OpenCV_VERSION VERSION_LESS
-        "@SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION@")
+    if(WIN32)
+        if(OpenCV_VERSION VERSION_LESS
+            "@SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION@")
+            message(FATAL_ERROR
+                "sindre Utils_2d requires OpenCV >= "
+                "@SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION@; found ${OpenCV_VERSION}")
+        endif()
+    elseif(OpenCV_VERSION VERSION_LESS
+        "@SINDRE_THIRD_UTILS_2D_OPENCV_LINUX_MIN_VERSION@")
         message(FATAL_ERROR
             "sindre Utils_2d requires OpenCV >= "
-            "@SINDRE_THIRD_UTILS_2D_OPENCV_MIN_VERSION@; found ${OpenCV_VERSION}")
+            "@SINDRE_THIRD_UTILS_2D_OPENCV_LINUX_MIN_VERSION@; found ${OpenCV_VERSION}")
     endif()
 endif()
-if(@SINDRE_WITH_UTILS_3D@)
-    find_dependency(VTK @SINDRE_THIRD_UTILS_3D_VTK_MIN_VERSION@
-        COMPONENTS @SINDRE_UTILS_3D_VTK_COMPONENTS@)
-    if(@SINDRE_UTILS_3D_CGAL@)
-        find_dependency(CGAL @SINDRE_THIRD_UTILS_3D_CGAL_MIN_VERSION@ CONFIG)
+if(_sindre_need_utils_3d AND @SINDRE_WITH_UTILS_3D@)
+    # The official VTK SDK currently exports Release targets only.  Map the
+    # dependency while loading VTK, but do not leave a global RelWithDebInfo
+    # mapping in place: the installed Sindre targets may themselves export a
+    # RelWithDebInfo archive.
+    if(DEFINED CMAKE_MAP_IMPORTED_CONFIG_RELWITHDEBINFO)
+        set(_sindre_saved_vtk_relwith_map
+            "${CMAKE_MAP_IMPORTED_CONFIG_RELWITHDEBINFO}")
+        set(_sindre_saved_vtk_relwith_map_defined TRUE)
+    else()
+        set(_sindre_saved_vtk_relwith_map_defined FALSE)
+    endif()
+    if(WIN32)
+        set(CMAKE_MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release)
+    endif()
+    if(WIN32)
+        find_dependency(VTK @SINDRE_THIRD_UTILS_3D_VTK_MIN_VERSION@ EXACT CONFIG
+            COMPONENTS @SINDRE_UTILS_3D_VTK_COMPONENTS@)
+    else()
+        find_dependency(VTK @SINDRE_THIRD_UTILS_3D_VTK_LINUX_MIN_VERSION@ CONFIG
+            COMPONENTS @SINDRE_UTILS_3D_VTK_COMPONENTS@)
+    endif()
+    if(WIN32)
+        # Official Windows VTK SDKs commonly export Release locations only.
+        # Persist the fallback on the imported VTK targets themselves so the
+        # consumer can use RelWithDebInfo/Debug after global state is restored.
+        set(_sindre_vtk_components @SINDRE_UTILS_3D_VTK_COMPONENTS@)
+        foreach(_sindre_vtk_component IN LISTS _sindre_vtk_components)
+            if(TARGET VTK::${_sindre_vtk_component})
+                get_target_property(_sindre_vtk_release_location
+                    VTK::${_sindre_vtk_component} IMPORTED_LOCATION_RELEASE)
+                get_target_property(_sindre_vtk_release_implib
+                    VTK::${_sindre_vtk_component} IMPORTED_IMPLIB_RELEASE)
+                foreach(_sindre_vtk_config IN ITEMS DEBUG RELWITHDEBINFO MINSIZEREL)
+                    set_property(TARGET VTK::${_sindre_vtk_component} PROPERTY
+                        MAP_IMPORTED_CONFIG_${_sindre_vtk_config} Release)
+                    if(_sindre_vtk_release_location)
+                        set_property(TARGET VTK::${_sindre_vtk_component} PROPERTY
+                            IMPORTED_LOCATION_${_sindre_vtk_config}
+                            "${_sindre_vtk_release_location}")
+                    endif()
+                    if(_sindre_vtk_release_implib)
+                        set_property(TARGET VTK::${_sindre_vtk_component} PROPERTY
+                            IMPORTED_IMPLIB_${_sindre_vtk_config}
+                            "${_sindre_vtk_release_implib}")
+                    endif()
+                endforeach()
+            endif()
+        endforeach()
+        unset(_sindre_vtk_component)
+        unset(_sindre_vtk_config)
+        unset(_sindre_vtk_release_location)
+        unset(_sindre_vtk_release_implib)
+    endif()
+    if(WIN32)
+        if(_sindre_saved_vtk_relwith_map_defined)
+            set(CMAKE_MAP_IMPORTED_CONFIG_RELWITHDEBINFO
+                "${_sindre_saved_vtk_relwith_map}")
+        else()
+            unset(CMAKE_MAP_IMPORTED_CONFIG_RELWITHDEBINFO)
+        endif()
+    endif()
+    unset(_sindre_saved_vtk_relwith_map)
+    unset(_sindre_saved_vtk_relwith_map_defined)
+    if(WIN32)
+        if(NOT DEFINED SINDRE_UTILS_3D_BOOST_ROOT OR
+           SINDRE_UTILS_3D_BOOST_ROOT STREQUAL "")
+            if(DEFINED BOOST_ROOT AND NOT BOOST_ROOT STREQUAL "")
+                set(SINDRE_UTILS_3D_BOOST_ROOT "${BOOST_ROOT}")
+            elseif(DEFINED Boost_ROOT AND NOT Boost_ROOT STREQUAL "")
+                set(SINDRE_UTILS_3D_BOOST_ROOT "${Boost_ROOT}")
+            endif()
+        endif()
+        if(NOT SINDRE_UTILS_3D_BOOST_ROOT)
+            message(FATAL_ERROR
+                "Installed sindre::utils_3d CGAL requires an explicit standalone "
+                "Boost SDK. Set SINDRE_UTILS_3D_BOOST_ROOT, BOOST_ROOT or Boost_ROOT.")
+        endif()
+        if(SINDRE_UTILS_3D_BOOST_ROOT MATCHES "[Vv][Cc][Pp][Kk][Gg]" OR
+           (DEFINED Boost_DIR AND Boost_DIR MATCHES "[Vv][Cc][Pp][Kk][Gg]"))
+            message(FATAL_ERROR
+                "Installed sindre::utils_3d rejects vcpkg Boost; use the official "
+                "standalone Boost SDK.")
+        endif()
+        set(BOOST_ROOT "${SINDRE_UTILS_3D_BOOST_ROOT}")
+        set(Boost_ROOT "${SINDRE_UTILS_3D_BOOST_ROOT}")
+        set(Boost_DIR
+            "${_sindre_package_prefix_dir}/@CMAKE_INSTALL_LIBDIR@/cmake/sindre/BoostStandalone")
+        if(POLICY CMP0167)
+            cmake_policy(SET CMP0167 OLD)
+        endif()
+        if(NOT CGAL_DIR)
+            message(FATAL_ERROR
+                "sindre::utils_3d requires an explicit standalone CGAL SDK. "
+                "Set CGAL_DIR to its official CGALConfig.cmake directory; "
+                "vcpkg and implicit package discovery are not accepted.")
+        endif()
+        if(NOT EXISTS "${CGAL_DIR}/CGALConfig.cmake")
+            message(FATAL_ERROR
+                "CGAL_DIR must contain the standalone CGALConfig.cmake: ${CGAL_DIR}")
+        endif()
+        if(CGAL_DIR MATCHES "[Vv][Cc][Pp][Kk][Gg]")
+            message(FATAL_ERROR
+                "Installed sindre::utils_3d rejects a vcpkg CGAL package; "
+                "use the official standalone CGAL SDK: ${CGAL_DIR}")
+        endif()
+        foreach(_sindre_cgal_numeric_dep IN ITEMS GMP MPFR)
+            if((NOT DEFINED ${_sindre_cgal_numeric_dep}_ROOT OR
+                "${${_sindre_cgal_numeric_dep}_ROOT}" STREQUAL "") AND
+               DEFINED SINDRE_UTILS_3D_${_sindre_cgal_numeric_dep}_ROOT AND
+               NOT "${SINDRE_UTILS_3D_${_sindre_cgal_numeric_dep}_ROOT}" STREQUAL "")
+                set(${_sindre_cgal_numeric_dep}_ROOT
+                    "${SINDRE_UTILS_3D_${_sindre_cgal_numeric_dep}_ROOT}")
+            endif()
+            if(NOT DEFINED ${_sindre_cgal_numeric_dep}_ROOT OR
+               "${${_sindre_cgal_numeric_dep}_ROOT}" STREQUAL "")
+                message(FATAL_ERROR
+                    "Installed sindre::utils_3d requires an explicit standalone "
+                    "${_sindre_cgal_numeric_dep} SDK root. Set "
+                    "SINDRE_UTILS_3D_${_sindre_cgal_numeric_dep}_ROOT or "
+                    "${_sindre_cgal_numeric_dep}_ROOT.")
+            endif()
+            if("${${_sindre_cgal_numeric_dep}_ROOT}" MATCHES "[Vv][Cc][Pp][Kk][Gg]")
+                message(FATAL_ERROR
+                    "Installed sindre::utils_3d rejects vcpkg "
+                    "${_sindre_cgal_numeric_dep}; use the standalone SDK.")
+            endif()
+            if(DEFINED ${_sindre_cgal_numeric_dep}_ROOT AND
+               IS_DIRECTORY "${${_sindre_cgal_numeric_dep}_ROOT}")
+                set(_sindre_cgal_numeric_root
+                    "${${_sindre_cgal_numeric_dep}_ROOT}")
+                set(${_sindre_cgal_numeric_dep}_INCLUDE_DIR
+                    "${_sindre_cgal_numeric_root}/include")
+                if(_sindre_cgal_numeric_dep STREQUAL "GMP")
+                    find_library(_sindre_cgal_numeric_release
+                        NAMES gmp libgmp-10 gmp-10 mpir
+                        HINTS "${_sindre_cgal_numeric_root}/lib" NO_DEFAULT_PATH)
+                    if(_sindre_cgal_numeric_release)
+                        set(GMP_LIBRARY_RELEASE
+                            "${_sindre_cgal_numeric_release}")
+                        set(GMP_LIBRARIES
+                            "${_sindre_cgal_numeric_release}")
+                    endif()
+                else()
+                    find_library(_sindre_cgal_numeric_library
+                        NAMES mpfr libmpfr-4 libmpfr-1
+                        HINTS "${_sindre_cgal_numeric_root}/lib" NO_DEFAULT_PATH)
+                    if(_sindre_cgal_numeric_library)
+                        set(MPFR_LIBRARIES
+                            "${_sindre_cgal_numeric_library}")
+                    endif()
+                endif()
+            endif()
+            unset(_sindre_cgal_numeric_root)
+            unset(_sindre_cgal_numeric_release)
+            unset(_sindre_cgal_numeric_library)
+        endforeach()
+        if(NOT GMP_INCLUDE_DIR OR NOT GMP_LIBRARIES OR
+           NOT EXISTS "${GMP_INCLUDE_DIR}/gmp.h")
+            message(FATAL_ERROR
+                "The installed sindre::utils_3d package could not resolve "
+                "standalone GMP from GMP_ROOT.")
+        endif()
+        if(NOT MPFR_INCLUDE_DIR OR NOT MPFR_LIBRARIES OR
+           NOT EXISTS "${MPFR_INCLUDE_DIR}/mpfr.h")
+            message(FATAL_ERROR
+                "The installed sindre::utils_3d package could not resolve "
+                "standalone MPFR from MPFR_ROOT.")
+        endif()
+        if(WIN32)
+            find_dependency(CGAL @SINDRE_THIRD_UTILS_3D_CGAL_MIN_VERSION@ EXACT CONFIG)
+        else()
+            find_dependency(CGAL @SINDRE_THIRD_UTILS_3D_CGAL_LINUX_MIN_VERSION@ CONFIG)
+        endif()
+        if(DEFINED CGAL_DIR AND CGAL_DIR MATCHES "[Vv][Cc][Pp][Kk][Gg]")
+            message(FATAL_ERROR
+                "sindre::utils_3d requires the official standalone CGAL SDK; "
+                "the resolved CGAL package appears to come from vcpkg: ${CGAL_DIR}")
+        endif()
+        if(DEFINED CGAL_CONFIG AND CGAL_CONFIG MATCHES "[Vv][Cc][Pp][Kk][Gg]")
+            message(FATAL_ERROR
+                "sindre::utils_3d resolved CGAL from a vcpkg package: ${CGAL_CONFIG}")
+        endif()
+        foreach(_sindre_cgal_path_var IN ITEMS
+                CGAL_CONFIG_DIR CGAL_ROOT CGAL_INCLUDE_DIRS
+                GMP_INCLUDE_DIR GMP_LIBRARIES GMP_LIBRARY_RELEASE GMP_LIBRARY_DEBUG
+                MPFR_INCLUDE_DIR MPFR_LIBRARIES)
+            if(DEFINED ${_sindre_cgal_path_var})
+                set(_sindre_cgal_path_value "${${_sindre_cgal_path_var}}")
+                if(_sindre_cgal_path_value MATCHES "[Vv][Cc][Pp][Kk][Gg]")
+                    message(FATAL_ERROR
+                        "Installed sindre::utils_3d CGAL dependency "
+                        "'${_sindre_cgal_path_var}' resolved to a vcpkg path: "
+                        "${_sindre_cgal_path_value}. Use standalone CGAL/GMP/MPFR SDKs.")
+                endif()
+            endif()
+        endforeach()
+    else()
+        # Linux/macOS may use the distribution CGAL/Boost/GMP/MPFR profile.
+        # Resolve the numeric libraries through the normal platform search
+        # path unless the consumer supplied explicit roots.
+        if(DEFINED SINDRE_UTILS_3D_GMP_ROOT AND
+           NOT SINDRE_UTILS_3D_GMP_ROOT STREQUAL "")
+            set(GMP_ROOT "${SINDRE_UTILS_3D_GMP_ROOT}")
+        endif()
+        if(DEFINED SINDRE_UTILS_3D_MPFR_ROOT AND
+           NOT SINDRE_UTILS_3D_MPFR_ROOT STREQUAL "")
+            set(MPFR_ROOT "${SINDRE_UTILS_3D_MPFR_ROOT}")
+        endif()
+        find_path(GMP_INCLUDE_DIR NAMES gmp.h)
+        find_library(GMP_LIBRARIES NAMES gmp libgmp)
+        find_path(MPFR_INCLUDE_DIR NAMES mpfr.h)
+        find_library(MPFR_LIBRARIES NAMES mpfr libmpfr)
+        if(NOT GMP_INCLUDE_DIR OR NOT GMP_LIBRARIES OR
+           NOT MPFR_INCLUDE_DIR OR NOT MPFR_LIBRARIES)
+            message(FATAL_ERROR
+                "Installed sindre::utils_3d could not resolve the Linux "
+                "GMP/MPFR system profile.")
+        endif()
+        find_dependency(CGAL @SINDRE_THIRD_UTILS_3D_CGAL_LINUX_MIN_VERSION@ CONFIG)
     endif()
     if(@SINDRE_UTILS_3D_PCL@)
-        find_dependency(PCL @SINDRE_THIRD_UTILS_3D_PCL_MIN_VERSION@ CONFIG
-            COMPONENTS common registration surface)
+        if(WIN32)
+            find_dependency(PCL @SINDRE_THIRD_UTILS_3D_PCL_MIN_VERSION@ EXACT CONFIG
+                COMPONENTS common features filters registration search segmentation surface)
+        else()
+            find_dependency(PCL @SINDRE_THIRD_UTILS_3D_PCL_LINUX_MIN_VERSION@ CONFIG
+                COMPONENTS common features filters registration search segmentation surface)
+        endif()
+        # PCL's static Windows package can expose OpenMP symbols through
+        # Eigen/PCL templates without exporting the LLVM runtime. Recreate
+        # the compiler-local imported target before loading sindreTargets.
+        if(NOT TARGET OpenMP::OpenMP_CXX AND WIN32 AND MSVC AND
+           CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            get_filename_component(_sindre_llvm_bin
+                "${CMAKE_CXX_COMPILER}" DIRECTORY)
+            get_filename_component(_sindre_llvm_root
+                "${_sindre_llvm_bin}" DIRECTORY)
+            set(_sindre_libomp_candidate "${_sindre_llvm_root}/lib/libomp.lib")
+            if(EXISTS "${_sindre_libomp_candidate}")
+                set(_sindre_libomp_library "${_sindre_libomp_candidate}")
+            else()
+                find_library(_sindre_libomp_library NAMES libomp
+                    HINTS "${_sindre_llvm_root}/lib" NO_DEFAULT_PATH)
+            endif()
+            if(NOT _sindre_libomp_library)
+                message(FATAL_ERROR
+                    "The installed sindre::utils_3d PCL profile requires "
+                    "LLVM OpenMP (libomp.lib) from the clang-cl toolchain.")
+            endif()
+            add_library(sindre_utils_3d_openmp UNKNOWN IMPORTED GLOBAL)
+            set_target_properties(sindre_utils_3d_openmp PROPERTIES
+                IMPORTED_CONFIGURATIONS "DEBUG;RELEASE;RELWITHDEBINFO;MINSIZEREL"
+                IMPORTED_LOCATION "${_sindre_libomp_library}"
+                IMPORTED_LOCATION_DEBUG "${_sindre_libomp_library}"
+                IMPORTED_LOCATION_RELEASE "${_sindre_libomp_library}"
+                IMPORTED_LOCATION_RELWITHDEBINFO "${_sindre_libomp_library}"
+                IMPORTED_LOCATION_MINSIZEREL "${_sindre_libomp_library}")
+            add_library(OpenMP::OpenMP_CXX ALIAS sindre_utils_3d_openmp)
+        elseif(NOT TARGET OpenMP::OpenMP_CXX)
+            find_dependency(OpenMP REQUIRED COMPONENTS CXX)
+        endif()
     endif()
 endif()
-if(@SINDRE_WITH_UTILS_PY@)
+if(_sindre_need_utils_py AND @SINDRE_WITH_UTILS_PY@)
     find_dependency(Python3 3.12 COMPONENTS Interpreter Development.Embed)
+    # FindPython3 commonly provides only a generic or Release import library
+    # on Windows. The installed Sindre target is consumed by RelWithDebInfo
+    # by default, so materialize the same fixed Python import library for every
+    # configuration instead of leaving Python3::Python unresolved.
+    if(TARGET Python3::Python)
+        get_target_property(_sindre_python_implib_release
+            Python3::Python IMPORTED_IMPLIB_RELEASE)
+        get_target_property(_sindre_python_implib
+            Python3::Python IMPORTED_IMPLIB)
+        if(NOT _sindre_python_implib_release AND _sindre_python_implib)
+            set(_sindre_python_implib_release "${_sindre_python_implib}")
+        endif()
+        get_target_property(_sindre_python_location_release
+            Python3::Python IMPORTED_LOCATION_RELEASE)
+        get_target_property(_sindre_python_location
+            Python3::Python IMPORTED_LOCATION)
+        if(NOT _sindre_python_location_release AND _sindre_python_location)
+            set(_sindre_python_location_release "${_sindre_python_location}")
+        endif()
+        foreach(_sindre_python_config IN ITEMS
+                DEBUG RELWITHDEBINFO MINSIZEREL RELEASE)
+            if(_sindre_python_implib_release)
+                set_property(TARGET Python3::Python PROPERTY
+                    IMPORTED_IMPLIB_${_sindre_python_config}
+                    "${_sindre_python_implib_release}")
+            endif()
+            if(_sindre_python_location_release)
+                set_property(TARGET Python3::Python PROPERTY
+                    IMPORTED_LOCATION_${_sindre_python_config}
+                    "${_sindre_python_location_release}")
+            endif()
+        endforeach()
+    endif()
     if(NOT @SINDRE_PYBIND11_BUNDLED@)
         find_dependency(pybind11 CONFIG)
     endif()
 endif()
-if(@SINDRE_WITH_AI@ AND @SINDRE_AI_ONNXRUNTIME@)
+if(_sindre_need_ai AND @SINDRE_WITH_AI@ AND @SINDRE_AI_ONNXRUNTIME@)
     if(@SINDRE_AI_ONNXRUNTIME_BUNDLED@)
-        add_library(sindre::ai_onnxruntime_native UNKNOWN IMPORTED)
-        set_target_properties(sindre::ai_onnxruntime_native PROPERTIES
-            IMPORTED_LOCATION
-                "${_sindre_package_prefix_dir}/lib/sindre/onnxruntime/onnxruntime.lib"
-            INTERFACE_INCLUDE_DIRECTORIES
-                "${_sindre_package_prefix_dir}/include/sindre/third_party/onnxruntime")
+        if(WIN32)
+            add_library(sindre::ai_onnxruntime_native SHARED IMPORTED)
+            set_target_properties(sindre::ai_onnxruntime_native PROPERTIES
+                IMPORTED_CONFIGURATIONS "RELWITHDEBINFO;RELEASE;DEBUG;MINSIZEREL"
+                IMPORTED_LOCATION_RELWITHDEBINFO
+                    "${_sindre_package_prefix_dir}/bin/onnxruntime.dll"
+                IMPORTED_LOCATION_RELEASE
+                    "${_sindre_package_prefix_dir}/bin/onnxruntime.dll"
+                IMPORTED_LOCATION_DEBUG
+                    "${_sindre_package_prefix_dir}/bin/onnxruntime.dll"
+                IMPORTED_LOCATION_MINSIZEREL
+                    "${_sindre_package_prefix_dir}/bin/onnxruntime.dll"
+                IMPORTED_IMPLIB_RELWITHDEBINFO
+                    "${_sindre_package_prefix_dir}/lib/sindre/onnxruntime/onnxruntime.lib"
+                IMPORTED_IMPLIB_RELEASE
+                    "${_sindre_package_prefix_dir}/lib/sindre/onnxruntime/onnxruntime.lib"
+                IMPORTED_IMPLIB_DEBUG
+                    "${_sindre_package_prefix_dir}/lib/sindre/onnxruntime/onnxruntime.lib"
+                IMPORTED_IMPLIB_MINSIZEREL
+                    "${_sindre_package_prefix_dir}/lib/sindre/onnxruntime/onnxruntime.lib"
+                INTERFACE_INCLUDE_DIRECTORIES
+                    "${_sindre_package_prefix_dir}/include/sindre/third_party/onnxruntime")
+        else()
+            add_library(sindre::ai_onnxruntime_native SHARED IMPORTED)
+            set_target_properties(sindre::ai_onnxruntime_native PROPERTIES
+                IMPORTED_CONFIGURATIONS "RELWITHDEBINFO;RELEASE;DEBUG;MINSIZEREL"
+                IMPORTED_LOCATION_RELWITHDEBINFO
+                    "${_sindre_package_prefix_dir}/lib/sindre/onnxruntime/libonnxruntime.so"
+                IMPORTED_LOCATION_RELEASE
+                    "${_sindre_package_prefix_dir}/lib/sindre/onnxruntime/libonnxruntime.so"
+                IMPORTED_LOCATION_DEBUG
+                    "${_sindre_package_prefix_dir}/lib/sindre/onnxruntime/libonnxruntime.so"
+                IMPORTED_LOCATION_MINSIZEREL
+                    "${_sindre_package_prefix_dir}/lib/sindre/onnxruntime/libonnxruntime.so"
+                INTERFACE_INCLUDE_DIRECTORIES
+                    "${_sindre_package_prefix_dir}/include/sindre/third_party/onnxruntime"
+                INTERFACE_LINK_OPTIONS
+                    "-Wl,-rpath,\$ORIGIN/../lib/sindre/onnxruntime")
+        endif()
     else()
         find_dependency(onnxruntime CONFIG)
         if(TARGET onnxruntime::onnxruntime)
@@ -138,7 +553,7 @@ if(@SINDRE_WITH_AI@ AND @SINDRE_AI_ONNXRUNTIME@)
             INTERFACE_LINK_LIBRARIES "${_sindre_onnxruntime_target}")
     endif()
 endif()
-if(@SINDRE_WITH_AI@ AND @SINDRE_AI_TRT@)
+if(_sindre_need_ai AND @SINDRE_WITH_AI@ AND @SINDRE_AI_TRT@)
     find_dependency(CUDAToolkit @SINDRE_THIRD_AI_CUDA_MIN_VERSION@)
     add_library(sindre::ai_tensorrt_native INTERFACE IMPORTED)
     set(_sindre_tensorrt_linked FALSE)
@@ -194,10 +609,55 @@ if(@SINDRE_WITH_AI@ AND @SINDRE_AI_TRT@)
             INTERFACE_LINK_LIBRARIES "${_sindre_tensorrt_libraries}")
     endif()
 endif()
-find_dependency(re2 CONFIG)
-find_dependency(crashpad CONFIG)
-if(@SINDRE_WITH_GUI@ AND @SINDRE_GUI_GLFW_OPENGL3@)
-    find_dependency(glfw3 CONFIG)
+if(_sindre_need_general)
+    find_dependency(crashpad CONFIG)
+    # The fixed Crashpad package exports an interface target, but its config
+    # uses an unscoped find_library() for client/util/base/common.  That works
+    # in the build tree because the dependency prefix is already in the search
+    # path, but leaves *_LIB-NOTFOUND in an installed consumer.  Rebind the
+    # package libraries from the prefix containing crashpad_DIR.
+    if(TARGET crashpad OR TARGET crashpad::crashpad)
+        if(TARGET crashpad)
+            set(_sindre_crashpad_target crashpad)
+        else()
+            set(_sindre_crashpad_target crashpad::crashpad)
+        endif()
+        get_filename_component(_sindre_crashpad_prefix
+            "${crashpad_DIR}/../.." ABSOLUTE)
+        set(_sindre_crashpad_links)
+        foreach(_sindre_crashpad_library IN ITEMS client util base common)
+            find_library(_sindre_crashpad_archive
+                NAMES "${_sindre_crashpad_library}"
+                HINTS "${_sindre_crashpad_prefix}/lib" NO_DEFAULT_PATH)
+            if(NOT _sindre_crashpad_archive)
+                message(FATAL_ERROR
+                    "The installed sindre General package could not resolve "
+                    "Crashpad library '${_sindre_crashpad_library}' under "
+                    "${_sindre_crashpad_prefix}/lib")
+            endif()
+            list(APPEND _sindre_crashpad_links
+                "${_sindre_crashpad_archive}")
+            unset(_sindre_crashpad_archive CACHE)
+        endforeach()
+        list(APPEND _sindre_crashpad_links ZLIB::ZLIB)
+        set_property(TARGET ${_sindre_crashpad_target} PROPERTY
+            INTERFACE_LINK_LIBRARIES "${_sindre_crashpad_links}")
+    endif()
+    if(TARGET ZLIB::ZLIB)
+        # The fixed Windows dependency profile ships Release static zlib.  Match
+        # the profile for every consumer configuration; otherwise CMake rejects
+        # the Crashpad dependency before the Sindre targets are generated.
+        foreach(_sindre_zlib_config IN ITEMS DEBUG MINSIZEREL)
+            string(TOLOWER "${_sindre_zlib_config}" _sindre_zlib_config_lower)
+            set(_sindre_zlib_map_var "CMAKE_MAP_IMPORTED_CONFIG_${_sindre_zlib_config}")
+            set(${_sindre_zlib_map_var} Release)
+        endforeach()
+    endif()
+endif()
+if(_sindre_need_gui AND @SINDRE_WITH_GUI@ AND @SINDRE_GUI_GLFW_OPENGL3@)
+    if(NOT @SINDRE_GUI_GLFW_BUNDLED@)
+        find_dependency(glfw3 CONFIG)
+    endif()
     find_dependency(OpenGL)
 endif()
 
@@ -235,22 +695,162 @@ if(TARGET sindre::general_simdjson)
     set_property(TARGET sindre::general_simdjson PROPERTY
         INTERFACE_LINK_LIBRARIES "${_sindre_simdjson_link}")
 endif()
-foreach(_sindre_own_target IN ITEMS sindre::general_runtime sindre::utils_py)
+if(TARGET sindre::general_zlib)
+    if(WIN32)
+        set(_sindre_zlib_link
+            "${_sindre_package_prefix_dir}/lib/zlibstatic.lib")
+    else()
+        set(_sindre_zlib_link
+            "${_sindre_package_prefix_dir}/lib/libz.a")
+    endif()
+    set_property(TARGET sindre::general_zlib PROPERTY
+        INTERFACE_LINK_LIBRARIES "${_sindre_zlib_link}")
+endif()
+
+# A single-config install may contain only one exported Sindre archive (for
+# example DEBUG).  Tell imported targets how the other consumer configurations
+# map to that archive; restoring the global CMAKE_MAP_IMPORTED_CONFIG_* cache
+# variables above is intentional and must not remove these target mappings.
+if(TARGET sindre::general_runtime)
+    set(_sindre_runtime_archive
+        "${_sindre_package_prefix_dir}/lib/sindre_general_runtime.lib")
+    if(EXISTS "${_sindre_runtime_archive}")
+        set_target_properties(sindre::general_runtime PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE;RELWITHDEBINFO;MINSIZEREL"
+            IMPORTED_LOCATION "${_sindre_runtime_archive}"
+            IMPORTED_LOCATION_DEBUG "${_sindre_runtime_archive}"
+            IMPORTED_LOCATION_RELEASE "${_sindre_runtime_archive}"
+            IMPORTED_LOCATION_RELWITHDEBINFO "${_sindre_runtime_archive}"
+            IMPORTED_LOCATION_MINSIZEREL "${_sindre_runtime_archive}")
+    endif()
+endif()
+if(TARGET ZLIB::ZLIB)
+    if(WIN32)
+        set(_sindre_zlib_archive
+            "${_sindre_package_prefix_dir}/lib/zlibstatic.lib")
+    else()
+        set(_sindre_zlib_archive
+            "${_sindre_package_prefix_dir}/lib/libz.a")
+    endif()
+    if(EXISTS "${_sindre_zlib_archive}")
+        set_target_properties(ZLIB::ZLIB PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE;RELWITHDEBINFO;MINSIZEREL"
+            IMPORTED_LOCATION "${_sindre_zlib_archive}"
+            IMPORTED_LOCATION_DEBUG "${_sindre_zlib_archive}"
+            IMPORTED_LOCATION_RELEASE "${_sindre_zlib_archive}"
+            IMPORTED_LOCATION_RELWITHDEBINFO "${_sindre_zlib_archive}"
+            IMPORTED_LOCATION_MINSIZEREL "${_sindre_zlib_archive}")
+    endif()
+    foreach(_sindre_zlib_config IN ITEMS DEBUG RELWITHDEBINFO MINSIZEREL)
+        set_property(TARGET ZLIB::ZLIB APPEND PROPERTY
+            MAP_IMPORTED_CONFIG_${_sindre_zlib_config} Release)
+    endforeach()
+endif()
+
+# RE2 is built from source together with Abseil. The installed General
+# package carries both static dependency sets, so consumers do not need RE2,
+# Abseil, zlib, or vcpkg on the build machine.
+if(WIN32)
+    set(_sindre_re2_link "${_sindre_package_prefix_dir}/lib/re2.lib")
+    file(GLOB _sindre_absl_links
+        "${_sindre_package_prefix_dir}/lib/absl_*.lib")
+else()
+    set(_sindre_re2_link "${_sindre_package_prefix_dir}/lib/libre2.a")
+    file(GLOB _sindre_absl_links
+        "${_sindre_package_prefix_dir}/lib/libabsl_*.a")
+endif()
+if(TARGET sindre::general_re2)
+    if(UNIX AND NOT APPLE)
+        set(_sindre_absl_link_group
+            "$<LINK_GROUP:RESCAN,${_sindre_absl_links}>")
+        set_property(TARGET sindre::general_re2 PROPERTY
+            INTERFACE_LINK_LIBRARIES
+                "${_sindre_re2_link};${_sindre_absl_link_group}")
+    else()
+        set_property(TARGET sindre::general_re2 PROPERTY
+            INTERFACE_LINK_LIBRARIES "${_sindre_re2_link};${_sindre_absl_links}")
+    endif()
+endif()
+foreach(_sindre_own_target IN ITEMS
+    sindre::general_runtime
+    sindre::ai
+    sindre::gui
+    sindre::imgui
+    sindre::glfw
+    sindre::utils_2d
+    sindre::utils_3d
+    sindre::utils_py)
     if(TARGET ${_sindre_own_target})
         get_target_property(_sindre_own_configs ${_sindre_own_target}
             IMPORTED_CONFIGURATIONS)
+        set(_sindre_own_fallback_config "")
         if(_sindre_own_configs AND
            "RELWITHDEBINFO" IN_LIST _sindre_own_configs)
-            set_property(TARGET ${_sindre_own_target} PROPERTY
-                MAP_IMPORTED_CONFIG_RELWITHDEBINFO RelWithDebInfo)
+            set(_sindre_own_fallback_config RelWithDebInfo)
+        elseif(_sindre_own_configs AND "RELEASE" IN_LIST _sindre_own_configs)
+            set(_sindre_own_fallback_config Release)
+        elseif(_sindre_own_configs AND "DEBUG" IN_LIST _sindre_own_configs)
+            set(_sindre_own_fallback_config Debug)
+        elseif(_sindre_own_configs AND
+               "MINSIZEREL" IN_LIST _sindre_own_configs)
+            set(_sindre_own_fallback_config MinSizeRel)
+        endif()
+        if(NOT _sindre_own_fallback_config STREQUAL "")
+            string(TOLOWER "${_sindre_own_fallback_config}"
+                _sindre_own_fallback_config_lower)
+            string(TOUPPER "${_sindre_own_fallback_config}"
+                _sindre_own_fallback_config_upper)
+            get_target_property(_sindre_own_location ${_sindre_own_target}
+                IMPORTED_LOCATION_${_sindre_own_fallback_config_upper})
+            get_target_property(_sindre_own_implib ${_sindre_own_target}
+                IMPORTED_IMPLIB_${_sindre_own_fallback_config_upper})
+            # CMake 4.4 validates imported locations more strictly for
+            # single-configuration consumers. Keep a generic fallback in
+            # addition to the generated per-configuration property.
+            if(_sindre_own_location AND
+               NOT _sindre_own_location MATCHES "-NOTFOUND$")
+                set_property(TARGET ${_sindre_own_target} PROPERTY
+                    IMPORTED_LOCATION "${_sindre_own_location}")
+                set_property(TARGET ${_sindre_own_target} PROPERTY
+                    IMPORTED_LOCATION_${_sindre_own_fallback_config}
+                    "${_sindre_own_location}")
+            endif()
+            if(_sindre_own_implib AND
+               NOT _sindre_own_implib MATCHES "-NOTFOUND$")
+                set_property(TARGET ${_sindre_own_target} PROPERTY
+                    IMPORTED_IMPLIB "${_sindre_own_implib}")
+                set_property(TARGET ${_sindre_own_target} PROPERTY
+                    IMPORTED_IMPLIB_${_sindre_own_fallback_config}
+                    "${_sindre_own_implib}")
+            endif()
+            foreach(_sindre_consumer_config IN ITEMS
+                    DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+                string(TOLOWER "${_sindre_consumer_config}"
+                    _sindre_consumer_config_lower)
+                if(_sindre_consumer_config_lower STREQUAL
+                   "${_sindre_own_fallback_config_lower}")
+                    continue()
+                endif()
+                set_property(TARGET ${_sindre_own_target} PROPERTY
+                    MAP_IMPORTED_CONFIG_${_sindre_consumer_config}
+                    "${_sindre_own_fallback_config}")
+            endforeach()
         endif()
     endif()
 endforeach()
 unset(_sindre_own_target)
 unset(_sindre_own_configs)
+unset(_sindre_own_fallback_config)
+unset(_sindre_own_fallback_config_lower)
+unset(_sindre_own_fallback_config_upper)
+unset(_sindre_own_location)
+unset(_sindre_own_implib)
+unset(_sindre_consumer_config)
+unset(_sindre_consumer_config_lower)
+unset(_sindre_export_config_upper)
 
 if(WIN32 AND "@SINDRE_GENERAL_SHARED@" STREQUAL "OFF")
-    foreach(_sindre_config IN ITEMS DEBUG MINSIZEREL)
+    foreach(_sindre_config IN ITEMS DEBUG RELWITHDEBINFO MINSIZEREL)
         string(TOLOWER "${_sindre_config}" _sindre_config_lower)
         set(_sindre_map_var "CMAKE_MAP_IMPORTED_CONFIG_${_sindre_config}")
         if(_sindre_saved_map_defined_${_sindre_config_lower})

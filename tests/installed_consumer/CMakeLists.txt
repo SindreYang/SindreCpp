@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.20)
 # 用于发现安装包 target、头文件和运行时布局问题。
 project(sindreInstalledConsumer LANGUAGES CXX)
 
-find_package(sindre CONFIG REQUIRED)
+find_package(sindre CONFIG REQUIRED COMPONENTS general ai)
 
 add_executable(sindre_installed_consumer main.cpp)
 target_link_libraries(sindre_installed_consumer PRIVATE sindre::general)

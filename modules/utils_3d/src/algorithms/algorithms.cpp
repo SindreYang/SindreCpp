@@ -53,15 +53,18 @@
 #include <vtkQuadricClustering.h>
 #include <vtkQuadricDecimation.h>
 #include <vtkWindowedSincPolyDataFilter.h>
+#include <vtkVersionMacros.h>
 
 #if defined(SINDRE_UTILS_3D_CGAL)
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
+#if defined(SINDRE_UTILS_3D_HAS_CGAL_CURVATURE)
 #include <CGAL/Polygon_mesh_processing/interpolated_corrected_curvatures.h>
+#endif
 #include <CGAL/Polygon_mesh_processing/remesh.h>
 #include <CGAL/Polygon_mesh_processing/self_intersections.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_hole.h>
-#include <CGAL/boost/graph/border.h>
+#include <CGAL/Polygon_mesh_processing/border.h>
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Face_count_stop_predicate.h>
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
@@ -936,7 +939,8 @@ struct CgalHoleCycle {
 
 std::vector<CgalHoleCycle> collect_cgal_holes(const CgalMesh &mesh) {
     std::vector<CgalMesh::Halfedge_index> borders;
-    CGAL::extract_boundary_cycles(mesh, std::back_inserter(borders));
+    CGAL::Polygon_mesh_processing::extract_boundary_cycles(
+        mesh, std::back_inserter(borders));
     std::vector<CgalHoleCycle> holes;
     holes.reserve(borders.size());
     for (const auto border : borders) {
@@ -1471,7 +1475,11 @@ Result<AlgorithmResult<Mesh>> clean_mesh(const Mesh &mesh, const CleanOptions &o
             filter->SetInputData(input.get_native());
             filter->ToleranceIsAbsoluteOn();
             filter->SetAbsoluteTolerance(options.tolerance);
+#if VTK_VERSION_NUMBER >= VTK_VERSION_CHECK(9, 2, 0)
             filter->SetRemoveUnusedPoints(options.remove_unused_vertices);
+#else
+            (void)options.remove_unused_vertices;
+#endif
             filter->ConvertPolysToLinesOff();
             filter->ConvertLinesToPointsOff();
             filter->Update();
@@ -1488,6 +1496,8 @@ Result<AlgorithmResult<Mesh>> clean_mesh(const Mesh &mesh, const CleanOptions &o
         if (!native_output)
             throw std::runtime_error("VTK clean returned no mesh");
         auto output = from_legacy(LegacyMesh(native_output));
+        if (options.remove_unused_vertices)
+            output = compact_unused_vertices(output);
         progress(options, 1.0);
         return result_mesh(mesh, std::move(output));
     }, "utils_3d.clean_mesh");
@@ -2357,7 +2367,9 @@ Result<AlgorithmResult<Mesh>> clip_mesh_by_curve(
         vtkNew<vtkSelectPolyData> selector;
         selector->SetInputData(input.get_native());
         selector->SetLoop(loop);
+#if VTK_VERSION_NUMBER >= VTK_VERSION_CHECK(9, 2, 0)
         selector->SetEdgeSearchModeToDijkstra();
+#endif
         if (options.selection == CurveSelectionMode::largest_region)
             selector->SetSelectionModeToLargestRegion();
         else
@@ -2862,6 +2874,7 @@ Result<::sindre::math::VectorXd> get_curvature_by_cgal(
         return unsupported_value<::sindre::math::VectorXd>(
             "CGAL curvature computation was requested but the CGAL backend is not enabled");
 #else
+#if defined(SINDRE_UTILS_3D_HAS_CGAL_CURVATURE)
         if (!std::isfinite(options.ball_radius))
             throw std::invalid_argument("ball_radius must be finite");
         switch (type) {
@@ -2927,6 +2940,12 @@ Result<::sindre::math::VectorXd> get_curvature_by_cgal(
         }
         progress(options, 1.0);
         return output;
+#else
+        (void)type;
+        (void)options;
+        return unsupported_value<::sindre::math::VectorXd>(
+            "This CGAL version does not provide polygon mesh curvature support");
+#endif
 #endif
     }, "utils_3d.get_curvature_by_cgal");
 }

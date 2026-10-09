@@ -13,11 +13,11 @@ static int report_failure(std::string_view operation, const general::Error &erro
 }
 
 int main() {
-    general::string::String title("  sindre  ");
+    general::String title("  sindre  ");
     if (const auto trimmed = title.try_trim(); !trimmed)
         return report_failure("trim string", trimmed.error());
     if (const auto replaced = title.try_replace_all(
-            general::string::String("Cpp"), general::string::String("Toolkit")); !replaced)
+            general::String("Cpp"), general::String("Toolkit")); !replaced)
         return report_failure("replace string", replaced.error());
     const auto number = general::string::parse_int(" 42 ");
     const auto ratio = general::string::parse_float(" 3.14 ");

@@ -31,7 +31,8 @@ set(SINDRE_MATH_BLAS_ENABLED OFF CACHE INTERNAL
 if(_sindre_math_blas_backend STREQUAL "OPENBLAS")
     sindre_3rdparty_setup_openblas()
     target_link_libraries(sindre_math INTERFACE
-        $<BUILD_INTERFACE:sindre::openblas>)
+        $<BUILD_INTERFACE:sindre::openblas>
+        $<INSTALL_INTERFACE:sindre::openblas>)
     target_compile_definitions(sindre_math INTERFACE EIGEN_USE_BLAS=1)
     set(SINDRE_MATH_BLAS_ENABLED ON CACHE INTERNAL
         "Whether Math uses the configured BLAS backend" FORCE)
@@ -59,6 +60,16 @@ install(DIRECTORY "${SINDRE_THIRD_MATH_EIGEN_SOURCE_DIR}/unsupported/Eigen"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/eigen3/unsupported")
 install(FILES "${SINDRE_THIRD_MATH_EIGEN_SOURCE_DIR}/signature_of_eigen3_matrix_library"
     DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/eigen3")
+
+if(_sindre_math_blas_backend STREQUAL "OPENBLAS")
+    # OpenBLAS is a fixed source dependency of Math.  Install the exact static
+    # archive and headers used by the build so consumers do not need a host
+    # OpenBLAS package or vcpkg installation.
+    install(FILES "${SINDRE_MATH_OPENBLAS_LIBRARY}"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+    install(DIRECTORY "${SINDRE_MATH_OPENBLAS_INCLUDE_DIR}/"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/openblas")
+endif()
 
 if(SINDRE_BUILD_TESTS)
     add_executable(sindre_math_tests tests/math_tests.cpp)

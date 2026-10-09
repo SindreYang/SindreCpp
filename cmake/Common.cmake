@@ -131,6 +131,19 @@ function(sindre_copy_runtime_files target)
     endforeach()
 endfunction()
 
+function(sindre_install_runtime_dirs)
+    if(NOT WIN32)
+        return()
+    endif()
+    foreach(runtime_dir IN LISTS ARGN)
+        if(IS_DIRECTORY "${runtime_dir}")
+            install(DIRECTORY "${runtime_dir}/"
+                DESTINATION ${CMAKE_INSTALL_BINDIR}
+                FILES_MATCHING PATTERN "*.dll")
+        endif()
+    endforeach()
+endfunction()
+
 function(sindre_copy_target_runtime_dlls target)
     if(NOT WIN32 OR NOT TARGET ${target} OR CMAKE_VERSION VERSION_LESS 3.21)
         return()

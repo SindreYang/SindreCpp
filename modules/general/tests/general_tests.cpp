@@ -15,6 +15,7 @@
 
 #include <cstdlib>
 #include <atomic>
+#include <chrono>
 #include <fstream>
 #include <filesystem>
 #include <iostream>
@@ -57,6 +58,11 @@ static_assert(std::is_same_v<decltype(std::declval<sindre::general::Result<void>
                              sindre::general::Error>);
 
 int main() {
+    const auto unique_id = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto test_root = std::filesystem::temp_directory_path() /
+        ("sindre-general-tests-" + std::to_string(unique_id));
+    std::filesystem::create_directories(test_root);
+
     auto value = sindre::general::Result<int>::success(42);
     CHECK(value);
     CHECK(value.value() == 42);
@@ -190,7 +196,7 @@ int main() {
     CHECK(!sindre::general::string::parse_float("nan"));
     CHECK(sindre::general::string::join({"中文", "sindre"}, "/") == "中文/sindre");
     CHECK(sindre::general::string::concat("Sindre", "Cpp", 17) == "SindreCpp17");
-    sindre::general::string::String python_text("  A,b,中文  ");
+    sindre::general::String python_text("  A,b,中文  ");
     CHECK(python_text.try_trim());
     CHECK(python_text.try_lower_ascii());
     CHECK(python_text.to_utf8() == "a,b,中文");
@@ -399,7 +405,7 @@ int main() {
               std::vector<std::uint8_t>({1, 1, 1, 2, 3, 3, 3, 3}));
     CHECK(!sindre::general::codec::rle_decompress(std::vector<std::uint8_t>{1}));
     const auto unicode_path = sindre::general::path::from_utf8(
-        sindre::general::path::to_utf8(std::filesystem::temp_directory_path() / L"sindre-监控.txt"));
+        sindre::general::path::to_utf8(test_root / L"sindre-监控.txt"));
     const auto path_text = sindre::general::string::String::from(unicode_path);
     CHECK(path_text);
     const auto path_roundtrip = path_text.value().to_path();
@@ -435,7 +441,7 @@ int main() {
     watcher.stop();
     CHECK(!watcher.get_error());
 
-    const auto directory_root = std::filesystem::temp_directory_path() / L"sindre-general-directory";
+    const auto directory_root = test_root / L"directory";
     std::filesystem::remove_all(directory_root);
     std::filesystem::create_directories(directory_root / "one");
     std::filesystem::create_directories(directory_root / "two");
@@ -659,7 +665,7 @@ int main() {
 #endif
     config.value().apply_environment_overrides("SINDRE_TEST");
     CHECK(config.value().get_int("server.port").value() == 9090);
-    const auto config_path = std::filesystem::temp_directory_path() / L"sindre-中文-config.json";
+    const auto config_path = test_root / L"sindre-中文-config.json";
     { std::ofstream output(config_path); output << R"({"server":{"port":8081}})"; }
     auto file_config = sindre::general::config::Config::load_file(config_path);
     CHECK(file_config && file_config.value().get_int("server.port").value() == 8081);
@@ -729,7 +735,7 @@ int main() {
         CHECK(concurrent_logger == concurrent_loggers.front());
 
     sindre::general::log::info("中文初始化日志");
-    const auto log_path = std::filesystem::temp_directory_path() / L"sindre-中文日志.log";
+    const auto log_path = test_root / L"sindre-中文日志.log";
     auto logger_result = sindre::general::log::try_rotating_file("sindre-general-test", log_path);
     CHECK(logger_result);
     auto logger = std::move(logger_result).value();
@@ -757,7 +763,7 @@ int main() {
     CHECK(sindre::general::log::shutdown());
     file_logger.reset();
     std::filesystem::remove(log_path);
-    const auto async_log_path = std::filesystem::temp_directory_path() / L"sindre-中文异步日志.log";
+    const auto async_log_path = test_root / L"sindre-中文异步日志.log";
     CHECK(sindre::general::log::init_log(
         "sindre-async", sindre::general::log::Level::info,
         sindre::general::log::default_pattern, async_log_path, 1024, 2, false, true,
@@ -835,4 +841,7 @@ int main() {
 #endif
 
     CHECK(std::string(sindre::general::version) == "0.1.0");
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(test_root, cleanup_error);
+    return EXIT_SUCCESS;
 }

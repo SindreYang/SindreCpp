@@ -24,5 +24,58 @@ int main() {
 
     const auto features = detect_features(image, FeatureAlgorithm::orb);
     CHECK(features);
+
+    Image textured(64, 64, 1, std::vector<std::uint8_t>(64 * 64, 0));
+    for (int y = 8; y < 56; ++y) {
+        for (int x = 8; x < 56; ++x) {
+            textured.pixels[static_cast<std::size_t>(y) * 64 + x] =
+                static_cast<std::uint8_t>(((x / 4) + (y / 4)) % 2 ? 220 : 30);
+        }
+    }
+    Image shifted(64, 64, 1, std::vector<std::uint8_t>(64 * 64, 0));
+    for (int y = 8; y < 56; ++y) {
+        for (int x = 10; x < 58; ++x) {
+            shifted.pixels[static_cast<std::size_t>(y) * 64 + x] =
+                textured.pixels[static_cast<std::size_t>(y) * 64 + x - 2];
+        }
+    }
+    const auto dense_flow = calculate_dense_flow(textured, shifted);
+    CHECK(dense_flow && dense_flow.value().width == 64 &&
+          dense_flow.value().height == 64 && dense_flow.value().channels == 3 &&
+          dense_flow.value().byte_size() == 64u * 64u * 3u);
+    const auto invalid_flow = calculate_dense_flow(textured, shifted, 1.0);
+    CHECK(!invalid_flow &&
+          invalid_flow.error().code == std::make_error_code(std::errc::invalid_argument));
+
+    Image feature_image(128, 128, 1, std::vector<std::uint8_t>(128 * 128, 0));
+    for (int y = 0; y < 128; ++y) {
+        for (int x = 0; x < 128; ++x) {
+            feature_image.pixels[static_cast<std::size_t>(y) * 128 + x] =
+                static_cast<std::uint8_t>((x * 37 + y * 17 + x * y) & 0xff);
+        }
+    }
+    const auto brief = detect_features(feature_image, FeatureAlgorithm::brief, 200);
+    const auto freak = detect_features(feature_image, FeatureAlgorithm::freak, 200);
+#if defined(SINDRE_OPENCV_HAS_XFEATURES2D)
+    CHECK(brief && freak && !brief.value().descriptors.empty() &&
+          !freak.value().descriptors.empty());
+    const auto flann = match_features(brief.value(), brief.value(),
+                                      MatcherAlgorithm::flann);
+    CHECK(flann);
+#else
+    CHECK(!brief && !freak &&
+          brief.error().code == std::make_error_code(std::errc::function_not_supported) &&
+          freak.error().code == std::make_error_code(std::errc::function_not_supported));
+#endif
+
+    const std::vector<Point2f> tracked_points{{20.0f, 20.0f}, {32.0f, 32.0f}};
+    const auto farneback = track_points(textured, shifted, tracked_points,
+                                        OpticalFlowAlgorithm::farneback);
+    CHECK(farneback && farneback.value().points.size() == tracked_points.size());
+    const auto rlof = track_points(feature_image, feature_image,
+                                   std::vector<Point2f>{{64.0f, 64.0f}},
+                                   OpticalFlowAlgorithm::rlof);
+    CHECK(!rlof && rlof.error().code ==
+          std::make_error_code(std::errc::function_not_supported));
     return EXIT_SUCCESS;
 }

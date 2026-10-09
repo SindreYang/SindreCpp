@@ -265,8 +265,8 @@ auto cgal_mean = mesh.get_curvature_by_cgal(
     u3::CurvatureType::mean, options);
 ```
 
-CGAL 接口同样支持四种曲率类型；未启用 CGAL 时返回
-`std::errc::function_not_supported`，不会回退到 VTK。
+CGAL 接口同样支持四种曲率类型。CGAL 是 `utils_3d` 的固定构建依赖，不能通过
+开关关闭或回退到 VTK；SDK 缺失时配置阶段直接失败。
 
 `SindreMesh` 也提供常用快捷属性：
 
@@ -345,8 +345,8 @@ auto filled = mesh.fill_holes_by_cgal(options);
 
 CGAL 支持纯三角化、三角化加细化、三角化加细化和 fairing 三种模式，也支持
 Delaunay、近似平面约束、平面阈值、密度和 fairing 连续性参数。传入
-`boundary_vertices` 可只处理一个完整边界环。未启用 CGAL 时返回
-`std::errc::function_not_supported`，不会静默回退到 VTK。
+`boundary_vertices` 可只处理一个完整边界环。CGAL 是固定依赖，SDK 缺失时配置阶段
+直接失败，不会静默回退到 VTK。
 
 采样、投影和最短路径：
 
@@ -382,8 +382,7 @@ auto cgal_simplified = mesh.simplify(10000, options);
 
 `10000` 是目标面片数。VTK/CGAL 的边坍塌会受网格拓扑、边界和合法坍塌步长约束，
 因此最终数量可能与目标不同；通过算法报告的 `output_faces`、`residual` 和
-`converged` 检查实际结果。选择 CGAL 但未启用 `SINDRE_UTILS_3D_CGAL` 时，
-接口返回 `function_not_supported`，不会静默退回 VTK。
+`converged` 检查实际结果。选择 CGAL 时直接使用固定的 CGAL 后端，不会静默退回 VTK。
 
 VTK 简化算法可通过 `SimplifyOptions::algorithm` 选择：
 `decimate_pro`（默认，支持拓扑保护）、`quadric_decimation`（二次误差度量）和
@@ -405,7 +404,7 @@ auto local = mesh.subdivide_faces({12, 18, 19}, 1); // 只细分指定面片
 `subdivide_faces()` 会自动共享边中点，并同步细分相邻面片的共享边，避免局部细分
 产生 T-junction 裂缝。指定面片的子面会继续参与下一轮迭代；邻接面只为保持拓扑
 一致而细分，不会被当作下一轮目标。`UniformizeOptions::backend` 设为
-`RemeshBackend::cgal` 时使用 CGAL 各向同性重网格；未启用 CGAL 时返回功能不可用错误。
+`RemeshBackend::cgal` 时使用固定的 CGAL 各向同性重网格；SDK 缺失时配置阶段失败。
 
 布尔运算必须先经过可执行性预检：
 
@@ -419,7 +418,7 @@ auto result = u3::boolean_mesh(a, b, u3::BooleanOperation::intersect);
 ```
 
 预检会拒绝空网格、退化面、重复/未使用顶点、非流形边、开放边界和自交网格；
-未启用 CGAL 时明确返回功能不可用。包围盒完全分离的闭合网格会使用确定性快捷路径，
+CGAL 是固定依赖。包围盒完全分离的闭合网格会使用确定性快捷路径，
 避免把不可能相交的输入送入布尔内核。
 
 闭合曲线图切裁剪：

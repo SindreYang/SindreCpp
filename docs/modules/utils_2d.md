@@ -11,21 +11,23 @@ Enable with `SINDRE_WITH_UTILS_2D=ON`. CMake discovers an installed OpenCV 4
 SDK with matching `opencv_contrib` modules and registers `sindre.utils_2d` when tests are enabled. The module is
 independent from the AI and Utils_3d backends.
 
-On this Windows machine the official OpenCV 4.12.0 SDK was found, but it is a
-plain build without contrib and is therefore rejected by the full module. For
-an official archive, `OpenCV_DIR` must point to the directory containing
-`OpenCVConfig.cmake`, usually `.../build/x64/vc16/lib`, not its parent. The
-OpenCV DLL directory must also be on `PATH` when an executable starts; the
-module copies it beside its own tests when the directory can be inferred.
+On Windows the official OpenCV 4.12.0 SDK with the required contrib modules is
+the verified profile. Linux accepts OpenCV 4.6+ from the system or an external
+SDK. For an official archive,
+`OpenCV_DIR` must point to the directory containing `OpenCVConfig.cmake`,
+usually `.../build/x64/vc16/lib`, not its parent. The OpenCV DLL directory
+must also be on `PATH` when an executable starts; the module copies it beside
+its own tests when the directory can be inferred.
 
 稳定 facade 当前覆盖滤波、阈值、形态学、边缘、轮廓、连通域、霍夫线/圆、NMS、
 仿射/透视变换、ORB/SIFT/AKAZE/FAST/GFTT 特征、BF/FLANN 匹配、单应性、
-Lucas-Kanade 稀疏跟踪、去畸变、相机标定、ArUco 和 NCHW tensor；BRIEF/FREAK、
-Farneback/RLOF 及 dense flow 因为公共 `Image` 只承载拥有的 8-bit 像素，当前明确
-返回 `function_not_supported`。不会把 OpenCV 对象泄漏给调用方。基础测试覆盖 Unicode
-路径、读写、letterbox、NCHW tensor 和核心算法调用。OpenCV 4.8 或更高版本必须是带匹配
-版本 contrib 的构建，缺少 contrib 模块时配置阶段直接失败。完整运行测试仍需要可运行的
-CPU 或 CUDA DLL 集合。
+Lucas-Kanade/Farneback 稀疏跟踪、Farneback dense-flow 可视化、去畸变、相机标定、
+ArUco 和 NCHW tensor；BRIEF/FREAK 通过 `opencv_contrib` 提供。RLOF 当前明确返回
+`function_not_supported`，因为该 OpenCV 后端在受支持的 Windows 工具链上存在进程级
+崩溃路径，不会把不稳定实现暴露给用户。不会把 OpenCV 对象泄漏给调用方。基础测试覆盖
+Unicode 路径、读写、letterbox、NCHW tensor、dense flow、BRIEF/FREAK 和 FLANN。
+Windows 必须使用固定的 OpenCV 4.12.0 及匹配的 contrib 构建；Linux 使用 4.6 以上版本，
+缺少 contrib 模块时配置阶段直接失败。完整运行测试仍需要可运行的 CPU 或 CUDA DLL 集合。
 
 ## SindreImage 高级封装
 

@@ -14,6 +14,15 @@ an external download cache, and an isolated build/install directory. Select
 `SINDRE_MATH_BLAS_BACKEND=EIGEN` for a build that intentionally does not use
 BLAS.
 
+On Windows, the fixed OpenBLAS profile requires the Visual Studio LLVM
+`clang-cl` compiler and MSVC ABI. GNU-style `clang`/`clang++` is rejected at
+configuration time instead of being allowed to fail later inside OpenBLAS.
+
 Eigen and OpenBLAS belong to Math, not General. Consumers should link
 `sindre::math` when they need the numerical API; they should not discover or
 link these dependencies independently.
+
+The install package carries the exact OpenBLAS static archive and generated
+headers used by the build. An installed Math consumer therefore does not need
+an OpenBLAS CMake package, system BLAS, or vcpkg; only the selected large SDKs
+of other modules remain external.

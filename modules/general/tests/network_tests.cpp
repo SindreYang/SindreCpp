@@ -3,6 +3,7 @@
 #include <httplib.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -122,7 +123,9 @@ int main() {
     auto async_value = async_response.value().get();
     CHECK(async_value && async_value.value().is_success());
 
-    const auto temp_root = std::filesystem::temp_directory_path() / "sindre-network-tests";
+    const auto unique_id = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto temp_root = std::filesystem::temp_directory_path() /
+        ("sindre-network-tests-" + std::to_string(unique_id));
     std::filesystem::create_directories(temp_root);
     const auto destination = temp_root / "中文目标.dat";
     {

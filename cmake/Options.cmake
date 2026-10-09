@@ -14,17 +14,16 @@ if(APPLE OR NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
         "sindre supports Windows and Linux/WSL only; macOS and other platforms are unsupported")
 endif()
 
-# The fixed static dependency profiles use the RelWithDebInfo ABI policy.
-# Make a single-config generator safe by selecting RelWithDebInfo when the caller did not
-# choose a build type explicitly; a Debug selection would mix /MTd vcpkg
-# archives with the library's fixed /MT profile on Windows.
+# 固定静态依赖 profile 使用非 Debug 的 Release ABI。未指定构建类型时默认使用
+# RelWithDebInfo；显式选择 Debug 时仍允许构建，但项目会继续使用 /MT 和
+# `_ITERATOR_DEBUG_LEVEL=0`，避免把 /MTd 或 iterator-debug ABI 混入固定依赖。
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "sindre single-config build type" FORCE)
 elseif(MSVC AND NOT CMAKE_CONFIGURATION_TYPES AND
-       NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
-        message(FATAL_ERROR
-            "sindre fixed static dependency profiles require CMAKE_BUILD_TYPE=RelWithDebInfo "
-            "for single-config generators; got '${CMAKE_BUILD_TYPE}'")
+       CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(WARNING
+        "Sindre General uses the fixed Release dependency ABI in Debug configuration: "
+        "MSVC runtime is /MT and _ITERATOR_DEBUG_LEVEL=0")
 endif()
 
 option(SINDRE_BUILD_TESTS "Build sindre tests" ${sindre_build_extras_default})
@@ -67,7 +66,7 @@ endif()
 option(SINDRE_WITH_AI "Build the AI module" OFF)
 option(SINDRE_WITH_GUI "Build the GUI module" OFF)
 option(SINDRE_WITH_UTILS_2D "Build OpenCV 2D utilities" OFF)
-option(SINDRE_WITH_UTILS_3D "Build VTK 3D utilities" OFF)
+option(SINDRE_WITH_UTILS_3D "Build VTK + CGAL 3D utilities" ON)
 
 # Python/NumPy utilities. This is a standalone module because it has a
 # separate interpreter/extension dependency profile from General.
@@ -77,9 +76,31 @@ option(SINDRE_WITH_UTILS_PY "Build the Python/NumPy utilities module" OFF)
 option(SINDRE_GUI_GLFW_OPENGL3 "Enable the GLFW/OpenGL3 GUI backend" ON)
 option(SINDRE_GUI_STB_IMAGE "Enable stb_image image loading" ON)
 option(SINDRE_BUILD_GUI_RUNTIME_TESTS "Run a real GUI window test" OFF)
-set(SINDRE_IMGUI_VERSION "1.92.9b" CACHE STRING "Dear ImGui version")
-set(SINDRE_IMGUI_SOURCE_DIR "" CACHE PATH "Existing Dear ImGui source tree")
-set(SINDRE_STB_IMAGE_ROOT "" CACHE PATH "Existing stb_image include root")
+# ImGui and stb_image are small source dependencies. They are deliberately
+# not replaceable by a system/vcpkg path; the recipes under 3rdparty pin the
+# archive and SHA256 used by every build.
+if(DEFINED SINDRE_IMGUI_VERSION AND
+   NOT "${SINDRE_IMGUI_VERSION}" STREQUAL "" AND
+   NOT "${SINDRE_IMGUI_VERSION}" STREQUAL "1.92.9b")
+    message(FATAL_ERROR
+        "SINDRE_IMGUI_VERSION is fixed to 1.92.9b; custom GUI dependency "
+        "versions are not supported")
+endif()
+if(DEFINED SINDRE_IMGUI_SOURCE_DIR AND
+   NOT "${SINDRE_IMGUI_SOURCE_DIR}" STREQUAL "")
+    message(FATAL_ERROR
+        "SINDRE_IMGUI_SOURCE_DIR is not supported; GUI uses the fixed pinned "
+        "ImGui source recipe")
+endif()
+if(DEFINED SINDRE_STB_IMAGE_ROOT AND
+   NOT "${SINDRE_STB_IMAGE_ROOT}" STREQUAL "")
+    message(FATAL_ERROR
+        "SINDRE_STB_IMAGE_ROOT is not supported; GUI uses the fixed pinned "
+        "stb source recipe")
+endif()
+set(SINDRE_IMGUI_VERSION "1.92.9b")
+set(SINDRE_IMGUI_SOURCE_DIR "")
+set(SINDRE_STB_IMAGE_ROOT "")
 
 # AI options.
 option(SINDRE_AI_ONNXRUNTIME "Enable ONNX Runtime inside AI" ON)
@@ -100,24 +121,48 @@ if(NOT SINDRE_ONNXRUNTIME_ROOT
         "ONNX Runtime C/C++ SDK root" FORCE)
 endif()
 
-# Utils_3d options.
-option(SINDRE_UTILS_3D_CGAL "Enable CGAL mesh algorithms" ON)
-option(SINDRE_UTILS_3D_PCL "Enable PCL point-cloud algorithms" ON)
-foreach(sindre_utils_3d_sdk IN ITEMS PCL)
-    string(TOLOWER "${sindre_utils_3d_sdk}" _sindre_utils_3d_sdk_lower)
-    set(_sindre_utils_3d_default_root
-        "${SINDRE_THIRD_PARTY_CACHE_DIR}/utils_3d/${_sindre_utils_3d_sdk_lower}")
-    if(NOT SINDRE_${sindre_utils_3d_sdk}_ROOT
-       AND IS_DIRECTORY "${_sindre_utils_3d_default_root}")
-        set(SINDRE_${sindre_utils_3d_sdk}_ROOT "${_sindre_utils_3d_default_root}"
-            CACHE PATH "${sindre_utils_3d_sdk} SDK root" FORCE)
-    endif()
-    if(SINDRE_${sindre_utils_3d_sdk}_ROOT)
-        list(PREPEND CMAKE_PREFIX_PATH "${SINDRE_${sindre_utils_3d_sdk}_ROOT}")
-    endif()
-endforeach()
+# Utils_3d options. VTK, CGAL and nanoflann are fixed dependencies whenever
+# Utils_3d is built. CGAL is deliberately not a feature switch: a reduced
+# build would make the module's behavior depend on an accidental cache value.
+if(DEFINED SINDRE_UTILS_3D_CGAL AND NOT SINDRE_UTILS_3D_CGAL)
+    message(FATAL_ERROR
+        "SINDRE_UTILS_3D_CGAL=OFF is no longer supported. Utils_3d requires "
+        "the fixed standalone CGAL SDK; see docs/guides/vtk.md for installation.")
+endif()
+set(SINDRE_UTILS_3D_CGAL ON)
+option(SINDRE_UTILS_3D_PCL "Enable PCL point-cloud algorithms" OFF)
+set(SINDRE_UTILS_3D_PCL_ROOT "" CACHE PATH
+    "PCL SDK/package root used by the optional point-cloud backend")
+set(SINDRE_UTILS_3D_CGAL_ROOT "" CACHE PATH
+    "Official standalone CGAL SDK root used by the CGAL backend")
+set(SINDRE_UTILS_3D_BOOST_ROOT "" CACHE PATH
+    "Official standalone Boost root used by the CGAL backend")
+set(SINDRE_UTILS_3D_GMP_ROOT "" CACHE PATH
+    "Official standalone GMP root used by the CGAL backend")
+set(SINDRE_UTILS_3D_MPFR_ROOT "" CACHE PATH
+    "Official standalone MPFR root used by the CGAL backend")
+set(_sindre_utils_3d_default_pcl_root
+    "${SINDRE_THIRD_PARTY_CACHE_DIR}/utils_3d/pcl")
+if(NOT SINDRE_UTILS_3D_PCL_ROOT
+   AND IS_DIRECTORY "${_sindre_utils_3d_default_pcl_root}")
+    set(SINDRE_UTILS_3D_PCL_ROOT "${_sindre_utils_3d_default_pcl_root}"
+        CACHE PATH "PCL SDK/package root" FORCE)
+endif()
+if(SINDRE_UTILS_3D_PCL_ROOT)
+    list(PREPEND CMAKE_PREFIX_PATH "${SINDRE_UTILS_3D_PCL_ROOT}")
+endif()
 option(SINDRE_UTILS_3D_NATIVE_ARCH "Optimize utils_3d for the build machine" OFF)
 option(SINDRE_BUILD_UTILS_3D_BENCHMARKS "Build the utils_3d benchmark" OFF)
+
+# These modules still expose legacy throwing convenience APIs and private
+# backends that use exceptions. Reject a misleading partial no-exception build
+# until those APIs are migrated to Result-returning entry points.
+if(SINDRE_NO_EXCEPTIONS AND (SINDRE_WITH_AI OR SINDRE_WITH_UTILS_3D))
+    message(FATAL_ERROR
+        "SINDRE_NO_EXCEPTIONS currently supports General and Math only. "
+        "Disable SINDRE_WITH_AI and SINDRE_WITH_UTILS_3D, or build those "
+        "modules with exception support until their throwing APIs are migrated.")
+endif()
 
 if(SINDRE_WITH_UTILS_2D OR SINDRE_WITH_UTILS_3D OR SINDRE_WITH_UTILS_PY)
     message(STATUS "General and Math are mandatory foundations for all utility modules")

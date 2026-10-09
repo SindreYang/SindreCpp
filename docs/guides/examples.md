@@ -75,6 +75,7 @@ Windows DLL 部署。完整的模型来源、下载脚本和兼容性选项见�
 从仓库根目录可以使用预设快速生成两种构建：
 
 ```powershell
+$env:SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT = "F:\My_Github\SindreCpp\.sindre_cache\SindreCpp\general\packages"
 $env:SINDRE_TENSORRT_ROOT = "C:\Program Files\NVIDIA\TensorRT-10.11.0.33"
 $env:CUDAToolkit_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
 cmake --preset ai-trt-full

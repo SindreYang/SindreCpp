@@ -32,8 +32,12 @@ Eigen/OpenBLAS 固定依赖登记在 `3rdparty/eigen/` 和 `3rdparty/openblas/`�
 
 下载源码、ExternalProject 构建树、vcpkg `installed/` 包和构建产物均属于本地缓存，不能作为
 项目核心源码提交。缓存默认使用 `${CMAKE_BINARY_DIR}/_third_party_cache`，也可通过
-`SINDRE_THIRD_PARTY_CACHE_DIR` 指定 CI 或共享缓存目录。General 当前已有的固定源码和包缓存
-由 `SINDRE_THIRD_PARTY_CACHE_DIR` 管理；这些目录默认被 Git 忽略。
+`SINDRE_THIRD_PARTY_CACHE_DIR` 指定项目内缓存目录。当前已迁移的共享缓存位于
+`.sindre_cache/`，General 的固定源码和包缓存由该目录管理；这些目录默认被 Git 忽略。
+不允许把项目产生的缓存指定到仓库外路径。构建树统一使用 `build_win/` 或
+`build_linux/`；WSL 临时 ext4 构建完成后也必须迁回 `build_linux/<profile>/`。
+工具虚拟环境不属于构建缓存，应单独管理；迁移构建目录后应重新配置 CMake，避免复用
+包含旧绝对路径的缓存。
 
 ## 目录
 
@@ -60,16 +64,15 @@ Eigen/OpenBLAS 固定依赖登记在 `3rdparty/eigen/` 和 `3rdparty/openblas/`�
 - 第三方测试、示例和文档默认关闭，避免污染 sindrecpp 的构建目标。
 - 不把第三方头文件复制到 `include/`，对外只暴露 sindrecpp 的模块头文件。
 
-## 在宿主项目中替换依赖
+## 在宿主项目中提供大型 SDK
 
-非 General 模块的依赖登记文件中的仓库和版本可以通过同名 CMake cache 变量覆盖。例如：
+小型源码依赖的版本、URL 和 SHA256 是库源码的一部分，不允许通过 cache 变量替换，
+也不允许改为系统包或 vcpkg 包。这样才能保证 General、Math、GUI、Utils_3d 和
+Utils_Py 的 ABI 与测试结果可复现。
 
-```cmake
-set(SINDRE_THIRD_GENERAL_SIMDJSON_TAG v4.6.11 CACHE STRING "")
-set(CMAKE_PREFIX_PATH "C:/sdk;/another/sdk" CACHE PATH "")
-add_subdirectory(sindrecpp)
-```
-
-对于 OpenCV、VTK、GLFW 和 TensorRT，应使用对应 SDK 的 CMake package；不要把大型 SDK
-二进制提交到本仓库。Math 的 OpenBLAS，以及 General 的 RE2、Crashpad、zlib、OpenSSL
-固定包必须由各自模块的固定依赖配置提供。
+对于 OpenCV、VTK、CGAL、Boost、GMP、MPFR 和 TensorRT，应使用对应的官方 SDK
+或模块文档规定的固定 profile；不要把大型 SDK 二进制提交到本仓库。大型 SDK 的
+根目录通过对应的 `*_ROOT`、`*_DIR` 或 `CMAKE_PREFIX_PATH` 提供，其中 CGAL、
+Boost、GMP、MPFR 明确禁止使用 vcpkg。AI 的 CUDA、TensorRT 和 ONNX Runtime
+使用最低兼容版本约束，允许显式提供兼容的新版本；VTK、CGAL、PCL 则要求固定的
+精确版本。

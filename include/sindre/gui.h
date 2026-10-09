@@ -164,6 +164,7 @@ private:
     float dpi_scale_ = 1.0f;
     bool backend_initialized_ = false;
     bool glfw_runtime_acquired_ = false;
+    bool backend_instance_acquired_ = false;
 };
 #endif
 

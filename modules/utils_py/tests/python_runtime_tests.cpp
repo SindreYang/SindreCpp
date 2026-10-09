@@ -27,6 +27,27 @@ int main() {
         auto callback = runtime.value()->run_with_gil([] { return 40 + 2; });
         check(callback && callback.value() == 42, "GIL callback failed");
 
+        // pybind11 objects must be created, used, and destroyed inside the
+        // GIL callback. Return an owned C++ value across the Result boundary.
+        auto imported = runtime.value()->run_with_gil([] {
+            auto math = py::module_::import("math");
+            return math.attr("sqrt")(81.0).cast<double>();
+        });
+        check(imported && imported.value() == 9.0,
+              "pybind11 module import failed");
+
+        const auto availability = runtime.value()->import_module("math");
+        check(static_cast<bool>(availability),
+              "module availability check failed");
+        auto version = runtime.value()->get_attribute<std::string>(
+            "sys", "version");
+        check(version && !version.value().empty(),
+              "module attribute conversion failed");
+        auto square = runtime.value()->call_function<double>(
+            "math", "sqrt", 144.0);
+        check(square && square.value() == 12.0,
+              "module function conversion failed");
+
         {
             auto gil = runtime.value()->get_gil();
             volatile int gil_value = 40 + 2;

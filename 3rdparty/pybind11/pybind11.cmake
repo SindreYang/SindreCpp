@@ -5,6 +5,8 @@ include(ExternalProject)
 set(SINDRE_THIRD_UTILS_PY_PYBIND11_VERSION "3.1.0")
 set(SINDRE_THIRD_UTILS_PY_PYBIND11_URL
     "https://github.com/pybind/pybind11/archive/refs/tags/v3.1.0.zip")
+set(SINDRE_THIRD_UTILS_PY_PYBIND11_SHA256
+    "affea1ada7b39fe1d835559fcb78800c7927d514bd480ed01b71b88205a5e536")
 
 function(sindre_3rdparty_setup_pybind11)
     if(TARGET sindre::pybind11_embed)
@@ -12,8 +14,9 @@ function(sindre_3rdparty_setup_pybind11)
     endif()
     ExternalProject_Add(
         sindre_ext_pybind11
-        PREFIX "${SINDRE_THIRD_PARTY_CACHE_DIR}/pybind11"
+        PREFIX "${SINDRE_THIRD_PARTY_BUILD_CACHE_DIR}/pybind11"
         URL "${SINDRE_THIRD_UTILS_PY_PYBIND11_URL}"
+        URL_HASH "SHA256=${SINDRE_THIRD_UTILS_PY_PYBIND11_SHA256}"
         DOWNLOAD_DIR "${SINDRE_THIRD_PARTY_DOWNLOAD_DIR}/pybind11"
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
         UPDATE_COMMAND ""
@@ -27,7 +30,9 @@ function(sindre_3rdparty_setup_pybind11)
         $<BUILD_INTERFACE:${SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include/pybind11>)
     add_dependencies(sindre_pybind11_embed sindre_ext_pybind11)
-    target_link_libraries(sindre_pybind11_embed INTERFACE Python3::Python)
+    target_link_libraries(sindre_pybind11_embed INTERFACE
+        $<BUILD_INTERFACE:${SINDRE_UTILS_PY_PYTHON_LIBRARY}>
+        $<INSTALL_INTERFACE:Python3::Python>)
     add_library(sindre::pybind11_embed ALIAS sindre_pybind11_embed)
     install(TARGETS sindre_pybind11_embed EXPORT sindreTargets)
     install(DIRECTORY "${SOURCE_DIR}/include/"

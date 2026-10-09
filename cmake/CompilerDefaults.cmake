@@ -43,7 +43,9 @@ function(sindre_apply_compiler_defaults target)
     endif()
 
     if(MSVC AND SINDRE_MSVC_STATIC_RUNTIME)
+        # General 的固定依赖全部使用非 Debug 静态 CRT。即使宿主选择 Debug，
+        # 也必须保持 /MT，不能生成 /MTd 后再与固定 /MT 库混链。
         set_property(TARGET ${target} PROPERTY
-            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+            MSVC_RUNTIME_LIBRARY "MultiThreaded")
     endif()
 endfunction()

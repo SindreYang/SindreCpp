@@ -68,9 +68,10 @@ int main() {
                   aabb.dimensions.isApprox(math::Vector3::Ones()),
               "Axis-aligned bounding box");
         const auto obb = mesh.get_obb();
+        const auto vertices = mesh.vertices();
         for (Eigen::Index i = 0; i < mesh.npoints(); ++i) {
-            const auto local = obb.axes.transpose() *
-                (mesh.vertices().row(i).transpose() - obb.center);
+            const math::Vector3 local = obb.axes.transpose() *
+                (vertices.row(i).transpose() - obb.center);
             check((local.array().abs() <=
                    (obb.half_extents.array() + 1e-10)).all(),
                   "Oriented bounding box must contain vertices");
@@ -221,6 +222,8 @@ int main() {
               "FGCF output must remain on the mesh");
 
         CgalSegmentationOptions segmentation_options;
+        segmentation_options.number_of_rays = 4;
+        segmentation_options.number_of_clusters = 2;
 #if defined(SINDRE_UTILS_3D_CGAL)
         auto segmentation = segment_mesh_by_cgal(mesh, segmentation_options);
         check(segmentation &&
@@ -431,7 +434,7 @@ int main() {
             CurvatureType::maximum_principal);
         check(facade_curvature && facade_curvature.value().size() == mesh.npoints(),
               "SindreMesh curvature facade");
-#if defined(SINDRE_UTILS_3D_CGAL)
+#if defined(SINDRE_UTILS_3D_HAS_CGAL_CURVATURE)
         for (const auto curvature_type : {CurvatureType::mean,
                                           CurvatureType::gaussian,
                                           CurvatureType::minimum_principal,

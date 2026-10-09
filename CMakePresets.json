@@ -10,6 +10,7 @@
         "CMAKE_C_COMPILER": "clang-cl",
         "CMAKE_CXX_COMPILER": "clang-cl",
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT": "$env{SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT}",
         "SINDRE_BUILD_TESTS": "ON",
         "SINDRE_BUILD_EXAMPLES": "ON"
       }
@@ -23,8 +24,45 @@
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT": "$env{SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT}",
         "SINDRE_BUILD_TESTS": "ON",
         "SINDRE_BUILD_EXAMPLES": "ON"
+      }
+    },
+    {
+      "name": "linux-clang-core",
+      "displayName": "Linux Clang core (without large optional SDKs)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build_linux/core",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT": "$env{SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT}",
+        "SINDRE_BUILD_TESTS": "ON",
+        "SINDRE_BUILD_EXAMPLES": "ON",
+        "SINDRE_WITH_AI": "OFF",
+        "SINDRE_WITH_GUI": "OFF",
+        "SINDRE_WITH_UTILS_2D": "OFF",
+        "SINDRE_WITH_UTILS_3D": "OFF",
+        "SINDRE_WITH_UTILS_PY": "OFF"
+      }
+    },
+    {
+      "name": "windows-clang-cl-core-noexc",
+      "displayName": "Windows ClangCL General + Math no-exception core",
+      "inherits": "windows-clang-cl",
+      "binaryDir": "${sourceDir}/build_win/noexc-core",
+      "cacheVariables": {
+        "SINDRE_BUILD_TESTS": "ON",
+        "SINDRE_BUILD_EXAMPLES": "OFF",
+        "SINDRE_NO_EXCEPTIONS": "ON",
+        "SINDRE_WITH_AI": "OFF",
+        "SINDRE_WITH_GUI": "OFF",
+        "SINDRE_WITH_UTILS_2D": "OFF",
+        "SINDRE_WITH_UTILS_3D": "OFF",
+        "SINDRE_WITH_UTILS_PY": "OFF",
+        "SINDRE_MATH_BLAS_BACKEND": "EIGEN"
       }
     },
     {
@@ -36,6 +74,11 @@
         "SINDRE_BUILD_TESTS": "OFF",
         "SINDRE_BUILD_EXAMPLES": "ON",
         "SINDRE_WITH_AI": "ON",
+        "SINDRE_WITH_GUI": "OFF",
+        "SINDRE_WITH_UTILS_2D": "OFF",
+        "SINDRE_WITH_UTILS_3D": "OFF",
+        "SINDRE_WITH_UTILS_PY": "OFF",
+        "SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT": "$env{SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT}",
         "SINDRE_AI_ONNXRUNTIME": "OFF",
         "SINDRE_AI_TRT": "ON",
         "SINDRE_AI_TRT_RUNTIME": "FULL",
@@ -52,6 +95,11 @@
         "SINDRE_BUILD_TESTS": "OFF",
         "SINDRE_BUILD_EXAMPLES": "ON",
         "SINDRE_WITH_AI": "ON",
+        "SINDRE_WITH_GUI": "OFF",
+        "SINDRE_WITH_UTILS_2D": "OFF",
+        "SINDRE_WITH_UTILS_3D": "OFF",
+        "SINDRE_WITH_UTILS_PY": "OFF",
+        "SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT": "$env{SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT}",
         "SINDRE_AI_ONNXRUNTIME": "OFF",
         "SINDRE_AI_TRT": "ON",
         "SINDRE_AI_TRT_RUNTIME": "DISPATCH",
@@ -68,6 +116,14 @@
     {
       "name": "linux-clang",
       "configurePreset": "linux-clang"
+    },
+    {
+      "name": "linux-clang-core",
+      "configurePreset": "linux-clang-core"
+    },
+    {
+      "name": "windows-clang-cl-core-noexc",
+      "configurePreset": "windows-clang-cl-core-noexc"
     },
     {
       "name": "ai-trt-full",
@@ -89,6 +145,20 @@
     {
       "name": "linux-clang",
       "configurePreset": "linux-clang",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-clang-core",
+      "configurePreset": "linux-clang-core",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-clang-cl-core-noexc",
+      "configurePreset": "windows-clang-cl-core-noexc",
       "output": {
         "outputOnFailure": true
       }

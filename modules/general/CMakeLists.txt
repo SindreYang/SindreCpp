@@ -11,7 +11,10 @@ add_dependencies(sindre_general
     sindre_ext_spdlog
     sindre_ext_cpp_httplib
     sindre_ext_simdjson
-    sindre_ext_argparse)
+    sindre_ext_argparse
+    sindre_ext_abseil
+    sindre_ext_re2
+    sindre_ext_zlib)
 
 # General 的默认产物是静态库，并且在 Windows 上固定使用静态 CRT 与
 # `_ITERATOR_DEBUG_LEVEL=0`。这些设置必须通过已安装的聚合 target 传递给
@@ -45,6 +48,12 @@ if(SINDRE_GENERAL_BUILD_LIBRARY)
         add_library(sindre_general_runtime STATIC ${SINDRE_GENERAL_SOURCES})
     endif()
     target_compile_features(sindre_general_runtime PUBLIC cxx_std_17)
+    if(MSVC AND SINDRE_MSVC_STATIC_RUNTIME)
+        # General 的运行库必须与固定平台依赖保持 /MT 一致；Debug 只影响
+        # 本项目的编译配置，不切换到与依赖不兼容的 /MTd。
+        set_property(TARGET sindre_general_runtime PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    endif()
     target_include_directories(sindre_general_runtime PUBLIC
         $<BUILD_INTERFACE:${SINDRE_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>)
@@ -53,7 +62,9 @@ if(SINDRE_GENERAL_BUILD_LIBRARY)
         "${SINDRE_THIRD_GENERAL_SIMDJSON_INCLUDE_DIR}"
         "${SINDRE_THIRD_GENERAL_SPDLOG_INCLUDE_DIR}"
         "${SINDRE_THIRD_GENERAL_HTTPLIB_SOURCE_DIR}"
-        "${SINDRE_THIRD_GENERAL_CS_STRING_INCLUDE_DIR}")
+        "${SINDRE_THIRD_GENERAL_CS_STRING_INCLUDE_DIR}"
+        "${SINDRE_THIRD_GENERAL_RE2_INCLUDE_DIR}"
+        "${SINDRE_THIRD_GENERAL_ZLIB_INCLUDE_DIR}")
     target_link_libraries(sindre_general_runtime PUBLIC sindre_base)
     if(WIN32)
         target_link_libraries(sindre_general_runtime PRIVATE
@@ -109,6 +120,9 @@ target_link_libraries(sindre_general INTERFACE sindre_general_cs_string)
 if(TARGET sindre_general_runtime)
     target_link_libraries(sindre_general_runtime PRIVATE sindre_general_cs_string)
 endif()
+if(WIN32 AND IS_DIRECTORY "${SINDRE_GENERAL_PACKAGE_ROOT}/bin")
+    sindre_install_runtime_dirs("${SINDRE_GENERAL_PACKAGE_ROOT}/bin")
+endif()
 if(WIN32)
     install(FILES "${SINDRE_THIRD_GENERAL_CS_STRING_LIBRARY}"
         DESTINATION ${CMAKE_INSTALL_LIBDIR})
@@ -118,9 +132,6 @@ else()
     install(FILES "${SINDRE_THIRD_GENERAL_CS_STRING_RUNTIME}"
         DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endif()
-install(DIRECTORY "${SINDRE_THIRD_GENERAL_CS_STRING_INCLUDE_DIR}/"
-    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/cs_string")
-
     # General always owns the pinned implementation. Do not accept a parent
     # project's spdlog target: that would silently change the ABI and defeat
     # the fixed dependency profile.
@@ -133,6 +144,9 @@ install(DIRECTORY "${SINDRE_THIRD_GENERAL_CS_STRING_INCLUDE_DIR}/"
         INTERFACE_INCLUDE_DIRECTORIES "${SINDRE_THIRD_GENERAL_SPDLOG_INCLUDE_DIR}")
     add_dependencies(sindre_spdlog sindre_ext_spdlog)
     target_compile_definitions(sindre_spdlog INTERFACE SPDLOG_COMPILED_LIB)
+    if(SINDRE_NO_EXCEPTIONS)
+        target_compile_definitions(sindre_spdlog INTERFACE SPDLOG_NO_EXCEPTIONS)
+    endif()
     if(NOT WIN32)
         find_package(Threads REQUIRED)
         target_link_libraries(sindre_spdlog INTERFACE Threads::Threads)
@@ -260,20 +274,68 @@ find_package(OpenSSL 3.3.0 EXACT CONFIG REQUIRED COMPONENTS SSL Crypto
             DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/argparse")
     endif()
 
-    find_package(re2 11.0.0 EXACT CONFIG REQUIRED
-        PATHS "${SINDRE_GENERAL_PACKAGE_ROOT}" NO_DEFAULT_PATH)
-    if(TARGET re2::re2)
-        target_link_libraries(sindre_general INTERFACE re2::re2)
-        if(TARGET sindre_general_runtime)
-            target_link_libraries(sindre_general_runtime PRIVATE re2::re2)
-        endif()
-    elseif(TARGET re2)
-        target_link_libraries(sindre_general INTERFACE re2)
-        if(TARGET sindre_general_runtime)
-            target_link_libraries(sindre_general_runtime PRIVATE re2)
-        endif()
+    # RE2 and Abseil are ExternalProjects, so their generated package files
+    # do not exist during the first top-level configure. Use fixed imported
+    # paths instead of find_package(), which would make a clean configure
+    # depend on a pre-existing cache or a host/vcpkg installation.
+    set(_sindre_abseil_components
+        bad_optional_access bad_variant_access base city civil_time
+        cord_internal cord cordz_functions cordz_handle cordz_info
+        crc_cord_state crc_cpu_detect crc_internal crc32c debugging_internal
+        demangle_internal exponential_biased flags_commandlineflag_internal
+        flags_commandlineflag flags_config flags_internal flags_marshalling
+        flags_private_handle_accessor flags_program_name flags_reflection
+        graphcycles_internal hash hashtablez_sampler int128 kernel_timeout_internal
+        log_severity low_level_hash malloc_internal raw_hash_set raw_logging_internal
+        spinlock_wait stacktrace str_format_internal string_view strings_internal
+        strings symbolize synchronization throw_delegate time_zone time)
+    set(_sindre_abseil_libraries)
+    foreach(_sindre_abseil_component IN LISTS _sindre_abseil_components)
+        list(APPEND _sindre_abseil_libraries
+            "${SINDRE_THIRD_GENERAL_ABSEIL_INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}absl_${_sindre_abseil_component}${CMAKE_STATIC_LIBRARY_SUFFIX}")
+    endforeach()
+    add_library(sindre_general_abseil INTERFACE)
+    add_dependencies(sindre_general_abseil sindre_ext_abseil)
+    # Abseil is consumed as a set of static archives.  GNU ld requires the
+    # archives to be rescanned because the component graph is cyclic and the
+    # generated component list is not a dependency-order guarantee.  MSVC's
+    # linker does not need (and does not support) a link group.
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(sindre_general_abseil INTERFACE
+            "$<LINK_GROUP:RESCAN,${_sindre_abseil_libraries}>")
     else()
-        message(FATAL_ERROR "Fixed General dependency profile has no re2 target")
+        target_link_libraries(sindre_general_abseil INTERFACE ${_sindre_abseil_libraries})
+    endif()
+    add_library(sindre_general_re2_archive STATIC IMPORTED GLOBAL)
+    set_target_properties(sindre_general_re2_archive PROPERTIES
+        IMPORTED_CONFIGURATIONS "Debug;Release;RelWithDebInfo;MinSizeRel"
+        IMPORTED_LOCATION_DEBUG "${SINDRE_THIRD_GENERAL_RE2_LIBRARY}"
+        IMPORTED_LOCATION_RELEASE "${SINDRE_THIRD_GENERAL_RE2_LIBRARY}"
+        IMPORTED_LOCATION_RELWITHDEBINFO "${SINDRE_THIRD_GENERAL_RE2_LIBRARY}"
+        IMPORTED_LOCATION_MINSIZEREL "${SINDRE_THIRD_GENERAL_RE2_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${SINDRE_THIRD_GENERAL_RE2_INCLUDE_DIR}")
+    add_dependencies(sindre_general_re2_archive sindre_ext_re2)
+    add_library(sindre_general_re2 INTERFACE)
+    set_target_properties(sindre_general_re2 PROPERTIES
+        EXPORT_NAME general_re2)
+    if(WIN32)
+        set(_sindre_re2_install_link "${CMAKE_INSTALL_LIBDIR}/re2.lib")
+    else()
+        set(_sindre_re2_install_link "${CMAKE_INSTALL_LIBDIR}/libre2.a")
+    endif()
+    target_link_libraries(sindre_general_re2 INTERFACE
+        $<BUILD_INTERFACE:sindre_general_re2_archive>
+        $<BUILD_INTERFACE:sindre_general_abseil>
+        $<INSTALL_INTERFACE:${_sindre_re2_install_link}>)
+    install(TARGETS sindre_general_re2 EXPORT sindreTargets)
+    install(FILES "${SINDRE_THIRD_GENERAL_RE2_LIBRARY}"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    install(DIRECTORY "${SINDRE_THIRD_GENERAL_ABSEIL_INSTALL_DIR}/lib/"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        FILES_MATCHING PATTERN "${CMAKE_STATIC_LIBRARY_PREFIX}absl_*${CMAKE_STATIC_LIBRARY_SUFFIX}")
+    target_link_libraries(sindre_general INTERFACE sindre_general_re2)
+    if(TARGET sindre_general_runtime)
+        target_link_libraries(sindre_general_runtime PRIVATE sindre_general_re2)
     endif()
     target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_RE2=1)
     if(TARGET sindre_general_runtime)
@@ -293,6 +355,17 @@ find_package(OpenSSL 3.3.0 EXACT CONFIG REQUIRED COMPONENTS SSL Crypto
         message(FATAL_ERROR
             "Fixed Crashpad package version ${SINDRE_THIRD_GENERAL_CRASHPAD_VERSION} was not found")
     endif()
+    # Crashpad's package config asks for ZLIB.  Seed CMake's standard variables
+    # with the fixed source-built target before reading that config, so it cannot
+    # silently resolve the vcpkg zlib package.
+    set(ZLIB_ROOT "${SINDRE_THIRD_GENERAL_ZLIB_INSTALL_DIR}")
+    set(ZLIB_INCLUDE_DIR "${SINDRE_THIRD_GENERAL_ZLIB_INCLUDE_DIR}")
+    set(ZLIB_INCLUDE_DIRS "${SINDRE_THIRD_GENERAL_ZLIB_INCLUDE_DIR}")
+    set(ZLIB_LIBRARY "${SINDRE_THIRD_GENERAL_ZLIB_LIBRARY}")
+    set(ZLIB_LIBRARY_RELEASE "${SINDRE_THIRD_GENERAL_ZLIB_LIBRARY}")
+    set(ZLIB_LIBRARY_DEBUG "${SINDRE_THIRD_GENERAL_ZLIB_LIBRARY}")
+    set(ZLIB_LIBRARIES "${SINDRE_THIRD_GENERAL_ZLIB_LIBRARY}")
+    set(ZLIB_VERSION_STRING "${SINDRE_THIRD_GENERAL_ZLIB_VERSION}")
     find_package(crashpad CONFIG REQUIRED
         PATHS "${SINDRE_GENERAL_PACKAGE_ROOT}" NO_DEFAULT_PATH)
     if(TARGET crashpad)
@@ -301,6 +374,13 @@ find_package(OpenSSL 3.3.0 EXACT CONFIG REQUIRED COMPONENTS SSL Crypto
         set(SINDRE_CRASHPAD_FIXED_TARGET crashpad::crashpad)
     else()
         message(FATAL_ERROR "Fixed General dependency profile has no Crashpad target")
+    endif()
+    get_target_property(_sindre_crashpad_links
+        ${SINDRE_CRASHPAD_FIXED_TARGET} INTERFACE_LINK_LIBRARIES)
+    if(_sindre_crashpad_links)
+        list(REMOVE_ITEM _sindre_crashpad_links ZLIB::ZLIB)
+        set_property(TARGET ${SINDRE_CRASHPAD_FIXED_TARGET}
+            PROPERTY INTERFACE_LINK_LIBRARIES "${_sindre_crashpad_links}")
     endif()
     # Keep the external package behind an exported wrapper. Exporting the
     # vcpkg interface target itself would bake absolute build-machine library
@@ -318,15 +398,24 @@ find_package(OpenSSL 3.3.0 EXACT CONFIG REQUIRED COMPONENTS SSL Crypto
     endif()
     install(TARGETS sindre_general_crashpad EXPORT sindreTargets)
 
-    find_package(ZLIB REQUIRED MODULE)
-    if(NOT ZLIB_VERSION_STRING STREQUAL "1.3.1")
-        message(FATAL_ERROR
-            "Fixed General dependency requires zlib 1.3.1, found ${ZLIB_VERSION_STRING}")
+    add_library(sindre_general_zlib INTERFACE)
+    set_target_properties(sindre_general_zlib PROPERTIES
+        EXPORT_NAME general_zlib)
+    if(WIN32)
+        set(_sindre_zlib_install_link "${CMAKE_INSTALL_LIBDIR}/zlibstatic.lib")
+    else()
+        set(_sindre_zlib_install_link "${CMAKE_INSTALL_LIBDIR}/libz.a")
     endif()
-    target_link_libraries(sindre_general INTERFACE ZLIB::ZLIB)
+    target_link_libraries(sindre_general_zlib INTERFACE
+        $<BUILD_INTERFACE:sindre_zlib>
+        $<INSTALL_INTERFACE:${_sindre_zlib_install_link}>)
+    install(TARGETS sindre_general_zlib EXPORT sindreTargets)
+    install(FILES "${SINDRE_THIRD_GENERAL_ZLIB_LIBRARY}"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    target_link_libraries(sindre_general INTERFACE sindre_general_zlib)
     target_compile_definitions(sindre_general INTERFACE SINDRE_WITH_ZLIB=1)
     if(TARGET sindre_general_runtime)
-        target_link_libraries(sindre_general_runtime PRIVATE ZLIB::ZLIB)
+        target_link_libraries(sindre_general_runtime PRIVATE sindre_general_zlib)
         target_compile_definitions(sindre_general_runtime PRIVATE SINDRE_WITH_ZLIB=1)
     endif()
 

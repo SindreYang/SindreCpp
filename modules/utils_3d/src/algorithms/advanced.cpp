@@ -529,6 +529,9 @@ Result<AlgorithmResult<CgalSegmentationResult>> segment_mesh_by_cgal(
             !std::isfinite(options.smoothing_lambda) || options.smoothing_lambda < 0.0 ||
             options.smoothing_lambda > 1.0)
             throw std::invalid_argument("Invalid CGAL segmentation options");
+        if (static_cast<std::size_t>(mesh.nfaces()) < options.number_of_clusters)
+            throw std::invalid_argument(
+                "CGAL segmentation cluster count cannot exceed face count");
         if (options.require_closed && !mesh.is_watertight())
             throw std::invalid_argument(
                 "CGAL SDF segmentation requires a closed, manifold triangle mesh");

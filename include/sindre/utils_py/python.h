@@ -9,6 +9,9 @@
 
 #include <sindre/general/runtime.h>
 
+#include <pybind11/embed.h>
+#include <pybind11/stl.h>
+
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -16,6 +19,7 @@
 #include <exception>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -99,6 +103,46 @@ public:
 
     GilGuard get_gil() const;
     GilReleaseGuard get_gil_release() const;
+
+    /// Import a module only to validate availability. The module object stays
+    /// inside the GIL scope and is never returned across the API boundary.
+    ::sindre::general::Result<void>
+    import_module(std::string_view module_name) const noexcept;
+
+    /// Read and convert a module attribute while holding the GIL.
+    template <class Return>
+    ::sindre::general::Result<Return>
+    get_attribute(std::string_view module_name,
+                  std::string_view attribute_name) const noexcept {
+        std::string module(module_name);
+        std::string attribute(attribute_name);
+        return run_with_gil([&]() -> Return {
+            auto object = pybind11::module_::import(module.c_str())
+                              .attr(attribute.c_str());
+            return object.template cast<Return>();
+        });
+    }
+
+    /// Import a module, call one of its functions, and convert the result.
+    template <class Return, class... Args>
+    ::sindre::general::Result<Return>
+    call_function(std::string_view module_name,
+                  std::string_view function_name,
+                  Args &&...args) const noexcept {
+        std::string module(module_name);
+        std::string function(function_name);
+        return run_with_gil([&]() -> Return {
+            auto callable = pybind11::module_::import(module.c_str())
+                                .attr(function.c_str());
+            if constexpr (std::is_void_v<Return>) {
+                callable(std::forward<Args>(args)...);
+                return;
+            } else {
+                return callable(std::forward<Args>(args)...)
+                    .template cast<Return>();
+            }
+        });
+    }
 
     template <class Function>
     auto run_with_gil(Function &&function) const noexcept

@@ -54,7 +54,9 @@ int main(int argc, char** argv) {
         auto expired_result = expired_async.value().get();
         if (expired_result || expired_result.error().code !=
                                   std::make_error_code(std::errc::timed_out)) return 34;
-        const auto chinese_model = std::filesystem::temp_directory_path() / "sindre-模型-中文.onnx";
+        const auto unique_id = std::chrono::steady_clock::now().time_since_epoch().count();
+        const auto chinese_model = std::filesystem::temp_directory_path() /
+            ("sindre-模型-中文-" + std::to_string(unique_id) + ".onnx");
         std::filesystem::copy_file(argv[1], chinese_model,
                                    std::filesystem::copy_options::overwrite_existing);
         Model chinese_path_model(chinese_model, options);

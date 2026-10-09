@@ -93,7 +93,7 @@ SINDRE_WITH_<MODULE>
 
 ## 6. 注意 utils_3d 模块的可移植性
 
-Utils_3d 对外提供后端无关的 Mesh、PointCloud 和 SindreMesh；Eigen 用于数组与数学交换。VTK、CGAL 和 PCL 只在模块内部按需实现网格、拓扑、点云配准和 Poisson 重建，用户代码不需要包含它们的头文件。
+Utils_3d 对外提供后端无关的 Mesh、PointCloud 和 SindreMesh；Eigen 用于数组与数学交换。VTK 和 CGAL 默认在模块内部实现网格与拓扑能力，PCL 仅在显式启用时实现点云配准和 Poisson 重建，用户代码不需要包含它们的头文件。
 Utils_3d 的公共接口统一使用 C++17。需要 C++20 的第三方后端不能作为当前统一构建
 配置的一部分启用；网格与 NumPy 转换全部独立拷贝。
 MeshLib 仅保留在文档中作为历史设计/依赖记录，已从当前实现、CMake 和安装导出中移除。

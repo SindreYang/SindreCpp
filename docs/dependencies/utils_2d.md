@@ -4,18 +4,24 @@
 
 Utils_2d uses a matching OpenCV 4 and opencv_contrib package and requires the
 `core`, `imgproc`, `imgcodecs`, `highgui`, `features2d`, `calib3d`, `video`, `videoio`,
-`objdetect`, `aruco`, `optflow`, `tracking` and `xfeatures2d` components. OpenCV is not downloaded automatically because it is
+`objdetect`, `aruco`, `optflow` and `tracking` components. OpenCV is not downloaded automatically because it is
 normally supplied by the application, operating system or an imaging SDK.
 
-The required profile is OpenCV 4.8 or newer with a matching opencv_contrib source
-tree. OpenCV 4.12.0 is a suitable target when the matching contrib modules are
-included; the current plain OpenCV 4.12.0 SDK without contrib is not sufficient. Its import libraries are found through
+On Windows the required profile is the fixed OpenCV 4.12.0 SDK with a matching
+`opencv_contrib` build. On Linux, OpenCV 4.6 or newer from the system or an
+external SDK is accepted. Its import libraries are found through
 `OpenCV_DIR`, while the runtime DLLs are under the SDK `bin` directory. A
 consumer installation must ship those DLLs or provide the SDK `bin` directory
 on `PATH`; static linking of `sindre::utils_2d` does not make OpenCV itself
 static.
 
 Configure with `OpenCV_DIR` or `CMAKE_PREFIX_PATH` when CMake cannot discover it.
+Windows uses exact-version matching; Linux uses a minimum-version check so the
+distribution package can be used without weakening the Windows ABI policy.
+Linux packages may omit the non-free `xfeatures2d` module even when
+`opencv_contrib` is installed. In that case BRIEF/FREAK return a
+`function_not_supported` error; the remaining feature and geometry APIs stay
+available. Windows keeps xfeatures2d enabled in the fixed SDK profile.
 The build uses config-mode discovery and checks `OpenCV_VERSION` after loading
 the package, so SDKs that omit a separate `OpenCVConfigVersion.cmake` remain
 supported.

@@ -3,6 +3,7 @@
 本文面向贡献者和维护者，说明目录边界、公共 API、依赖接入、测试和提交前检查。
 如果只是使用库，请先回到 [文档入口](../README.md)，不需要阅读本页。
 当前 Windows 开发机的固定工具链路径见 [本机开发环境](本机.md)，Agent 修改构建前应先读取。
+依赖来源和验证范围集中记录在[依赖与完整性审计](dependency-audit.md)。
 
 ## 项目定位
 
@@ -66,7 +67,7 @@ sindrecpp 的顶层组织跟随 Sindre：
 进程、动态库、临时文件、环境、URL、版本、自启动、桌面能力、scope guard、ranges 和诊断
 封装也必须沿用该约定；平台或第三方后端未启用时返回 `function_not_supported`，不得静默成功。
 - `utils_2d`：OpenCV 图像、传统视觉算法和推理预处理；
-- `utils_3d`：后端无关的 Mesh、PointCloud、SindreMesh 和几何算法；VTK/CGAL/PCL 仅作为私有实现按需开启，详见 [网格指南](../guides/mesh.md)；
+- `utils_3d`：后端无关的 Mesh、PointCloud、SindreMesh 和几何算法；默认使用 VTK + CGAL，PCL 作为私有实现按需开启，详见 [网格指南](../guides/mesh.md)；
 - `utilsav`：音视频能力，预留；
 - `ai`：ONNX Runtime CPU/CUDA 和独立 TensorRT 推理；
 - `general` 对外按用户用途提供 `core.h`、`system.h`、`runtime.h`、`cli.h`、`string.h`、`network.h` 和 `diag.h`；实现集中在 `modules/general/src/`，内部头不作为稳定公共 API；
@@ -108,8 +109,19 @@ General 固定使用静态依赖和静态 MSVC CRT；Windows 宿主必须与 Gen
 ## 构建目录和运行时
 
 Windows 使用 Ninja 生成器和 Visual Studio 提供的 ClangCL 工具链，Linux/WSL 使用 Ninja 和 Clang。构建目录固定为
-`build_win/` 和 `build_linux/`，生成文件放在对应目录的 `bin/` 中。Windows 下 General、AI、GUI、utils_2d 和 utils_3d 的测试/示例
-目标会在构建后复制已发现的 DLL 到目标文件同目录，避免加载到系统中不匹配的版本。
+`build_win/` 和 `build_linux/`，生成文件放在对应目录的 `bin/` 中。不同配置必须作为这两个目录下的子目录隔离，
+例如 `build_linux/core/`、`build_win/ai-trt-full/`；禁止在仓库根目录创建散落的 `build_*` 目录。
+
+WSL 构建树、安装前缀、下载解压目录和测试产物都必须位于仓库内，不能长期放在 WSL `/home`、容器卷、用户目录或
+其他仓库外路径。`/mnt/f` 的 9P 性能问题不改变该目录规则；如果为了临时性能测试使用 WSL ext4 构建，验证完成后
+必须迁回 `build_linux/<profile>/`。工具虚拟环境（例如 `cmake-venv`）不是构建目录，可以单独保留，但不得把构建缓存
+混入其中。
+
+从 WSL ext4 迁回项目目录后，必须检查源目录已消失、目标目录存在；CMake 缓存中的绝对路径可能仍指向旧位置，
+因此继续构建前应重新执行对应的 CMake preset/configure。目录迁移本身不等于缓存可复用。
+
+Windows 下 General、AI、GUI、utils_2d 和 utils_3d 的测试/示例目标会在构建后复制已发现的 DLL 到目标文件同目录，
+避免加载到系统中不匹配的版本。
 
 ## 快捷构建
 
@@ -122,9 +134,19 @@ Windows 使用 Ninja 生成器和 Visual Studio 提供的 ClangCL 工具链，Li
 `scripts\build.bat -DSINDRE_WITH_UTILS_2D=ON` 或
 `./scripts/build.sh -DSINDRE_MATH_NATIVE_ARCH=OFF`。
 
-固定的 Windows 静态依赖使用统一的非 Debug CRT ABI。单配置生成器默认使用
-`RelWithDebInfo`；Windows Visual Studio 多配置生成器必须构建 `RelWithDebInfo`，
-不能构建 Debug 配置，避免 Debug CRT 或 iterator-debug ABI 与固定依赖混链。
+固定的 Windows 静态依赖使用统一的非 Debug CRT ABI。`Debug`、`RelWithDebInfo` 和
+`Release` 三种配置均受支持，单配置生成器默认使用 `RelWithDebInfo`；如果选择 Debug，项目仍会使用 `/MT` 和
+`_ITERATOR_DEBUG_LEVEL=0`，而不是切换到与固定依赖不兼容的 `/MTd` 和 iterator-debug
+ABI。因此 Debug 可以用于调试项目代码，但第三方固定库仍是 Release ABI；发布和常规
+验证仍建议使用 `RelWithDebInfo`。
+
+固定大包 profile 也应放在仓库内的 `.sindre_cache/`，并传入
+`-DSINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT=<repo>/.sindre_cache/shared/general/packages`。
+小型依赖仍由 `3rdparty/` 的固定源码配方下载或编译，不从 vcpkg 或系统路径
+隐式获取；CGAL 另外必须显式使用独立 SDK 和独立 Boost，不能使用 vcpkg。
+Windows 上使用 clang-cl 构建这些固定源码依赖时，顶层的 C/C++ 编译器、Windows
+SDK include/lib 和运行库参数会传递给每个 ExternalProject 子构建；因此必须在
+Visual Studio Developer 环境中配置，不能让子项目自行退回另一套 CRT 或 ABI。
 
 ## 安装包消费者验证
 
@@ -140,6 +162,11 @@ cmake -S tests/installed_consumer -B build_win/installed-consumer -G Ninja `
 cmake --build build_win/installed-consumer --parallel
 ctest --test-dir build_win/installed-consumer --output-on-failure
 ```
+
+安装包消费者应按实际使用的模块声明组件，例如只使用 Math 时使用
+`find_package(sindre CONFIG REQUIRED COMPONENTS math)`，这样不会触发 OpenCV、VTK
+或 Python SDK 的查找；使用 `utils_3d` 时声明 `COMPONENTS utils_3d`，并提供固定的
+VTK、CGAL 和独立 Boost SDK 路径。
 
 AI 的安装消费者测试会真实加载并运行固定版本的 ONNX Runtime。Windows
 应用应将安装包 `bin/` 放入 PATH，或把所需运行时 DLL 复制到应用目录；否则
@@ -203,7 +230,7 @@ CMake 文件使用 `#` 编写中文注释。每个 `CMakeLists.txt`、`.cmake` �
 非显然的逻辑块前说明原因。
 
 ```cmake
-# Utils_3d 的构建入口：VTK 提供基础数据结构，CGAL 和 PCL 作为可选后端。
+# Utils_3d 的构建入口：VTK + CGAL + nanoflann 是固定后端，PCL 作为可选后端。
 # 本文件只负责依赖、target、安装和测试，不实现具体网格算法。
 
 # 只有启用 3D 模块时才查找大型后端，避免默认配置引入无关依赖。
@@ -369,7 +396,7 @@ if (!result) {
 
 ## 依赖管理
 
-- 第三方依赖登记在 `3rdparty/` 及其依赖子目录，包括来源、固定版本、许可证/SDK 说明和 CMake cache 覆盖点；
+- 第三方依赖登记在 `3rdparty/` 及其依赖子目录，包括来源、固定版本、许可证/SDK 说明和允许的 CMake 路径入口；固定的小型依赖版本本身不得由 cache 覆盖；
 - General 的全部依赖和版本必须固定在 `3rdparty/`，源码型依赖通过 ExternalProject 隔离，配置时只允许使用固定源码和固定二进制包；其余模块才可以按需接入固定 Git/URL 依赖；
 - 优先复用父项目中已经存在的 CMake target；
 - 源码型依赖优先使用固定 URL/SHA256 的 ExternalProject；只有宿主项目集成入口才保留 FetchContent；
@@ -389,6 +416,16 @@ cmake --build --preset linux-clang
 ctest --preset linux-clang
 ```
 
+如果只验证 General、Math 和 Examples，不想先准备 VTK、CGAL、OpenCV、Python
+或 AI SDK，使用不含大型可选 SDK 的核心预设：
+
+```bash
+export SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT=/mnt/f/My_Github/SindreCpp/.sindre_cache/shared/general/packages
+cmake --preset linux-clang-core
+cmake --build --preset linux-clang-core
+ctest --preset linux-clang-core
+```
+
 也可以使用根目录 `CMakePresets.json` 的快捷入口。Windows 预设使用 Ninja + ClangCL，
 Linux 使用 Ninja + Clang；AI 预设把构建目录放在 `build_win/` 下并分开，避免 Full 和
 Dispatch 的缓存互相污染：
@@ -398,6 +435,7 @@ cmake --list-presets
 
 scripts\build.bat
 
+$env:SINDRE_THIRD_GENERAL_PACKAGE_CACHE_ROOT = "F:\My_Github\SindreCpp\.sindre_cache\SindreCpp\general\packages"
 $env:SINDRE_TENSORRT_ROOT = "C:\Program Files\NVIDIA\TensorRT-10.11.0.33"
 $env:CUDAToolkit_ROOT = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
 cmake --preset ai-trt-full
@@ -412,9 +450,13 @@ cmake --build --preset ai-trt-dispatch
 `windows-clang-cl`，Linux AI 构建使用 `linux-clang`。
 
 The General layer is non-throwing at its public boundary in every build. Use
-`-DSINDRE_NO_EXCEPTIONS=ON` for the strict compiler-no-exceptions validation build.
-This option also adds `-fno-exceptions` for GCC/Clang or `/EHs-c-` for MSVC/clang-cl,
-and enables the no-exception settings required by the bundled third-party adapters.
+`-DSINDRE_NO_EXCEPTIONS=ON` for the strict compiler-no-exceptions validation
+build together with `-DSINDRE_WITH_AI=OFF -DSINDRE_WITH_UTILS_3D=OFF`; CMake
+rejects AI and Utils3D in this profile until their throwing APIs are migrated.
+This option also adds `-fno-exceptions` for GCC/Clang or `/EHs-c-` for MSVC/clang-cl
+to Sindre's own targets. Fixed third-party projects keep their upstream exception ABI;
+forcing `-fno-exceptions` into CsString is invalid because its headers contain required
+`throw` expressions. spdlog receives its dedicated `SPDLOG_NO_EXCEPTIONS` setting.
 Because argparse relies on C++ exceptions, normal builds use the private argparse
 backend while this strict build uses General's equivalent internal CLI parser.
 

@@ -5,8 +5,10 @@
 
 `utils_py` provides the optional Python/NumPy bridge for sindre. It is kept
 outside `General` because it requires a Python development installation and
-pybind11. pybind11 and CPython are implementation details: the public header
-does not expose pybind11, NumPy, Eigen, or Python object types.
+pybind11. The public umbrella header intentionally re-exports the common
+pybind11 headers (`embed`, `numpy`, `stl`, and `functional`), the `py` namespace
+alias, and the Sindre Math/Eigen aliases. Python runtime initialization remains
+owned by `utils_py`.
 
 The module is a compiled shared library. It is disabled by default and is
 enabled with `SINDRE_WITH_UTILS_PY=ON`. The supported runtime is Python 3.12+
@@ -40,6 +42,62 @@ if (!result) {
     return 1;
 }
 ```
+
+## 直接使用 pybind11 导入模块
+
+如果应用需要使用 `pybind11` 的 Python 对象 API，可以在自己的 `.cpp` 中包含
+pybind11，并把 Python 对象的生命周期限制在 `run_with_gil()` 回调内。`utils_py`
+会通过 `sindre::utils_py` target 传递所需的 pybind11 头文件和链接依赖：
+
+```cpp
+#include <sindre/utils_py.h>
+
+#include <string>
+
+auto runtime = sindre::utils_py::get_runtime();
+if (!runtime) return 1;
+
+auto numpy_version = runtime.value()->run_with_gil([] {
+    auto numpy = py::module_::import("numpy");
+    return numpy.attr("__version__").cast<std::string>();
+});
+if (!numpy_version) {
+    // import 失败、属性不存在或 cast 失败都会转换为 Result 错误。
+    return 1;
+}
+```
+
+`sindre/utils_py.h` 已经包含 pybind11 并提供 `namespace py = pybind11` 别名，用户
+不需要重复包含 pybind11 或声明命名空间。这里的 `py::module_::import("numpy")`
+是 pybind11 原生 API，不是 `utils_py` 自定义的模块封装。`py::module_`、`py::object`、`py::list` 等对象
+必须在 GIL 回调中创建、使用和销毁；不要从回调返回这些 Python 对象。应在回调内
+转换成 `std::string`、数值、`std::vector` 或 `sindre::utils_py::Array` 等拥有所有权
+的 C++ 值后再返回。这样第三方异常会在 `run_with_gil()` 边界内转换成
+`sindre::general::Result<T>`，不会穿透 Sindre 的公共错误边界。
+
+如果只需要执行 Python 表达式而不需要长期持有 Python 对象，也推荐使用这个模式：
+
+```cpp
+auto result = runtime.value()->run_with_gil([] {
+    auto math = py::module_::import("math");
+    return math.attr("sqrt")(81.0).cast<double>();
+});
+```
+
+对于常见的导入、属性读取和函数调用，可以使用 `utils_py` 的安全封装，不需要
+手动管理 `py::object`：
+
+```cpp
+auto imported = runtime.value()->import_module("numpy");
+auto version = runtime.value()->get_attribute<std::string>(
+    "numpy", "__version__");
+auto result = runtime.value()->call_function<double>(
+    "math", "sqrt", 81.0);
+```
+
+这些接口会自动获取和释放 GIL，将 Python 异常、导入失败、属性不存在和类型转换
+失败统一转换为 `Result<T>`。需要复杂 Python 逻辑时，继续使用上面的
+`run_with_gil()` 和原生 pybind11 API。
 
 需要让出 GIL 执行原生计算时使用 RAII 释放守卫；守卫析构时会自动重新
 获取 GIL：

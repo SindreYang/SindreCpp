@@ -1,2 +1,59 @@
-# zlib 使用 General 固定平台 profile；此处记录经过验证的版本元数据。
+# zlib 是小型库，固定从上游源码构建，不从 vcpkg 或系统路径获取。
+include(ExternalProject)
+
 set(SINDRE_THIRD_GENERAL_ZLIB_VERSION "1.3.1")
+set(SINDRE_THIRD_GENERAL_ZLIB_URL
+    "https://github.com/madler/zlib/archive/refs/tags/v1.3.1.tar.gz")
+set(SINDRE_THIRD_GENERAL_ZLIB_SHA256
+    "17E88863F3600672AB49182F217281B6FC4D3C762BDE361935E436A95214D05C")
+if(WIN32)
+    set(_sindre_zlib_library "<INSTALL_DIR>/lib/zlibstatic.lib")
+    set(_sindre_zlib_library_name "zlibstatic.lib")
+else()
+    set(_sindre_zlib_library
+        "<INSTALL_DIR>/lib/${CMAKE_STATIC_LIBRARY_PREFIX}z${CMAKE_STATIC_LIBRARY_SUFFIX}")
+    set(_sindre_zlib_library_name
+        "${CMAKE_STATIC_LIBRARY_PREFIX}z${CMAKE_STATIC_LIBRARY_SUFFIX}")
+endif()
+
+ExternalProject_Add(
+    sindre_ext_zlib
+    PREFIX "${SINDRE_THIRD_PARTY_BUILD_CACHE_DIR}/zlib"
+    URL "${SINDRE_THIRD_GENERAL_ZLIB_URL}"
+    URL_HASH "SHA256=${SINDRE_THIRD_GENERAL_ZLIB_SHA256}"
+    DOWNLOAD_DIR "${SINDRE_THIRD_PARTY_DOWNLOAD_DIR}/zlib"
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    CMAKE_ARGS
+        ${SINDRE_EXTERNAL_PROJECT_CMAKE_ARGS}
+        -DBUILD_SHARED_LIBS=OFF
+        -DZLIB_BUILD_EXAMPLES=OFF
+        -DSKIP_INSTALL_FILES=ON
+        -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+    BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target zlibstatic
+    INSTALL_COMMAND ${CMAKE_COMMAND}
+        -DZLIB_SOURCE_DIR=<SOURCE_DIR>
+        -DZLIB_BINARY_DIR=<BINARY_DIR>
+        -DZLIB_INSTALL_DIR=<INSTALL_DIR>
+        -DZLIB_LIBRARY_NAME=${_sindre_zlib_library_name}
+        -P "${CMAKE_CURRENT_LIST_DIR}/install_zlib.cmake"
+    BUILD_BYPRODUCTS ${_sindre_zlib_library})
+ExternalProject_Get_Property(sindre_ext_zlib INSTALL_DIR)
+set(SINDRE_THIRD_GENERAL_ZLIB_INSTALL_DIR "${INSTALL_DIR}")
+set(SINDRE_THIRD_GENERAL_ZLIB_INCLUDE_DIR "${INSTALL_DIR}/include")
+set(SINDRE_THIRD_GENERAL_ZLIB_LIBRARY "${INSTALL_DIR}/lib/zlibstatic.lib")
+if(NOT WIN32)
+    set(SINDRE_THIRD_GENERAL_ZLIB_LIBRARY
+        "${INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}z${CMAKE_STATIC_LIBRARY_SUFFIX}")
+endif()
+file(MAKE_DIRECTORY "${SINDRE_THIRD_GENERAL_ZLIB_INCLUDE_DIR}")
+add_library(sindre_zlib STATIC IMPORTED GLOBAL)
+set_target_properties(sindre_zlib PROPERTIES
+    IMPORTED_LOCATION "${SINDRE_THIRD_GENERAL_ZLIB_LIBRARY}"
+    IMPORTED_LOCATION_RELEASE "${SINDRE_THIRD_GENERAL_ZLIB_LIBRARY}"
+    IMPORTED_LOCATION_RELWITHDEBINFO "${SINDRE_THIRD_GENERAL_ZLIB_LIBRARY}"
+    IMPORTED_LOCATION_MINSIZEREL "${SINDRE_THIRD_GENERAL_ZLIB_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${SINDRE_THIRD_GENERAL_ZLIB_INCLUDE_DIR}")
+add_dependencies(sindre_zlib sindre_ext_zlib)
+if(NOT TARGET ZLIB::ZLIB)
+    add_library(ZLIB::ZLIB ALIAS sindre_zlib)
+endif()
